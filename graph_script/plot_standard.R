@@ -1,0 +1,499 @@
+#install.packages("tidyverse") # коллекция пакетов от Hadley Wickham
+#install.packages("ggthemes")
+#install.packages("countrycode")
+#install.packages("readxl")
+#install.packages("writexl")
+#install.packages("writexl",lib = "C:/Users/iamku/OneDrive/Documents/R/win-library/4.1")
+#install.packages("unikn")
+#install.packages("ggtext")
+#install.packages("svglite")
+#install.packages("directlabels")
+#install.packages("fanplot")
+#install.packages("ggfan")
+#install.packages("hrbrthemes")
+
+library("dplyr")
+library("reshape2")
+library("ggplot2")
+library("ggthemes")
+library("countrycode")
+library("readxl")
+library("tidyr")
+library("data.table")
+library("writexl")
+library("unikn")
+library("ggtext")
+library("svglite")
+library("stringr")
+library("directlabels")
+library("fanplot")
+library("ggfan")
+library("hrbrthemes")
+
+country_name <- "India"
+#country_name <- "Russian Federation"
+
+###### Define custom color palettes
+
+## ACRA palette
+ACRA <- newpal( col = c(rgb(147, 202, 116, maxColorValue = 255),rgb(153, 38, 115, maxColorValue = 255),
+                        rgb(238, 108, 64, maxColorValue = 255),rgb(155, 155, 155, maxColorValue = 255),
+                        rgb(238, 162, 53, maxColorValue = 255),rgb(55, 165, 188, maxColorValue = 255),
+                        rgb(69, 159, 122, maxColorValue = 255),rgb(115, 144, 159, maxColorValue = 255),
+                        rgb(115, 83, 116, maxColorValue = 255),rgb(60, 100, 162, maxColorValue = 255),
+                        rgb(63, 133, 165, maxColorValue = 255),rgb(220, 73, 66, maxColorValue = 255) ),
+                names = c("green", "dark", "red", "grey", "sec1", "sec2", "sec3",
+                          "sec4", "sec5", "sec6", "sec7", "sec8" )
+)
+
+seecol(ACRA, 
+       col_brd = "white", lwd_brd = 4, 
+       title = "Colours of ACRA", 
+       mar_note = "For fuck's sake")
+
+#using +scale_color_manual(values = ACRA)
+
+
+###### Import data from local database
+
+setwd("D:/Dropbox/Methods_Programs/R_utilities/country_analysis/_DB")
+#setwd("D:/Dropbox/Methods_Programs/R_utilities/download_data")
+#setwd("C:/Projects/R_utilities/download_data")
+data_fname <- "Filled_DB.xlsx"
+a <- length(read_excel(data_fname, sheet = "y", col_names = T, skip=0, n_max = 0))
+extdata_y <- read_excel(data_fname, sheet = "y", col_names = T, skip=0,
+                        col_types = c("text", "text", rep("numeric", a-2))) %>% mutate(time=year-1987)
+a <- length(read_excel(data_fname, sheet = "q", col_names = T, skip=0, n_max = 0))
+extdata_q <- read_excel(data_fname, sheet = "q", col_names = T, skip=0,
+                        col_types = c("text", "text", rep("numeric", a-2))) %>% mutate(time=(year-1987)*4+quarter)
+a <- length(read_excel(data_fname, sheet = "m", col_names = T, skip=0, n_max = 0))
+extdata_m <- read_excel(data_fname, sheet = "m", col_names = T, skip=0,
+                        col_types = c("text", "text", rep("numeric", a-2))) %>% mutate(time=(year-1987)*12+month)
+a <- length(read_excel(data_fname, sheet = "dict", col_names = T, skip=0, n_max = 0))
+dict <- read_excel(data_fname, sheet = "dict", col_names = T, skip=0,
+                        col_types = rep("text", a))
+
+
+###### Determining country focus and peers
+
+country_iso2c <- unique(extdata_y$country_id[extdata_y$country == country_name])
+country_iso3c <- countrycode(country_iso2c, origin = 'iso2c', destination = 'iso3c')
+
+#setwd("D:/Dropbox/Methods_Programs/R_utilities/graph_library")
+peers_fname <- "1_peers_params.xlsx"
+peersdata <- read_excel(peers_fname, sheet = "groups", col_names = T, skip=6)
+peers_default_iso3c <- names(peersdata)[peersdata[peersdata$country_code == country_iso3c, ] == 1]
+peers_default_iso2c <- countrycode(peers_default_iso3c, origin = 'iso3c', destination = 'iso2c')
+peers_neighbours_iso3c <- peersdata %>% select(region, country_code) %>% filter(region==peersdata$region[peersdata$country_code==country_iso3c]) %>%
+  pull(country_code)
+peers_neighbours_iso2c <- countrycode(peers_neighbours_iso3c, origin = 'iso3c', destination = 'iso2c')
+
+
+##### Plotting schedule
+
+setwd(paste("D:/Dropbox/Methods_Programs/R_utilities/country_analysis/", country_name, "/Auto_report", sep=""))
+plotparam_fname <- "2_graphlib.xlsx"
+graphdata <- read_excel(plotparam_fname, sheet = "library", col_names = T, skip=1)
+
+
+##### Generating sources and sorting graphs for knitting
+
+graphdata <- graphdata %>% mutate(source_name=NA)
+
+for (i in 1:dim(graphdata)[1]) {
+  a <- unlist(str_extract_all( string = graphdata$indicators[i], pattern = paste(na.omit(dict$indicator_code), collapse = "|") ))
+  a <- plyr::mapvalues(a, from = dict$indicator_code, to = dict$source_name, warn_missing=F)
+  a <- unlist(strsplit(a, ", "))
+  a <- a[a!="расчеты АКРА"]
+  a <- c(unique(a), "расчеты АКРА")
+  graphdata$source_name[i] = toString(a)
+}  
+
+#### Sorting graphs for knitting
+#graphdata <- graphdata %>% arrange(nchar(graph_group))
+#graph_group_starts <- match(c("macro", "budget", "external", "institutional"), graphdata$graph_group)
+#graph_group_names <- c("Макроэкономика", "Бюджет", "Внешний сектор", "Институты")
+
+
+##### Plotting cycle
+
+for(i in 1:dim(graphdata)[1]) {
+    
+    ###### Header for knitting
+#    if (i %in% graph_group_starts) {
+#      cat('\n')
+#      cat('#', graph_group_names[which(graph_group_starts==i)], '\n')
+#    }
+  
+    ###### Fix graph parameters
+    #i=4
+    for (j in 1:dim(graphdata)[2]) { eval(parse(text = paste(names(graphdata)[j], " <- graphdata$", names(graphdata)[j],"[i]", sep="") )) }
+#    show_title <- 0   
+  
+    ## indicators and limits fixation
+    indicators <- unlist(strsplit(indicators, ", "))
+    x_ind <- indicators[1]
+    y_ind <- indicators[2]
+    
+    x_min <- as.numeric(unlist(strsplit(x_min, "q|m|d" )))
+    x_max <- as.numeric(unlist(strsplit(x_max, "q|m|d" )))
+    
+    if (graph_type %in% c("bar_dynamic", "lines_country_comparison", "lines_indicator_comparison", "distribution_dynamic",
+                          "structure_dynamic", "structure_dynamic_norm")) {
+      if (data_frequency=="y") { time_start <- x_min[1]-1987 ; time_end <- x_max[1]-1987; 
+                              labfreq <- 1; timetony_start <- 0; timetony_end <- 1}
+      if (data_frequency=="q") { time_start <- (x_min[1]-1987)*4+x_min[2]; time_end <- (x_max[1]-1987)*4+x_max[2];
+                              labfreq <- 4; timetony_start <- (5-x_min[2])%%4; timetony_end <- x_min[2] }
+      if (data_frequency=="m") { time_start <- (x_min[1]-1987)*12+x_min[2] ; time_end <- (x_max[1]-1987)*12+x_max[2];
+                              labfreq <- 12; timetony_start <- (13-x_min[2])%%12; timetony_end <- x_min[2] }   
+    }
+      
+    y_min <- as.numeric(y_min)
+    y_max <- as.numeric(y_max)
+    if (is.na(sec_y_axis)==F) {
+      indicators_sec <- unlist(strsplit(sec_y_axis, ", "))
+      coeff <- as.numeric(tail(indicators_sec, 1))
+      indicators_sec <- head(indicators_sec, -1)
+    }
+    
+    time_fix <- unlist(strsplit(time_fix, ", "))
+    if (graph_type =="bar_year_comparison") { time_fix <- as.numeric(time_fix) } else 
+        {time_fix <- as.numeric(unlist(strsplit(time_fix, "q|m|d" )))}
+    if (graph_type %in% c("scatter_country_comparison", "bar_country_comparison", "structure_country_comparison", "structure_country_comparison_norm")) {
+      if (data_frequency=="y") { time_fix <- time_fix[1]-1987 }
+      if (data_frequency=="q") { time_fix <- (time_fix[1]-1987)*4+time_fix[2] }
+      if (data_frequency=="m") { time_fix <- (time_fix[1]-1987)*12+time_fix[2] }   
+    }
+    
+    ## peers fixation
+    if (peers != 0) {
+    
+      peers_vec <- unlist(strsplit(peers, ": "))
+      peers_type <- peers_vec[1]
+      peers_vec <- unlist(strsplit(peers_vec[2], ", "))
+      
+      if (peers_type=="custom") {peers_iso2c <- peers_vec}
+      if (peers_type == "default") {peers_iso2c <- peers_default_iso2c}
+      if (peers_type == "neighbours") {peers_iso2c <- peers_neighbours_iso2c}
+      
+      if (peers_type=="similar"|peers_type=="top"|peers_type=="low") {peers_ind <- peers_vec[1]; peers_param <- as.numeric(peers_vec[2]); peers_year <- as.numeric(peers_vec[3])}
+      if (peers_type=="similar") {
+        eval(parse(text = paste( "peers_central <- extdata_y %>% filter(year == ", peers_year, ", country_id == country_iso2c) %>% pull(", peers_ind, ")" , sep="")  )) 
+        eval(parse(text=paste("peers_iso2c <- extdata_y %>% filter(year == peers_year, ", peers_ind,  " > peers_central*(1-peers_param), ",
+                            peers_ind, " < peers_central*(1+peers_param)) %>% pull(country_id)" , sep="") ))
+      }
+      
+      if (peers_type=="top") {
+        eval(parse(text = paste("peers_iso2c <- extdata_y %>% filter(year == peers_year, !is.na(", peers_ind,
+                                ")) %>% arrange(desc(", peers_ind, ")) %>% slice(1: peers_param) %>% pull(country_id)" , sep="")  )) 
+        }
+      
+      if (peers_type=="low") {
+        eval(parse(text = paste("peers_iso2c <- extdata_y %>% filter(year == peers_year, !is.na(", peers_ind,
+                                ")) %>% arrange(", peers_ind, ") %>% slice(1:peers_param) %>% pull(country_id)" , sep="")  )) 
+      }
+      
+      peers_iso2c <- peers_iso2c[peers_iso2c!=country_iso2c]
+      
+    }
+    
+    ## logs calculation 
+    if (x_log==1) { x_lab <- paste("log(", dict[dict$indicator_code==x_ind & dict$source_frequency==data_frequency,1], ")", sep=""); 
+    x_ind <- paste("log(", x_ind, ")", sep="") } else {
+      x_lab <- dict[dict$indicator_code==x_ind & dict$source_frequency==data_frequency,1] }
+    if (y_log==1) { y_lab <- paste("log(", dict[dict$indicator_code==y_ind & dict$source_frequency==data_frequency,1], ")", sep="");
+    y_ind <- paste("log(", y_ind, ")", sep="") } else {
+      y_lab <- dict[dict$indicator_code==y_ind & dict$source_frequency==data_frequency,1] }
+    
+    ## theme and labs calculation
+    if (show_title == 1) { title <- graph_title } else {title <- ""} 
+    caption <- paste("Источники:", source_name)
+    theme <- paste("theme_", theme, "()", sep="")
+    if (orientation=="vertical") {width=900; height=900} else {width=1800; height=900}
+    
+    ## data fixation 
+    eval(parse(text= paste("data_temp <- extdata_", data_frequency, sep="") ))
+    
+      ###### Scatter plot
+    
+      if (graph_type=="scatter_country_comparison" & active==1) {
+            
+          data_all <- data_temp %>% filter(time==time_fix) %>% select("country", "country_id", "year", all_of(indicators))
+          data_highlight <- data_all %>% filter(country_id==country_iso2c)
+          if (peers!=0) {data_peers <- data_all %>% filter(country_id %in% peers_iso2c)} else {data_peers <- NULL}
+          if (all==1) {alpha=1} else {alpha=0}
+
+          eval(parse(text = paste("theplot <- ggplot(data = data_all, aes(", x_ind, ",", y_ind, "))", sep="") ))
+          theplot <- theplot + geom_point(alpha=alpha, fill="#619cff", color=ACRA['green']) +
+            scale_x_continuous(limits=c(x_min, x_max)) + scale_y_continuous(limits=c(y_min, y_max)) +
+            geom_smooth(method = trend_type) + ggtitle(title) + labs(x = x_lab, y = y_lab, caption = caption)
+            
+          eval(parse(text = paste("theplot <- theplot + geom_point(data=data_peers, aes(", x_ind, ", ", y_ind, "), color=ACRA['sec2'], alpha=1, size=3)", sep="") ))
+          eval(parse(text = paste("theplot <- theplot + geom_point(data=data_highlight, aes(", x_ind, ", ", y_ind, "), color=ACRA['dark'], alpha=1, size=3)", sep="") ))
+          
+          eval(parse(text = paste("theplot <- theplot + ", theme, sep="") ))
+          theplot <- theplot + geom_text(data=data_peers, aes(label = country_id), 
+                                         nudge_x = 0.03*(layer_scales(theplot)$x$range$range[2]-layer_scales(theplot)$x$range$range[1]), 
+                                         nudge_y = 0.03*(layer_scales(theplot)$y$range$range[2]-layer_scales(theplot)$y$range$range[1]), 
+                                         check_overlap = F, colour = ACRA['sec2']) +
+                        geom_text(data=data_highlight, aes(label = country_id), 
+                                        nudge_x = 0.03*(layer_scales(theplot)$x$range$range[2]-layer_scales(theplot)$x$range$range[1]), 
+                                        nudge_y = 0.03*(layer_scales(theplot)$y$range$range[2]-layer_scales(theplot)$y$range$range[1]), 
+                                        check_overlap = F, colour=ACRA['dark'])
+          theplot <- theplot + theme(plot.title = element_textbox_simple())
+          #theplot
+      }
+
+    
+      ###### Bar country comparison - dodged, stacked or stacked and normalized
+      
+      if ( (graph_type=="bar_country_comparison"|graph_type=="structure_country_comparison"|graph_type=="structure_country_comparison_norm") & active==1) {
+        
+        dict_temp <- dict %>% filter(indicator_code %in% indicators, source_frequency == data_frequency) %>% 
+          arrange(factor(indicator_code, levels = indicators)) %>% select(indicator)
+        y_lab <- unname(unlist(dict_temp))
+        if (is.na(sec_y_axis)==F) {
+          y_lab[indicators %in% indicators_sec] <- paste(y_lab[indicators %in% indicators_sec], ", rha", sep="")
+          y_lab[!(indicators %in% indicators_sec)] <- paste(y_lab[!(indicators %in% indicators_sec)], ", lha", sep="")
+        }
+        
+        data_temp <- data_temp %>% select(any_of(c("country", "country_id", "year", "quarter", "month", "time", indicators))) 
+        data_all <- reshape2::melt(data_temp, id.vars=names(data_temp)[1:(dim(data_temp)[2]-length(indicators))],
+                                   variable.name="variable", value.name="value")
+        data_all <- data_all %>% filter(variable %in% indicators, time==time_fix, !is.na(value)) %>%
+          mutate(highlight2 = as.factor(ifelse(country_id==country_iso2c,1,0))) 
+        
+        if (length(indicators)==1) {data_all <- data_all %>% mutate(highlight = as.factor(case_when(country_id %in% peers_iso2c ~ 1,
+                                        country_id %in% country_iso2c ~ 2, TRUE ~ 0)) )}
+        if (is.na(sec_y_axis)==F) { data_all <- data_all %>% mutate(value = ifelse(variable %in% indicators_sec, value*coeff, value)) }
+        
+        if (all==1) {} else {data_all <- data_all %>% filter(country_id %in% c(peers_iso2c, country_iso2c)) }
+        
+        ordering_table <- data_all %>% filter(variable == indicators[1]) %>% select(country_id, value) %>% arrange(desc(value)) %>% 
+          mutate(ordering = row_number()) %>% select(country_id, ordering)
+        data_all <- data_all %>% left_join(ordering_table, by="country_id") %>% arrange(desc(variable), ordering)
+        data_all <- data_all %>% mutate(variable = factor(variable, levels = indicators))
+        
+        if (length(indicators)==1) {theplot <- ggplot(data_all, aes(reorder(country_id, -value), value, fill = highlight)) } else 
+                              {theplot <- ggplot(data_all, aes(reorder(country_id, ordering), value, fill = variable)) }
+        eval(parse(text = paste("theplot <- theplot + ", theme, sep="") ))
+          
+        theplot <- theplot + geom_col(aes(size=highlight2), color="black", alpha=.8,
+              position=case_when(graph_type=="bar_country_comparison" ~ "dodge", 
+              graph_type=="structure_country_comparison" ~ "stack",
+              graph_type=="structure_country_comparison_norm" ~ "fill"))
+        if (is.na(sec_y_axis)==T) {theplot <- theplot + scale_y_continuous(limits=c(y_min, y_max))} else {
+          theplot <- theplot + scale_y_continuous(limits=c(y_min, y_max), sec.axis = sec_axis(~./coeff))
+        }
+        theplot <- theplot + scale_fill_manual(values = as.vector(ACRA[c('green','sec2','dark','sec1','red','sec3','sec6')]), name="", labels=y_lab) +
+          labs(x=NULL, y = ifelse(length(indicators)==1, y_lab, ""), caption = caption) + ggtitle(title) +
+          guides(size="none") + scale_size_manual(values = c(0,1)) +
+          theme(plot.title = element_textbox_simple(), legend.position="bottom")
+        
+        if (length(indicators)==1) {theplot <- theplot + guides(fill = "none")}
+        
+        if (all==1) {
+              theplot <- theplot + theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) 
+            }  else {
+              theplot <- theplot + theme(axis.text.x = element_text(angle = 0, hjust = 0.5, vjust = 1))
+            }
+          
+          #theplot
+
+        }
+    
+    
+      ###### Bar multi-year comparison for multiple variables
+      
+      if (graph_type=="bar_year_comparison" & active==1) {
+        
+        data_all <- reshape2::melt(data_temp, id.vars=c("country", "country_id", "year"), variable.name="variable", value.name="value")
+        data_all <- data_all %>% filter(variable %in% indicators, year %in% time_fix, country_id == country_iso2c, !is.na(value)) %>% 
+              arrange(desc(variable), desc(value))
+        #x_lab <- unname(unlist(dict[dict$indicator_code %in% indicators & dict$source_frequency==data_frequency,1]))
+        dict_temp <- dict %>% filter(indicator_code %in% indicators, source_frequency == data_frequency) %>% 
+          arrange(factor(indicator_code, levels = indicators)) %>% select(indicator)
+        x_lab <- unname(unlist(dict_temp))
+        x_lab <- str_wrap(x_lab, width = 15)
+        
+        theplot <- ggplot(data_all, aes(variable, value, fill=as.factor(year))) + geom_col(alpha=.8, position ='dodge') +
+          scale_y_continuous(limits=c(y_min, y_max)) + 
+          scale_fill_manual(values = as.vector(ACRA[c('green','sec2','dark','sec1','red','sec3','sec6')]), name="Год" ) +
+          scale_x_discrete(labels=x_lab) +
+          ggtitle(title) + labs(caption = caption, x=NULL, y=NULL)
+        
+        eval(parse(text = paste("theplot <- theplot + ", theme, sep="") ))
+        theplot <- theplot + theme(plot.title = element_textbox_simple(), axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5))
+        theplot
+        
+      }
+    
+      
+      ###### Bar dynamic - dodged, stacked or stacked and normalized
+      
+      if ( (graph_type=="bar_dynamic"|graph_type=="structure_dynamic"|graph_type=="structure_dynamic_norm") & active==1) {
+        
+        data_temp <- data_temp %>% select(any_of(c("country", "country_id", "year", "quarter", "month", "time", indicators)))
+        data_all <- reshape2::melt(data_temp, id.vars=names(data_temp)[1:(dim(data_temp)[2]-length(indicators))],
+                                   variable.name="variable", value.name="value")
+        data_all <- data_all %>% filter(variable %in% indicators, time >= time_start, time <= time_end, country_id == country_iso2c, !is.na(value)) 
+        if (is.na(sec_y_axis)==F) { data_all <- data_all %>% mutate(value = ifelse(variable %in% indicators_sec, value*coeff, value)) }
+        if (graph_type=="structure_dynamic") {data_total <- data_all %>% group_by(time) %>% summarize(total=sum(value)) %>% ungroup()}
+        
+        dict_temp <- dict %>% filter(indicator_code %in% indicators, source_frequency == data_frequency) %>% 
+          arrange(factor(indicator_code, levels = indicators)) %>% select(indicator)
+        y_lab <- unname(unlist(dict_temp))
+        if (is.na(sec_y_axis)==F) {
+          y_lab[indicators %in% indicators_sec] <- paste(y_lab[indicators %in% indicators_sec], ", rha", sep="")
+          y_lab[!(indicators %in% indicators_sec)] <- paste(y_lab[!(indicators %in% indicators_sec)], ", lha", sep="")
+        }
+        
+        theplot <- ggplot(data_all, aes(time, value, fill=as.factor(variable)))
+        if (is.na(sec_y_axis)==T) {theplot <- theplot + scale_y_continuous(limits=c(y_min, y_max))} else {
+            theplot <- theplot + scale_y_continuous(limits=c(y_min, y_max), sec.axis = sec_axis(~./coeff))
+        }
+        
+        theplot <- theplot + scale_x_continuous(breaks = seq(time_start + timetony_start, time_end - timetony_end + 1, by = labfreq), 
+                             labels = c(ifelse(timetony_start==0,x_min[1],x_min[1]+1):x_max[1])) 
+        
+        if (graph_type=="bar_dynamic") {theplot <- theplot + geom_col(alpha=.8, width=0.65, position = position_dodge(width = 0.65)) } else {
+        theplot <- theplot + geom_col(alpha=.8, width=0.65, 
+              position = case_when(graph_type=="structure_dynamic" ~ "stack", graph_type=="structure_dynamic_norm" ~ "fill"))
+        }
+        
+        if (graph_type=="structure_dynamic") {theplot <- theplot + stat_summary(fun = sum, geom = "point",
+               shape = 17, size = 2, mapping = aes(group = time), show.legend = F)}
+         
+        eval(parse(text = paste("theplot <- theplot + ", theme, sep="") ))
+          
+        theplot <- theplot + 
+          scale_fill_manual(values = as.vector(ACRA[c('green','sec2','dark','sec1','red','sec3','sec6')]), name="", labels=y_lab) +
+          ggtitle(title) + labs(caption = caption, x=NULL, y=NULL)
+        
+        theplot <- theplot + theme(plot.title = element_textbox_simple(), legend.position="bottom")
+        if (length(indicators)==1) {theplot <- theplot + guides(fill = "none")}
+        
+        #theplot
+      }
+    
+    
+      ###### Lines indicator comparison
+      
+      if (graph_type=="lines_indicator_comparison" & active==1) {
+        
+        dict_temp <- dict %>% filter(indicator_code %in% indicators, source_frequency == data_frequency) %>% 
+          arrange(factor(indicator_code, levels = indicators)) %>% select(indicator)
+        y_lab <- unname(unlist(dict_temp))
+        if (is.na(sec_y_axis)==F) {
+          y_lab[indicators %in% indicators_sec] <- paste(y_lab[indicators %in% indicators_sec], ", rha", sep="")
+          y_lab[!(indicators %in% indicators_sec)] <- paste(y_lab[!(indicators %in% indicators_sec)], ", lha", sep="")
+        }
+        
+        data_temp <- data_temp %>% select(any_of(c("country", "country_id", "year", "quarter", "month", "time", indicators)))
+        data_all <- reshape2::melt(data_temp, id.vars=names(data_temp)[1:(dim(data_temp)[2]-length(indicators))],
+                                   variable.name="variable", value.name="value")
+        data_all <- data_all %>% filter(variable %in% indicators, time >= time_start, time <= time_end, country_id == country_iso2c, !is.na(value)) 
+        data_all <- data_all %>% left_join(dict, by=c("variable"="indicator_code")) %>% filter(source_frequency == data_frequency)
+        if (is.na(sec_y_axis)==F) { data_all <- data_all %>% mutate(value = ifelse(variable %in% indicators_sec, value*coeff, value)) }
+        
+        theplot <- ggplot(data_all, aes(time, value)) + geom_line(aes(group=variable, color=variable), alpha=1, size=2)
+        if (is.na(sec_y_axis)==T) {theplot <- theplot + scale_y_continuous(limits=c(y_min, y_max))} else {
+          theplot <- theplot + scale_y_continuous(limits=c(y_min, y_max), sec.axis = sec_axis(~./coeff))
+        }
+        
+        theplot <- theplot + scale_x_continuous(breaks = seq(time_start + timetony_start, time_end - timetony_end + 1, by = labfreq), 
+                                      labels = c(ifelse(timetony_start==0,x_min[1],x_min[1]+1):x_max[1])) +
+          scale_color_manual(values = as.vector(ACRA[c('dark','sec2','green','sec1','sec6')]) ) +
+          ggtitle(title) + labs(caption = caption, x="Год", y=NULL) + 
+          geom_dl(aes(label = indicator, colour = variable), method = list(dl.trans(x = x + 0.2), "extreme.grid", cex = 0.8, alpha=0.8))
+        
+        eval(parse(text = paste("theplot <- theplot + ", theme, sep="") ))
+          
+        theplot <- theplot + theme(plot.title = element_textbox_simple(), plot.margin = margin(r = 100)) +
+          labs(caption = caption, x=NULL, y=NULL) + guides(colour = "none")
+        #theplot
+      }
+    
+    
+      ###### Lines country comparison
+      
+      if (graph_type=="lines_country_comparison" & active==1) {
+        
+        y_ind <- x_ind
+        y_lab <- x_lab
+        
+        data_temp <- data_temp %>% select(any_of(c("country", "country_id", "year", "quarter", "month", "time", indicators)))
+        data_all <- reshape2::melt(data_temp, id.vars=names(data_temp)[1:(dim(data_temp)[2]-length(indicators))],
+                                   variable.name="variable", value.name="value")
+        data_all <- data_all %>% filter(variable %in% indicators, time >= time_start, time <= time_end)
+        if (!is.na(index)) { data_all <- data_all %>% group_by(variable, country_id) %>% mutate(value = value/first(value)) %>% ungroup() }
+        
+        if (peers != 0) {data_peers <- data_all %>% filter(country_id %in% peers_iso2c)}
+        data_country <- data_all %>% filter(country_id %in% country_iso2c)
+        
+        theplot <- ggplot(data_all, aes(time, value))
+        
+        if (all == 1) {theplot <- theplot + geom_line(data=data_all, aes(group=country), colour=ACRA['grey'], size = 0.7, alpha=.4)} 
+        if (peers != 0) {theplot <- theplot + geom_line(data=data_peers, aes(group=country), colour=ACRA['sec2'], size = 2, alpha=.8)}
+        
+        theplot <- theplot + geom_line(data=data_country, aes(group=country), colour=ACRA['dark'], size = 3, alpha=.8) +
+          scale_y_continuous(limits=c(y_min, y_max)) + 
+          scale_x_continuous(breaks = seq(time_start + timetony_start, time_end - timetony_end + 1, by = labfreq), 
+                                          labels = c(ifelse(timetony_start==0,x_min[1],x_min[1]+1):x_max[1]))
+        
+        eval(parse(text = paste("theplot <- theplot + ", theme, sep="") ))
+        if (!is.na(index)) { y_lab <- paste(y_lab, ", index: ", graphdata$x_min[i], " = 1", sep = "" ) }
+        
+        theplot <- theplot + ggtitle(title) + theme(plot.title = element_textbox_simple()) +
+          labs(caption = caption, x=NULL, y=y_lab) + guides(fill = "none") +
+          geom_dl(data = data_peers, aes(label = country_id), method = list(dl.trans(x = x + 0.2), "last.points", cex = 0.8, colour = ACRA['sec2'], alpha=0.8)) +
+          geom_dl(data = data_peers, aes(label = country_id), method = list(dl.trans(x = x - 0.2), "first.points", cex = 0.8, colour = ACRA['sec2'], alpha=0.8)) +
+          geom_dl(data = data_country, aes(label = country_id), method = list(dl.trans(x = x + 0.2), "last.points", cex = 0.8, colour = ACRA['dark'], alpha=1)) +
+          geom_dl(data = data_country, aes(label = country_id), method = list(dl.trans(x = x - 0.2), "first.points", cex = 0.8, colour = ACRA['dark'], alpha=1))
+
+        #theplot
+      }
+    
+    ###### Distribution dynamics (fan plot)
+    
+    if (graph_type=="distribution_dynamic" & active==1) {
+      
+      y_ind <- x_ind
+      y_lab <- x_lab
+ 
+      data_temp <- data_temp %>% select(any_of(c("country", "country_id", "year", "quarter", "month", "time", indicators)))
+      data_all <- reshape2::melt(data_temp, id.vars=names(data_temp)[1:(dim(data_temp)[2]-length(indicators))],
+                                 variable.name="variable", value.name="value")
+      data_all <- data_all %>% filter(variable %in% indicators, time >= time_start, time <= time_end, !is.na(value)) %>%
+                            select(-c(variable))
+      data_quant <- data_all %>% calc_quantiles(intervals=(1:19)/20, x_var="time", y_var="value", rename=F) %>%
+                            arrange(time, desc(quantile))
+      data_country <- data_all %>% filter(country_id == country_iso2c) %>% select(time, value)
+      data_quant <- data_quant %>% left_join(data_country, by=c("time"="time"), suffix=c("","_c"))
+
+      theplot <- ggplot(data=data_quant, aes(time, value, quantile=quantile)) + geom_fan(intervals=c(seq(10,90, by=10))/100)
+      theplot <- theplot + coord_cartesian(ylim=c(y_min, y_max))+scale_fill_gradient(low=ACRA['dark'], high=ACRA['green']) +
+        scale_x_continuous(breaks = seq(time_start + timetony_start, time_end - timetony_end + 1, by = labfreq), 
+                           labels = c(ifelse(timetony_start==0,x_min[1],x_min[1]+1):x_max[1]))
+      theplot <- theplot + geom_line(data=data_quant, aes(time, value_c), colour=ACRA['sec6'], size=2)
+      
+      eval(parse(text = paste("theplot <- theplot + ", theme, sep="") ))
+      
+      theplot <- theplot + ggtitle(title) + theme(plot.title = element_textbox_simple()) +
+        labs(caption = caption, x=NULL, y=y_lab) + guides(fill = "none")
+      #theplot
+    }
+    
+    ###### Saving jpeg-s
+    
+    if (graph_type %in% c("scatter_country_comparison", "bar_country_comparison", "bar_year_comparison", "bar_dynamic", 
+                          "lines_indicator_comparison", "lines_country_comparison", "distribution_dynamic", 
+                          "structure_dynamic", "structure_dynamic_norm", "structure_country_comparison", 
+                          "structure_country_comparison_norm") & active==1) {
+            ggsave(paste(graph_name,".jpeg", sep=""),  plot = theplot, device = "jpeg",
+             width = width, height = height, units = "px", dpi = 150) }
+    
+    }
+
+#rm(list=ls())
+#extdata_m %>% select(country_id, year, month, time, policy_rate_eop) %>% filter(country_id=="RU", year>2020, time>417)

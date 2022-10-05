@@ -1,3 +1,32 @@
+###### Мои
+install.packages("archive")
+install.packages("tidyverse") # коллекция пакетов от Hadley Wickham
+install.packages("WDI")
+install.packages("ggthemes")
+install.packages("countrycode")
+install.packages("readxl")
+install.packages('IMFData')
+install.packages("writexl")
+install.packages("writexl",lib = "C:/Users/iamku/OneDrive/Documents/R/win-library/4.1")
+install.packages("rJava")
+install.packages("imfr")
+install.packages("gsubfn")
+install.packages("wbstats")
+install.packages("Rilostat")
+
+install.packages("ggplot2")
+install.packages("data.table")
+install.packages("stringr")
+install.packages("purrr")
+install.packages("gsubfn")
+install.packages("tidyquant")
+install.packages("timetk")
+install.packages("glue")
+install.packages("lubridate")
+
+
+###### Демешев
+
 install.packages("tidyverse") # коллекция пакетов от Hadley Wickham
 
 install.packages("WDI") # API данных World Bank-а

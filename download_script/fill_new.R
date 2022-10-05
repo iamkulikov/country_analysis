@@ -11,6 +11,8 @@ library("purrr")
 library("gsubfn")
 library("tidyquant")
 library("timetk")
+library("glue")
+library("lubridate")
 
 ##### Import data
 
@@ -21,18 +23,25 @@ setwd("D:/Dropbox/Methods_Programs/R_utilities/country_analysis/_DB")
 data_fname <- "Imported_DB.xlsx"
 data_d_fname <- "Imported_d_DB.xlsx"
 
-a <- length(read_excel(data_fname, sheet = "y", col_names = T, skip=0, n_max = 0))
-extdata_y <- read_excel(data_fname, sheet = "y", col_names = T, skip=0,
-                        col_types = c("text", "text", rep("numeric", a-2)))
-a <- length(read_excel(data_fname, sheet = "q", col_names = T, skip=0, n_max = 0))
-extdata_q <- read_excel(data_fname, sheet = "q", col_names = T, skip=0,
-                        col_types = c("text", "text", rep("numeric", a-2)))
-a <- length(read_excel(data_fname, sheet = "m", col_names = T, skip=0, n_max = 0))
-extdata_m <- read_excel(data_fname, sheet = "m", col_names = T, skip=0,
-                        col_types = c("text", "text", rep("numeric", a-2)))
+for (i in c("y", "q", "m")) {
+  
+  eval(parse(text = glue("a <- length(read_excel(data_fname, sheet = '{i}', col_names = T, skip=0, n_max = 0))") ))
+  eval(parse(text = glue("extdata_{i} <- read_excel(data_fname, sheet = '{i}', col_names = T, skip=0, \\
+                          col_types = c('text', 'text', rep('numeric', a-2)))") ))
+
+  }
+
 a <- length(read_excel(data_d_fname, sheet = "d", col_names = T, skip=0, n_max = 0))
 extdata_d <- read_excel(data_d_fname, sheet = "d", col_names = T, skip=0,
                         col_types = c("text", "text", "date", rep("numeric", a-3)))
+
+
+##### Generate date columns in data (first day in each period is chosen)
+
+extdata_y <- extdata_y %>% mutate(date = make_date(year = year, month = 12, day = 1))
+extdata_q <- extdata_q %>% mutate(date = make_date(year = year, month = 3*(quarter-1)+1, day = 1))
+extdata_m <- extdata_m %>% mutate(date = make_date(year = year, month = month, day = 1))
+
 
 ##### Import and filling schedule
 
@@ -45,132 +54,82 @@ filldata <- filldata %>% filter(active1==1)
 ##### Filling cycle
 
 for (i in 1:dim(filldata)[1]) {
-  #for (i in 1:2) {
   
-  ##### Calculating new variables of the same frequency
+  #i = 4
+  oldfreq <- filldata$old_frequency[i]
+  oldfreq_long <- case_when(oldfreq == "y" ~ "year", oldfreq == "q" ~ "quarter", oldfreq == "m" ~ "month", oldfreq == "d" ~ "date")
+  newfreq <- filldata$new_frequency[i]
+  newfreq_long <- case_when(newfreq == "y" ~ "year", newfreq == "q" ~ "quarter", newfreq == "m" ~ "month", newfreq == "d" ~ "date")
+  active <- filldata$active1[i]
+  oldcode <- filldata$old_indicator_code[i]
+  newcode <- filldata$new_indicator_code[i]
+  formula <- filldata$formula[i]
   
-  if (filldata$old_frequency[i]==filldata$new_frequency[i] & filldata$active1[i] == 1 & str_detect(filldata$formula[i], "roll") == F & filldata$formula[i] != "share") {
-    
-    eval(parse(text=paste("extdata_", filldata$old_frequency[i]," <- extdata_",filldata$old_frequency[i] ,
-                          " %>% group_by(country) %>% mutate(",filldata$new_indicator_code[i]," = ",filldata$formula[i],") %>% ungroup()",
-                          sep="") ))
-    print(paste("extdata_", filldata$old_frequency[i]," <- extdata_",filldata$old_frequency[i] ,
-                " %>% mutate(",filldata$new_indicator_code[i]," = ",filldata$formula[i],") %>% ungroup()",
-                sep=""))
-    
-  } else {}
   
-  ##### Calculating new rolling variables of the same frequency 
+  #### Calculating new variables of the same frequency
   
-  if (filldata$old_frequency[i]==filldata$new_frequency[i] & filldata$active1[i] == 1 & str_detect(filldata$formula[i], "roll") == T ) {
+  if (oldfreq == newfreq & active == 1 & str_detect(formula, "roll") == F & formula != "share") {
     
-    type <- substr(filldata$formula[i],5,7)
-    type <- reduce2(c('vol', 'avg'), c('sd', 'mean'), .init = type, str_replace)
-    windowlen <- as.numeric(substr(filldata$formula[i], str_locate(filldata$formula[i], ", ")[1,2]+1, str_locate(filldata$formula[i], '[)]')[1,1]-1 ))
-    ind_code <- substr(filldata$formula[i], str_locate(filldata$formula[i], "[(]")[1,2]+1, str_locate(filldata$formula[i], '[,]')[1,1]-1 )
-    
-    eval(parse(text=paste("extdata_", filldata$old_frequency[i], " <- extdata_", filldata$old_frequency[i],
-                          " %>% group_by(country) %>% mutate(",filldata$new_indicator_code[i]," = rollapply(",ind_code,", ",
-                          windowlen, ", ", type, ", align='right', fill=NA)) %>% ungroup()", sep="") ))     
+    a <- glue("extdata_{oldfreq} <- extdata_{oldfreq} %>% group_by(country) %>% mutate({newcode} = {formula}) %>% ungroup()")
+    eval(parse(text = a)); print(a)
     
   } else {}
   
   
-  ##### Aggregating the same variables to lower frequency, m or q -> q or y
+  #### Calculating new rolling variables of the same frequency 
   
-  ## Picking last observation from m i=38
-  if ( (filldata$old_frequency[i]=="m" & filldata$new_frequency[i]!="m") &
-       filldata$active1[i] == 1 & filldata$formula[i]=="last") {
+  if (oldfreq == newfreq & active == 1 & str_detect(formula, "roll") == T ) {
     
-    if (filldata$new_frequency[i]=="y") {a <- "month==12"; b <- ""; c <- ""; j <- 3} else
-    {a <- "month %in% c(3,6,9,12)"; b <- "quarter, "; c <- ", 'quarter' = 'quarter'"; j <- 4}
+    # parse formula
+    type <- reduce2(c('vol', 'avg'), c('sd', 'mean'), .init = substr(formula,5,7), str_replace)
+    windowlen <- as.numeric( substr(formula, str_locate(formula, ", ")[1,2]+1, str_locate(formula, '[)]')[1,1]-1 ) )
+    oldcode <- substr(formula, str_locate(formula, "[(]")[1,2]+1, str_locate(formula, '[,]')[1,1]-1 )
     
-    eval(parse(text=paste("aggreg <- extdata_",filldata$old_frequency[i],
-                          " %>% filter(", a,") %>% select(country_id, year, ", b, filldata$old_indicator_code[i],")",
-                          sep="") ))
-    
-    names(aggreg)[j] <- filldata$new_indicator_code[i]
-    
-    eval(parse(text=paste("extdata_", filldata$new_frequency[i], " <- extdata_",filldata$new_frequency[i],
-                          " %>% left_join(aggreg, by = c('country_id'='country_id', 'year'='year'", c,"))",
-                          sep="") ))
-    
-  } else {}
-  
-  ## Picking last observation from q
-  if ( (filldata$old_frequency[i]=="q" & filldata$new_frequency[i]=="y") &
-       filldata$active1[i] == 1 & filldata$formula[i]=="last") {
-    
-    eval(parse(text=paste("aggreg <- extdata_q %>% filter(quarter==4) %>% select(country_id, year, ",
-                          filldata$old_indicator_code[i],")", sep="") ))
-    
-    names(aggreg)[3] <- filldata$new_indicator_code[i]
-    
-    extdata_y <- extdata_y %>% left_join(aggreg, by = c('country_id'='country_id', 'year'='year'))
-    
-  } else {}
-  
-  ## Calculating means from m   
-  if ( (filldata$old_frequency[i]=="m" & filldata$new_frequency[i]!="m") &
-       filldata$active1[i] == 1 & filldata$formula[i] %in% c("mean","sum") ) {
-    
-    if (filldata$new_frequency[i]=="y") {b <- ""; c <- ""; j <- 3; k <-12} else
-    {b <- ", quarter"; c <- ", 'quarter' = 'quarter'"; j <- 4; k <- 3}
-    
-    eval(parse(text=paste("aggreg <- extdata_",filldata$old_frequency[i],
-                          " %>% select(country_id, year, quarter, ",filldata$old_indicator_code[i],
-                          ") %>% group_by(country_id, year", b,") %>% summarize(mean = mean(",
-                          filldata$old_indicator_code[i],")) %>% ungroup()", 
-                          sep="") ))
-    
-    names(aggreg)[j] <- filldata$new_indicator_code[i]
-    if (filldata$formula[i] == "sum") {aggreg[j] <- aggreg[j]*k} else {}
-    
-    eval(parse(text=paste("extdata_", filldata$new_frequency[i], " <- extdata_",filldata$new_frequency[i],
-                          " %>% left_join(aggreg, by = c('country_id'='country_id', 'year'='year'", c,"))",
-                          sep="") ))
-    
-  } else {}
-  
-  ## Calculating means from q  
-  if ( (filldata$old_frequency[i]=="q" & filldata$new_frequency[i]=="y") &
-       filldata$active1[i] == 1 & filldata$formula[i] %in% c("mean","sum") ) {
-    
-    eval(parse(text=paste("aggreg <- extdata_q %>% select(country_id, year, quarter, ",filldata$old_indicator_code[i],
-                          ") %>% group_by(country_id, year) %>% summarize(mean = mean(",filldata$old_indicator_code[i],")) %>% ungroup()", 
-                          sep="") ))
-    
-    names(aggreg)[3] <- filldata$new_indicator_code[i]
-    if (filldata$formula[i] == "sum") {aggreg[j] <- aggreg[j]*4} else {}
-    
-    extdata_y <- extdata_y %>% left_join(aggreg, by = c('country_id'='country_id', 'year'='year'))
+    a <- glue("extdata_{oldfreq} <- extdata_{oldfreq} %>% group_by(country) %>% \\
+                    mutate({newcode} = rollapply({oldcode}, windowlen, {type}, align='right', fill=NA)) %>% ungroup()")
+    eval(parse(text = a)); print(a)
     
   } else {}
   
   
-  ##### Calculating shares 
+  #### Aggregating the same variables to lower frequency d > m > q > y (d<m but frequency is vice versa)
+  
+  if ( oldfreq < newfreq & active == 1 & (formula=="last"|formula=="first"|formula=="mean"|formula =="max"|formula =="min"|formula=="sum") ) {
+    
+    a <- glue("aggreg <- extdata_{oldfreq} %>% select(date, country_id, {oldcode}) %>% group_by(country_id) %>% \\
+      summarise_by_time(.by = '{newfreq_long}', .date_var = date, {newcode} = {formula}({oldcode}), .type = 'floor') %>% ungroup()")
+    eval(parse(text = a)); print(a)
+    
+    eval(parse(text=glue("extdata_{newfreq} <- extdata_{newfreq} %>% \\
+          left_join(aggreg, by = c('country_id'='country_id', 'date'='date'))") ))
+    
+  } else {}
+  
+  
+  #### Calculating shares 
   #i=68
-  if (filldata$old_frequency[i]==filldata$new_frequency[i] & filldata$active1[i] == 1 & filldata$formula[i] =="share" ) {
+  if (oldfreq == newfreq & active == 1 & filldata$formula[i] =="share" ) {
     
-    if (filldata$new_frequency[i]=="y") {
-      eval(parse(text = paste("extdata_y <- extdata_y %>% group_by(year) %>% mutate(", filldata$new_indicator_code[i],
-                              " = ", filldata$old_indicator_code[i], "*100/sum(", filldata$old_indicator_code[i],
-                              ", na.rm=T)) %>% ungroup()", sep="") ))
-    }
+    a <- glue("extdata_{oldfreq} <- extdata_{oldfreq} %>% group_by({oldfreq_long}) %>% \\
+            mutate({newcode} = {oldcode}*100/sum({oldcode}, na.rm=T)) %>% ungroup()")
+    eval(parse(text = a)); print(a)
     
   } else {}
   
+  # check dimensions and formulas
   if (i %% 10 == 0) {gc(verbose = T)}
   print(paste(i, dim(extdata_m)[1], object.size(extdata_m)/10^6, dim(extdata_q)[1], object.size(extdata_q)/10^6, 
               dim(extdata_y)[1], object.size(extdata_y)/10^6, sep=" "))
   
 }
 
-#str(extdata_y)
-#str(extdata_q)
+
+##### Drop date
+
+for (i in c("y", "q", "m")) { eval(parse(text = glue("extdata_{i} <- extdata_{i} %>% select(-c(date))") )) }
 
 
-###### Export filled data
+##### Export filled data
 
 #### Export schedule
 
@@ -179,7 +138,6 @@ filldatatodict <- filldata %>% filter(active1==1) %>% select(new_indicator, them
 dict <- unique(rbind(impdatatodict, setnames(filldatatodict, names(impdatatodict))))
 
 # Calculates sources for filled data
-
 for (i in 1:dim(filldatatodict)[1]) {
   if (!is.na(filldata$old_indicator_code[i])) {filldatatodict$source_name[i] = filldata$old_indicator_code[i]}
   a <- unlist(str_extract_all( string = filldatatodict$source_name[i], pattern = paste(dict$indicator_code[1:(dim(impdatatodict)[1]+i-1)], collapse = "|") ))
@@ -220,7 +178,7 @@ write_xlsx(data_export, path = "Filled_DB.xlsx", col_names = TRUE, format_header
 setwd('..')
 for (countryname_export in c("Armenia", "Brazil", "Bulgaria", "China", "India", "Kyrgyz Republic", "Russian Federation", "Slovak Republic", "Ukraine")) {
   
-  ###### Export all data on a country to the yearly database (add q and m?)
+  ### Export all data on a country to the yearly database (add q and m?)
   
   #countryname_export = "Russian Federation"
   
@@ -238,7 +196,7 @@ for (countryname_export in c("Armenia", "Brazil", "Bulgaria", "China", "India", 
   write_xlsx(data_export, path = paste(countryname_export, "/Data/", countryname_export, "_data_filled.xlsx", sep=""), 
              col_names = T, format_headers = T)
   
-  ###### Export model data on a country to the yearly database
+  ### Export model data on a country to the yearly database
   
   #countryname_export = "Russian Federation"
   
@@ -258,7 +216,6 @@ for (countryname_export in c("Armenia", "Brazil", "Bulgaria", "China", "India", 
   names(data_export) <- c("y")
   write_xlsx(data_export, path = paste(countryname_export, "/Data/", countryname_export, "_data_model.xlsx", sep=""), 
              col_names = T, format_headers = T)
-  
   
 }
 

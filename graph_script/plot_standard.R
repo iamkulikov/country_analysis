@@ -30,7 +30,7 @@ library("fanplot")
 library("ggfan")
 library("hrbrthemes")
 
-country_name <- "India"
+country_name <- "Bulgaria"
 #country_name <- "Russian Federation"
 
 ###### Define custom color palettes

@@ -2,9 +2,9 @@
 library("archive")
 
 ### Place to save downloaded files
-setwd("D:/Dropbox/Methods_Programs/R_utilities/country_analysis/_DB")
+#setwd("D:/Dropbox/Methods_Programs/R_utilities/country_analysis/_DB")
 #setwd("D:/Dropbox/Methods_Programs/R_utilities/download_data")
-#setwd("C:/Projects/R_utilities/download_data")
+setwd("C:/Projects/country_analysis/_DB")
 datafolder <- "_extsources"
 
 ### Download WGIs

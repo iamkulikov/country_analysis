@@ -19,6 +19,13 @@ download.file(url, dest)
 unzip(zipfile = paste(getwd(), datafolder,"full_xru_d_csv_row.zip", sep="/"), 
       exdir = paste(getwd(), datafolder, sep="/"))
 
+### Download BIS daily data on policy rates
+url <- "https://www.bis.org/statistics/full_cbpol_d_csv_row.zip"
+dest <- paste(getwd(), datafolder,"full_cbpol_d_csv_row.zip", sep="/")
+download.file(url, dest)
+unzip(zipfile = paste(getwd(), datafolder,"full_cbpol_d_csv_row.zip", sep="/"), 
+      exdir = paste(getwd(), datafolder, sep="/"))
+
 ### Download BIS monthly data on policy rates
 url <- "https://www.bis.org/statistics/full_cbpol_m_csv.zip"
 dest <- paste(getwd(), datafolder, "full_cbpol_m_csv.zip", sep="/")

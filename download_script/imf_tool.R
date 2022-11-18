@@ -20,7 +20,7 @@ imfTool <- function(code, database, freq, start, end) {
     #dim(df[[i]])[1] != 0
     if ( is.null(dim(df[[i]])) | !{"X.OBS_VALUE" %in% names(data.frame(df[[i]]))} ) {} else {
       a <- data.frame(df[[i]]) %>% select(any_of(c("X.TIME_PERIOD", "X.OBS_VALUE"))) %>% 
-          mutate(country_id = countries[i]) %>% rbind(a) 
+          mutate(country_id = countries[i], X.OBS_VALUE = as.numeric(X.OBS_VALUE)) %>% rbind(a) 
     }
   }
   
@@ -36,7 +36,7 @@ imfTool <- function(code, database, freq, start, end) {
 # adres <- "http://dataservices.imf.org/REST/SDMX_JSON.svc/CompactData/IFS/A..BGS_BP6_USD.?startPeriod=1987&endPeriod=2025"
 # imfTool(code = "BGS_BP6_USD", database = "IFS", freq = "A", start = "2019", end = "2022")
 # adres <- "http://dataservices.imf.org/REST/SDMX_JSON.svc/CompactData/IFS/Q..NGDP_NSA_XDC.?startPeriod=1987&endPeriod=2025"
-# imfTool(code = "NGDP_NSA_XDC", database = "IFS", freq = "Q", start = "2019", end = "2022")
+# imfTool(code = "NCP_NSA_XDC", database = "IFS", freq = "Q", start = "2019", end = "2022")
 # adres <- "http://dataservices.imf.org/REST/SDMX_JSON.svc/CompactData/IFS/M..PCPI_IX.?startPeriod=2011&endPeriod=2025"
 # imfTool(code = "PCPI_IX", database = "IFS", freq = "M", start = "2011", end = "2022")
 # imfTool(code = "ENEER_IX", database = "IFS", freq = "M", start = "2011", end = "2025")

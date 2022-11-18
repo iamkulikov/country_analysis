@@ -46,19 +46,20 @@ ACRA <- newpal( col = c(rgb(147, 202, 116, maxColorValue = 255),rgb(153, 38, 115
                           "sec4", "sec5", "sec6", "sec7", "sec8" )
 )
 
-seecol(ACRA, 
-       col_brd = "white", lwd_brd = 4, 
-       title = "Colours of ACRA", 
-       mar_note = "For fuck's sake")
+#seecol(ACRA, 
+#       col_brd = "white", lwd_brd = 4, 
+#       title = "Colours of ACRA", 
+#       mar_note = "For fuck's sake")
 
 #using +scale_color_manual(values = ACRA)
 
 
 ###### Import data from local database
 
-setwd("D:/Dropbox/Methods_Programs/R_utilities/country_analysis/_DB")
+setwd("C:/Projects/country_analysis/_DB")
+#setwd("D:/Dropbox/Methods_Programs/R_utilities/country_analysis/_DB")
 #setwd("D:/Dropbox/Methods_Programs/R_utilities/download_data")
-#setwd("C:/Projects/R_utilities/download_data")
+
 data_fname <- "Filled_DB.xlsx"
 a <- length(read_excel(data_fname, sheet = "y", col_names = T, skip=0, n_max = 0))
 extdata_y <- read_excel(data_fname, sheet = "y", col_names = T, skip=0,
@@ -91,7 +92,8 @@ peers_neighbours_iso2c <- countrycode(peers_neighbours_iso3c, origin = 'iso3c', 
 
 ##### Plotting schedule
 
-setwd(paste("D:/Dropbox/Methods_Programs/R_utilities/country_analysis/", country_name, "/Auto_report", sep=""))
+#setwd(paste("D:/Dropbox/Methods_Programs/R_utilities/country_analysis/", country_name, "/Auto_report", sep=""))
+setwd(paste("C:/Projects/country_analysis/", country_name, "/Auto_report", sep=""))
 plotparam_fname <- "2_graphlib.xlsx"
 graphdata <- read_excel(plotparam_fname, sheet = "library", col_names = T, skip=1)
 

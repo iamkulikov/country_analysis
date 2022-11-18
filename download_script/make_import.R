@@ -10,6 +10,8 @@ setwd("C:/Projects/country_analysis/_DB")
 param_fname <- "0_database_params.xlsx"
 data_fname <- "Imported_DB.xlsx"
 data_d_fname <- "Imported_d_DB.xlsx"
+#data_fname <- "Temp.xlsx"
+#data_d_fname <- "Temp_d.xlsx"
 
 ##### Import function definitions
 source("../_country_analysis_scripts/download_script/import.R")
@@ -17,7 +19,7 @@ source("../_country_analysis_scripts/download_script/import.R")
 ##### New import sequence starts
 
   readImportParams(param_fname = param_fname, update_mode = update_mode)
-  print(impplan)
+  #print(impplan)
   if (update_mode == 0) { generateDataContainers(from = year_first, to = year_final) } else {
     importOldData(data_fname, data_d_fname)
   }
@@ -34,7 +36,6 @@ source("../_country_analysis_scripts/download_script/import.R")
   }
   
   preExport(saveplan = saveplan, extdata_y = extdata_y, extdata_q = extdata_q, extdata_m = extdata_m, extdata_d = extdata_d)
-  print(head(extdata_y))
+  #print(head(extdata_y))
   writeDatafiles(data_fname = data_fname, data_d_fname = data_d_fname, extdata_y = extdata_y, extdata_q = extdata_q, extdata_m = extdata_m, extdata_d = extdata_d, dict = dict, dict_d = dict_d)
   
-# переписать чтобы impplan после update содержал все, что было + update==1

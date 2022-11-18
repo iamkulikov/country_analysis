@@ -1,6 +1,5 @@
 library("dplyr")
 library("reshape2")
-library("ggplot2")
 library("countrycode")
 library("readxl")
 library("tidyr")
@@ -16,9 +15,9 @@ library("lubridate")
 
 ##### Import data
 
-setwd("D:/Dropbox/Methods_Programs/R_utilities/country_analysis/_DB")
+setwd("C:/Projects/country_analysis/_DB")
+#setwd("D:/Dropbox/Methods_Programs/R_utilities/country_analysis/_DB")
 #setwd("D:/Dropbox/Methods_Programs/R_utilities/download_data")
-#setwd("C:/Projects/R_utilities/download_data")
 
 data_fname <- "Imported_DB.xlsx"
 data_d_fname <- "Imported_d_DB.xlsx"
@@ -199,11 +198,11 @@ for (countryname_export in c("Armenia", "Brazil", "Bulgaria", "China", "India", 
   ### Export model data on a country to the yearly database
   
   #countryname_export = "Russian Federation"
-  
+  # убрал educ и hci пока что из select-а
   extdata_y %>% filter(country==countryname_export) %>% select(-c("country","country_id","year")) %>%
     select(gdp_pc_usd, gdp_pc_ppp, gdp_growth, gdp_usd, gdp, cpi_av, deflator, rnd, gcfc_gdp, open, gg_debt, gg_rev, gg_debttorev,
            gg_exp_int, gg_bal, ca_usd, imp_gs_usd, intres_usd, intrestoimp, exp_div, neer_av, usdlc_eop, usdlc_av, wgi_va_est, wgi_ps_est,
-           wgi1, wgi_cc_est, wgi_rl_est, wgi_rq_est, wgi_ge_est, wgi2, educ, amr_male, amr_female, amr, life_exp, hci)-> t_data_export
+           wgi1, wgi_cc_est, wgi_rl_est, wgi_rq_est, wgi_ge_est, wgi2, amr_male, amr_female, amr, life_exp)-> t_data_export
   extdata_y %>% filter(country==countryname_export) %>% select("year") -> years
   
   data_export <- data.frame(t(t_data_export))

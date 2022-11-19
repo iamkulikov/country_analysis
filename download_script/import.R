@@ -66,6 +66,7 @@ generateDataContainers <- function(from, to) {
   
 }
 
+
 ##### Function to import previously downloaded data
 importOldData <- function(data_fname, data_d_fname) {
   
@@ -437,6 +438,41 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
                               suffix=c("","_old")) -> extdata_m
     }  
     
+    
+    ##### Import monthly BIS data on effective exchange rates
+    
+    bis_impplan <- impplan %>% filter(active==1, source_name=="BIS", retrieve_type=="file", database_name=="Effective exchange rate indices (monthly)")
+    bis_names <- bis_impplan$indicator_code
+    bis_codes <- bis_impplan$retrieve_code
+    bis_fname <- bis_impplan$file_name
+    #bis_names <- "neer_av"
+    #bis_fname <- "./_extsources/WS_EER_M_csv_col.csv"
+    
+    if (length(bis_names)>0) {
+     
+      print("BIS-EER-m")
+      
+      for (i in 1:length(bis_names)) {
+        
+        bis_data <- read.csv(bis_fname[i], header = TRUE, sep = ",", quote = "\"",
+                             dec = ".", fill = TRUE, comment.char = "", na.strings=c(0,"..","","NA"))
+        
+        bis_data <- bis_data %>% filter(EER_BASKET == "B", EER_TYPE == bis_codes[i]) %>% 
+          select(REF_AREA, starts_with("X")) %>%
+          pivot_longer(!REF_AREA, names_to = "year", values_to = "value") %>% 
+          mutate(value = as.numeric(value))
+        
+        eval(parse(text = glue("bis_data <- bis_data %>% rename('{bis_names[i]}' = 'value', 'country_id' = 'REF_AREA')") ))
+        
+        bis_data <- bis_data %>% 
+          mutate(month = as.numeric(substr(year,7,8)), year = as.numeric(substr(year,2,5)))
+        
+        extdata_m %>% left_join(bis_data, by = c("country_id" = "country_id", "year" = "year", "month" = "month"),
+                                suffix=c("","_old")) -> extdata_m
+      }
+    }   
+    
+    
     ##### Import IMF Fiscal monitor structural indicators
     
     fm_impplan <- impplan %>% filter(active==1, database_name=="FM", retrieve_type=="file", source_frequency=="y")
@@ -530,7 +566,36 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
       extdata_d <- extdata_d %>% left_join(covid_data, by=c("country_id", "date"), suffix=c("","_old"))
   
     }
+    
+    ##### Import UN HDR data
         
+    unhdr_impplan <- impplan %>% filter(active==1, source_name=="UN", retrieve_type=="file", database_name=="HDR")
+    unhdr_names <- unhdr_impplan$indicator_code
+    unhdr_codes <- unhdr_impplan$retrieve_code
+    unhdr_fname <- unhdr_impplan$file_name
+    
+    if (length(unhdr_names)>0) {
+      
+      print("UN-HDR")
+      
+      for (i in 1:length(unhdr_names)) {
+        
+        unhdr_data <- read.csv(unhdr_fname[i], header = TRUE, sep = ",", quote = "\"",
+                             dec = ".", fill = TRUE, comment.char = "", na.strings=c(0,"..","","NA"))
+        eval(parse(text = glue("unhdr_data <- unhdr_data %>% select(iso3, starts_with('{unhdr_codes[i]}_1'), starts_with('{unhdr_codes[i]}_2'))") ))
+          
+        unhdr_data <- unhdr_data %>% pivot_longer(!iso3, names_to = "year", values_to = "value") %>% 
+          mutate(year = as.numeric(str_sub(year, -4, -1)), value = as.numeric(value)) %>%
+          mutate(iso3 = countrycode(iso3, origin = 'iso3c', destination = 'iso2c', 
+                              custom_match = c('ROM' = 'RO','ADO' = 'AD','ANT' = 'AN','KSV' = 'XK','TMP' = 'TL','WBG' = 'PS','ZAR' = 'CD')) )
+        
+        eval(parse(text = glue("unhdr_data <- unhdr_data %>% rename('{unhdr_names[i]}' = 'value', 'country_id' = 'iso3')") ))
+        
+        extdata_y %>% left_join(unhdr_data, by = c("country_id" = "country_id", "year" = "year"),
+                                suffix=c("","_old")) -> extdata_y
+      }
+    }   
+    
     ##### Return imported
     .GlobalEnv$extdata_y <- extdata_y
     .GlobalEnv$extdata_q <- extdata_q

@@ -40,6 +40,12 @@ download.file(url, dest)
 unzip(zipfile = paste(getwd(), datafolder, "full_eer_m_csv.zip", sep="/"), 
       exdir = paste(getwd(), datafolder, sep="/"))
 
+### Download UN HDR data (links should be updated manually)
+
+url <- "https://hdr.undp.org/sites/default/files/2021-22_HDR/HDR21-22_Composite_indices_complete_time_series.csv"
+dest <- paste(getwd(), datafolder, "HDR.csv", sep="/")
+download.file(url, dest)
+
 ### Download UNCTAD diversification index
 url <- "http://unctadstat.unctad.org/7zip/US_ConcentDiversIndices.csv.7z"
 dest <- paste(getwd(), datafolder, "US_ConcentDiversIndices.csv.7z", sep="/")

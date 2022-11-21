@@ -40,12 +40,6 @@ download.file(url, dest)
 unzip(zipfile = paste(getwd(), datafolder, "full_eer_m_csv.zip", sep="/"), 
       exdir = paste(getwd(), datafolder, sep="/"))
 
-### Download UN HDR data (links should be updated manually)
-
-url <- "https://hdr.undp.org/sites/default/files/2021-22_HDR/HDR21-22_Composite_indices_complete_time_series.csv"
-dest <- paste(getwd(), datafolder, "HDR.csv", sep="/")
-download.file(url, dest)
-
 ### Download UNCTAD diversification index
 url <- "http://unctadstat.unctad.org/7zip/US_ConcentDiversIndices.csv.7z"
 dest <- paste(getwd(), datafolder, "US_ConcentDiversIndices.csv.7z", sep="/")
@@ -63,5 +57,24 @@ unzip(zipfile = paste(getwd(), datafolder, "IDS_Excel.zip",sep="/"),
 ### Download COVID data from Ourworldindata
 url <- "https://covid.ourworldindata.org/data/owid-covid-data.csv"
 dest <- paste(getwd(), datafolder, "owid-covid-data.csv", sep="/")
+download.file(url, dest, mode="wb")
+
+### Download Fiscal Monitor structural indicators table 
+### and insert it to the FiscalMonitor.xlsx file manually!!!
+### https://www.imf.org/en/Publications/FM
+
+### Download fresh WEO database, name it WEO.xlsx and rename the sheet to y_weo manually!!!!!
+### https://www.imf.org/en/Publications/SPROLLs/world-economic-outlook-databases#sort=%40imfdate%20descending
+
+### Download UN HDR data (links should be updated manually!!!!!)
+### https://hdr.undp.org/data-center/documentation-and-downloads
+url <- "https://hdr.undp.org/sites/default/files/2021-22_HDR/HDR21-22_Composite_indices_complete_time_series.csv"
+dest <- paste(getwd(), datafolder, "HDR.csv", sep="/")
+download.file(url, dest)
+
+### Download Chinn-Ito financial system classification (links should be updated manually!!!!!)
+### http://web.pdx.edu/~ito/trilemma_indexes.htm
+url <- "https://web.pdx.edu/~ito/trilemma_indexes_update2020.xlsx"
+dest <- paste(getwd(), datafolder, "trilemma_indexes_update2020.xlsx", sep="/")
 download.file(url, dest, mode="wb")
 

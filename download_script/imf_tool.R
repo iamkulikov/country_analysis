@@ -8,19 +8,22 @@ imfTool <- function(code, database, freq, start, end) {
   # database <- "IFS"
   # freq <- "M"
   if (database =="PCPS" | database =="FDI" | {database == "IFS" & freq != 'A'} | database =="FM" ) {
-    df <- obs} else {
+    if (database =="PCPS") {df <- obs[[1]]} else {df <- obs}
+    } else {
     df <- sapply(obs, as.data.table, simplify = T) }
-  # В PCPS нужно сузить запрос до типа индекса
   
-  a <- NULL
-  for (i in 1:length(df)) {
-    #print(i)
-    #print(data.frame(df[[i]]))
-    #print(dim(df[[i]]))
-    #dim(df[[i]])[1] != 0
-    if ( is.null(dim(df[[i]])) | !{"X.OBS_VALUE" %in% names(data.frame(df[[i]]))} ) {} else {
-      a <- data.frame(df[[i]]) %>% select(any_of(c("X.TIME_PERIOD", "X.OBS_VALUE"))) %>% 
-          mutate(country_id = countries[i], X.OBS_VALUE = as.numeric(X.OBS_VALUE)) %>% rbind(a) 
+  if (database =="PCPS") {a <- data.frame(df) %>% mutate(iso2c = "1W", X.OBS_VALUE = as.numeric(X.OBS_VALUE))} else {
+  
+    a <- NULL
+    for (i in 1:length(df)) {
+      #print(i)
+      #print(data.frame(df[[i]]))
+      #print(dim(df[[i]]))
+      #dim(df[[i]])[1] != 0
+      if ( is.null(dim(df[[i]])) | !{"X.OBS_VALUE" %in% names(data.frame(df[[i]]))} ) {} else {
+        a <- data.frame(df[[i]]) %>% select(any_of(c("X.TIME_PERIOD", "X.OBS_VALUE"))) %>% 
+            mutate(country_id = countries[i], X.OBS_VALUE = as.numeric(X.OBS_VALUE)) %>% rbind(a) 
+      }
     }
   }
   

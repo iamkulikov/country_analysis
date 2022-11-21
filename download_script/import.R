@@ -488,7 +488,7 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
         #i=3
         fm_data <- read_excel(fm_fname[i], sheet = fm_sheets[i], col_names = T, na = "#N/A", col_types='text')
         
-        fm_data <- fm_data %>% pivot_longer(cols = !contains('country'), names_to = 'year', values_to = ) %>%
+        fm_data <- fm_data %>% pivot_longer(cols = !contains('country'), names_to = 'year', values_to = 'value') %>%
           mutate(country_id = countrycode(country_code, origin = 'iso3c', destination = 'iso2c', 
               custom_match = c('ROM' = 'RO','ADO' = 'AD','ANT' = 'AN','KSV' = 'XK','TMP' = 'TL','WBG' = 'PS','ZAR' = 'CD')),
               year = as.numeric(as.character(year)), value = as.numeric(value) ) %>% select(country_id, year, value)
@@ -594,7 +594,69 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
         extdata_y %>% left_join(unhdr_data, by = c("country_id" = "country_id", "year" = "year"),
                                 suffix=c("","_old")) -> extdata_y
       }
-    }   
+    }
+    
+    ### Import Chinn-Ito financial system classification
+    
+    ci_impplan <- impplan %>% filter(active==1, database_name=="Chinn-Ito", retrieve_type=="file", source_frequency=="y")
+    ci_names <- ci_impplan$indicator_code
+    ci_codes <- ci_impplan$retrieve_code
+    ci_fname <- ci_impplan$file_name
+    ci_sheets <- ci_impplan$sheet_name
+    
+    if (length(ci_names)>0) {
+      
+      print("Chinn-Ito")
+      for (i in seq_along(ci_names)) {
+        
+        #i=1
+        ci_data <- read_excel(ci_fname[i], sheet = ci_sheets[i], col_names = T, na = "#N/A", col_types='text')
+        
+        ci_data <- eval(parse(text = glue("ci_data %>% select('IMF-World Bank Country Code', year,'{ci_codes[i]}')") ))
+        ci_data <- eval(parse(text = glue("rename(ci_data,'country_id'='IMF-World Bank Country Code', 'value'='{ci_codes[i]}')") ))
+        
+        ci_data <- ci_data %>% mutate(country_id = countrycode(country_id, origin = 'imf', destination = 'iso2c'),
+                 year = as.numeric(year), value = as.numeric(value) ) %>% select(country_id, year, value)
+        
+        ci_data <- eval(parse(text = glue("rename(ci_data,'{ci_names[i]}'='value')") ))
+        
+        extdata_y <- extdata_y %>% left_join(ci_data, by = c("country_id" = "country_id", "year"="year"), suffix=c("","_old"))
+        
+      }
+      
+    }
+    
+    ### Import WEO outlook
+    
+    weo_impplan <- impplan %>% filter(active==1, database_name=="WEO", retrieve_type=="file", source_frequency=="y")
+    weo_names <- weo_impplan$indicator_code
+    weo_codes <- weo_impplan$retrieve_code
+    weo_fname <- weo_impplan$file_name
+    weo_sheets <- weo_impplan$sheet_name
+    
+    if (length(weo_names)>0) {
+      
+      print("IMF-WEO")
+      for (i in seq_along(weo_names)) {
+        
+        #i=1
+        weo_data <- read_excel(weo_fname[i], sheet = weo_sheets[i], col_names = T, na = "#N/A", col_types='text')
+        weo_data <- weo_data %>% rename('country_id' = 'ISO', 'code' = 'WEO Subject Code')
+        weo_data <- eval(parse(text = glue("weo_data %>% filter(code == '{weo_codes[i]}')") ))
+        
+        weo_data <- weo_data %>% select(country_id, starts_with('19'), starts_with('20')) %>%
+              mutate(country_id = countrycode(country_id, origin = 'iso3c', destination = 'iso2c', 
+                      custom_match = c('ROM' = 'RO','ADO' = 'AD','ANT' = 'AN','KSV' = 'XK','TMP' = 'TL','WBG' = 'PS','ZAR' = 'CD'))) %>%
+              pivot_longer(!country_id, names_to = "year", values_to = "value") %>%
+              mutate(year = as.numeric(year), value = as.numeric(value))
+        
+        weo_data <- eval(parse(text = glue("rename(weo_data,'{weo_names[i]}'='value')") ))
+        
+        extdata_y <- extdata_y %>% left_join(weo_data, by = c("country_id" = "country_id", "year"="year"), suffix=c("","_old"))
+        
+      }
+      
+    }
     
     ##### Return imported
     .GlobalEnv$extdata_y <- extdata_y

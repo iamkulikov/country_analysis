@@ -38,7 +38,7 @@ plot_standard:
   
   structure_dynamic: сделать BOP и IIP
   
-  triangle: сделать по образцу из туториала  Rilostat
+  triangle: сделать по образцу из туториала  Rilostat с данныи Chinn-Ito
 
 knit_report:
   

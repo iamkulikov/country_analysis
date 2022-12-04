@@ -63,7 +63,9 @@ download.file(url, dest, mode="wb")
 ### and insert it to the FiscalMonitor.xlsx file manually!!!
 ### https://www.imf.org/en/Publications/FM
 
-### Download fresh WEO database, name it WEO.xlsx and rename the sheet to y_weo manually!!!!!
+### Download fresh WEO database
+### After download - rename to csv, while openning change all column types to text, then change commas to spaces and dots - to commas
+### name it WEO.xlsx and rename the sheet to y_weo manually!!!!!
 ### https://www.imf.org/en/Publications/SPROLLs/world-economic-outlook-databases#sort=%40imfdate%20descending
 
 ### Download UN HDR data (links should be updated manually!!!!!)

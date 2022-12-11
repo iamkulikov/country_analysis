@@ -1,14 +1,13 @@
 library("dplyr")
 library("reshape2")
 library("WDI")
-#library("wbstats")
 library("countrycode")
 library("readxl")
+library("readr")
 library("tidyr")
 library("data.table")
 library("writexl")
 library("stringr")
-#library("imfr")
 library("gsubfn")
 library("jsonlite")
 library("Rilostat")
@@ -688,16 +687,19 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
         for (i in seq_along(weo_names)) {
           
           #i=1
-          weo_data <- read_excel(weo_fname[i], sheet = weo_sheets[i], col_names = T, na = "#N/A", col_types='text')
-          weo_data <- weo_data %>% rename('country_id' = 'ISO', 'code' = 'WEO Subject Code')
+          #weo_data <- read_excel(weo_fname[i], sheet = weo_sheets[i], col_names = T, na = "#N/A", col_types='text')
+          weo_data <- read_tsv(weo_fname[i], na = c("", "NA", "n/a"), show_col_types = FALSE)
+          weo_data <- weo_data %>% rename('country_id' = 'ISO', 'code' = 'WEO Subject Code') %>%
+            mutate_at(.vars = vars(starts_with('19'), starts_with('20')), .funs = as.numeric)
           weo_data <- eval(parse(text = glue("weo_data %>% filter(code == '{weo_codes[i]}')") ))
           
           weo_data <- weo_data %>% select(country_id, starts_with('19'), starts_with('20')) %>%
                 mutate(country_id = countrycode(country_id, origin = 'iso3c', destination = 'iso2c', 
                         custom_match = c('ROM' = 'RO','ADO' = 'AD','ANT' = 'AN','KSV' = 'XK','TMP' = 'TL','WBG' = 'PS','ZAR' = 'CD'))) %>%
                 pivot_longer(!country_id, names_to = "year", values_to = "value") %>%
-                mutate(year = as.numeric(year), value = as.numeric(value))
-          
+                mutate(year = as.numeric(year), value = as.numeric(value)) %>%
+                mutate(value = value + 0.000006) # needed to prevent excel from treating as dates
+
           weo_data <- eval(parse(text = glue("rename(weo_data,'{weo_names[i]}'='value')") ))
           
           extdata_y <- extdata_y %>% left_join(weo_data, by = c("country_id" = "country_id", "year"="year"), suffix=c("","_old"))

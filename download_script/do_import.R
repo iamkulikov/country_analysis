@@ -34,7 +34,7 @@ source("../_country_analysis_scripts/download_script/import.R")
     impplan_temp <- updateImportPlan(impplan = impplan_temp, extdata_y = extdata_y, extdata_q = extdata_q, extdata_m = extdata_m, extdata_d = extdata_d)
     
   }
-  
+
   preExport(saveplan = saveplan, extdata_y = extdata_y, extdata_q = extdata_q, extdata_m = extdata_m, extdata_d = extdata_d)
   #print(head(extdata_y))
   writeDatafiles(data_fname = data_fname, data_d_fname = data_d_fname, extdata_y = extdata_y, extdata_q = extdata_q, extdata_m = extdata_m, extdata_d = extdata_d, dict = dict, dict_d = dict_d)

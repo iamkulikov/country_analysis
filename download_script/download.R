@@ -55,6 +55,7 @@ unzip(zipfile = paste(getwd(), datafolder, "IDS_Excel.zip",sep="/"),
       exdir = paste(getwd(), datafolder, sep="/"))
 
 ### Download COVID data from Ourworldindata
+### or manually from here https://github.com/owid/covid-19-data/blob/master/public/data/owid-covid-data.csv
 url <- "https://covid.ourworldindata.org/data/owid-covid-data.csv"
 dest <- paste(getwd(), datafolder, "owid-covid-data.csv", sep="/")
 download.file(url, dest, mode="wb")
@@ -63,9 +64,8 @@ download.file(url, dest, mode="wb")
 ### and insert it to the FiscalMonitor.xlsx file manually!!!
 ### https://www.imf.org/en/Publications/FM
 
-### Download fresh WEO database
-### After download - rename to csv, while openning change all column types to text, then change commas to spaces and dots - to commas
-### name it WEO.xlsx and rename the sheet to y_weo manually!!!!!
+### Download fresh WEO database in tab-delimited form - rename as WEO. 
+### Attention to number to date conversion
 ### https://www.imf.org/en/Publications/SPROLLs/world-economic-outlook-databases#sort=%40imfdate%20descending
 
 ### Download UN HDR data (links should be updated manually!!!!!)

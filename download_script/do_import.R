@@ -29,7 +29,9 @@ source("../_country_analysis_scripts/download_script/import.R")
     
     print(glue("Downloading attempt {t} of {n_attempts}"))
     if ( dim(impplan_temp)[1] == 0 ) {print("Nothing left to import"); break}
+    print(dim(extdata_y))
     dropDataToUpdate(impplan = impplan_temp, extdata_y = extdata_y, extdata_q = extdata_q, extdata_m = extdata_m, extdata_d = extdata_d)
+    print(dim(extdata_y))
     tryImport(impplan = impplan_temp, extdata_y = extdata_y, extdata_q = extdata_q, extdata_m = extdata_m, extdata_d = extdata_d)
     impplan_temp <- updateImportPlan(impplan = impplan_temp, extdata_y = extdata_y, extdata_q = extdata_q, extdata_m = extdata_m, extdata_d = extdata_d)
     

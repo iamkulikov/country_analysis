@@ -1,3 +1,7 @@
+#   All the functions to import data
+
+##  Load packages
+
 library("dplyr")
 library("reshape2")
 library("WDI")
@@ -16,10 +20,10 @@ library("httr")
 library("jsonlite") 
 library("rlist")
 
-###### Import custom tools
+## Import custom tools
 source("../_country_analysis_scripts/download_script/imf_tool.R")
 
-##### Function to set import/update schedule
+## Function to set import/update schedule
 
 readImportParams <- function (param_fname, update_mode) {
   
@@ -33,7 +37,7 @@ readImportParams <- function (param_fname, update_mode) {
   
 }
 
-###### Function to generate data containers
+## Function to generate data containers
 
 generateDataContainers <- function(from, to) {
   
@@ -60,13 +64,11 @@ generateDataContainers <- function(from, to) {
   .GlobalEnv$extdata_d <- expand.grid(paste(countries$country,countries$country_id,sep="."),days) %>%
     mutate(country_id = str_sub(Var1, - 2, - 1) , country = str_sub(Var1, 1, -4)) %>%
     rename("date"="Var2") %>% select(country,country_id,date)
-  
-  #test <- extdata_y %>% filter(country=="Russian Federation", year>2013)
-  
+
 }
 
+## Function to import previously downloaded data
 
-##### Function to import previously downloaded data
 importOldData <- function(data_fname, data_d_fname) {
   
     #data_fname <- "Imported_DB.xlsx"
@@ -84,7 +86,7 @@ importOldData <- function(data_fname, data_d_fname) {
   }
 
 
-###### Function to update import schedule after each cycle of import attempts
+## Function to update import schedule after each cycle of import attempts
 
 updateImportPlan <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
   
@@ -114,7 +116,7 @@ updateImportPlan <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d
 
 }
 
-##### Function to drop data, which needs to be updated
+## Function to drop data, which needs to be updated
 
 dropDataToUpdate <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
 
@@ -123,12 +125,14 @@ dropDataToUpdate <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d
       eval(parse( text = paste0("if ('", impplan$indicator_code[i], "' %in% names(extdata_", impplan$source_frequency[i],")) { .GlobalEnv$extdata_",
                                 impplan$source_frequency[i], " <- extdata_",
                                 impplan$source_frequency[i], " %>% select(-c(", impplan$indicator_code[i],")) }") ))
-    }
+      print(glue("dropping {impplan$indicator_code[i]}"))
+    
+      }
   
 }
 
 
-###### Main import function for APIs and local files 
+## Main import function for APIs and local files 
 
 tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
       
@@ -638,7 +642,7 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
     
     })  
       
-    ### Import Chinn-Ito financial system classification
+    ##### Import Chinn-Ito financial system classification
     try({
         
       ci_impplan <- impplan %>% filter(active==1, database_name=="Chinn-Ito", retrieve_type=="file", source_frequency=="y")
@@ -672,7 +676,7 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
       
     })  
     
-    ### Import WEO outlook
+    ##### Import WEO outlook
     try({
       
       weo_impplan <- impplan %>% filter(active==1, database_name=="WEO", retrieve_type=="file", source_frequency=="y")
@@ -686,10 +690,11 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
         print("IMF-WEO")
         for (i in seq_along(weo_names)) {
           
+          #weo_fname = "./_extsources/WEO.xls"
           #i=1
-          #weo_data <- read_excel(weo_fname[i], sheet = weo_sheets[i], col_names = T, na = "#N/A", col_types='text')
-          weo_data <- read_tsv(weo_fname[i], na = c("", "NA", "n/a"), show_col_types = FALSE)
+          weo_data <- read_tsv(weo_fname[i], na = c("", "NA", "n/a"), col_types = "c", show_col_types = FALSE)
           weo_data <- weo_data %>% rename('country_id' = 'ISO', 'code' = 'WEO Subject Code') %>%
+            mutate_at(.vars = vars(starts_with('19'), starts_with('20')), .funs = gsub, patter = ",", replacement = "") %>%
             mutate_at(.vars = vars(starts_with('19'), starts_with('20')), .funs = as.numeric)
           weo_data <- eval(parse(text = glue("weo_data %>% filter(code == '{weo_codes[i]}')") ))
           
@@ -721,28 +726,28 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
 }
 
 
-##### Functions to export data from memory
+# Functions to export data from memory
 
-#### Function to generate dict and keep only planned imports
+## Function to generate dict and keep only planned imports
 
 preExport <- function(saveplan, extdata_y, extdata_q, extdata_m, extdata_d) {
 
     dict <- saveplan %>% filter(active==1) %>% select(indicator, theme, indicator_code, source_frequency, source_name)
     
-    # Collecting lists of what we planned to download
+    ### Collecting lists of what we planned to download
     dict <- dict %>% arrange(theme, indicator_code)
     for (i in c("y", "q", "m", "d")) {
       eval(parse(text = glue("dict_{i} <- dict %>% filter(source_frequency=='{i}')") ))
     }
     print(dict)
     
-    # Filtering databases to contain only planned output
+    ### Filtering databases to contain only planned output
     .GlobalEnv$extdata_y <- extdata_y %>% select(country, country_id, year, any_of(dict_y$indicator_code))
     .GlobalEnv$extdata_q <- extdata_q %>% select(country, country_id, year, quarter, any_of(dict_q$indicator_code))
     .GlobalEnv$extdata_m <- extdata_m %>% select(country, country_id, year, quarter, month, any_of(dict_m$indicator_code))
     .GlobalEnv$extdata_d <- extdata_d %>% select(country, country_id, date, any_of(dict_d$indicator_code))
     
-    # Checking dict if the data was successfully downloaded
+    ### Checking dict if the data was successfully downloaded
     downloaded <- data.frame(indicator_code = c(names(extdata_y), names(extdata_q), names(extdata_m), names(extdata_d)))
     downloaded$source_frequency <- c(rep("y", length(names(extdata_y))), rep("q", length(names(extdata_q))), rep("m", length(names(extdata_m))), rep("d", length(names(extdata_d))))
     downloaded <- downloaded %>% mutate(success = "+")
@@ -750,7 +755,7 @@ preExport <- function(saveplan, extdata_y, extdata_q, extdata_m, extdata_d) {
       mutate(n_countries = 0, start_year = 0, end_year = 0, n_points = 0)
     extdata_d <- extdata_d %>% mutate(year = year(date))
     
-    # Calculating availability of data: non-empty countries and years
+    ### Calculating availability of data: non-empty countries and years
     for (i in seq_along(dict$indicator)) {
       a <- eval(parse(text = glue("extdata_{dict$source_frequency[i]} %>% 
         select(country_id, year, {dict$indicator_code[i]}) %>% 
@@ -761,13 +766,13 @@ preExport <- function(saveplan, extdata_y, extdata_q, extdata_m, extdata_d) {
       dict$n_points[i] <- a %>% select(country_id) %>% dim() %>% '['(1)
     }
     
-    # Return dict
+    ### Return dict
     .GlobalEnv$dict_d <- dict %>% filter(source_frequency == "d")
     .GlobalEnv$dict <- dict %>% filter(source_frequency != "d")
 
 }
 
-#### Export data on all countries to the yearly/quarterly/monthly database
+## Export data on all countries to the yearly/quarterly/monthly database
 
 writeDatafiles <- function(data_fname, data_d_fname, extdata_y, extdata_q, extdata_m, extdata_d, dict, dict_d) {
 
@@ -781,7 +786,7 @@ writeDatafiles <- function(data_fname, data_d_fname, extdata_y, extdata_q, extda
 
 }
 
-###### Export data on a specific country to the yearly database
+## Export data on a specific country to the yearly database
 
 #countryname_export = "Russian Federation"
 

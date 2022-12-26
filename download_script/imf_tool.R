@@ -69,7 +69,9 @@ imfTool <- function(code, database, freq, start, end) {
 # adres <- "http://dataservices.imf.org/REST/SDMX_JSON.svc/CompactData/FDI/A..FD_FID_IX.?startPeriod=2000&endPeriod=2022"
 # imfTool(code = "FD_FID_IX", database = "FDI", freq = "A", start = "2019", end = "2022")
 
-# GFS не получается сделать запрос
+# GFS
+# adres <- "http://dataservices.imf.org/REST/SDMX_JSON.svc/CompactData/GFSR/A..S13.XDC_R_B1GQ.W0_S1_G111"
+# imfTool(code = "FD_FID_IX", database = "FDI", freq = "A", start = "2019", end = "2022")
 
 #GFSR - Revenues
 #GFSSSUC - Sources and Uses of Cash

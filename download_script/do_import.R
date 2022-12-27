@@ -18,26 +18,28 @@ source("../_country_analysis_scripts/download_script/import.R")
 
 ##### New import sequence starts
 
-  readImportParams(param_fname = param_fname, update_mode = update_mode)
-  #print(impplan)
-  if (update_mode == 0) { generateDataContainers(from = year_first, to = year_final) } else {
-    importOldData(data_fname, data_d_fname)
+  imp_params <- readImportParams(param_fname = param_fname, update_mode = update_mode)
+  for(i in seq_along(imp_params)) { assign(names(imp_params)[i], imp_params[[i]]) }
+  
+  if (update_mode == 0) { 
+      D <- generateDataContainers(from = year_first, to = year_final) 
+  } else {
+      D <- importOldData(data_fname, data_d_fname)
   }
+  
+  #for(i in seq_along(data_containers)) { assign(names(data_containers)[i], data_containers[[i]]) }
   impplan_temp <- impplan
   
   for (t in 1:n_attempts) {
     
     print(glue("Downloading attempt {t} of {n_attempts}"))
     if ( dim(impplan_temp)[1] == 0 ) {print("Nothing left to import"); break}
-    print(dim(extdata_y))
-    dropDataToUpdate(impplan = impplan_temp, extdata_y = extdata_y, extdata_q = extdata_q, extdata_m = extdata_m, extdata_d = extdata_d)
-    print(dim(extdata_y))
-    tryImport(impplan = impplan_temp, extdata_y = extdata_y, extdata_q = extdata_q, extdata_m = extdata_m, extdata_d = extdata_d)
-    impplan_temp <- updateImportPlan(impplan = impplan_temp, extdata_y = extdata_y, extdata_q = extdata_q, extdata_m = extdata_m, extdata_d = extdata_d)
+    D <- dropDataToUpdate(impplan = impplan_temp, extdata_y = D$extdata_y, extdata_q = D$extdata_q, extdata_m = D$extdata_m, extdata_d = D$extdata_d)
+    D <- tryImport(impplan = impplan_temp, extdata_y = D$extdata_y, extdata_q = D$extdata_q, extdata_m = D$extdata_m, extdata_d = D$extdata_d)
+    impplan_temp <- updateImportPlan(impplan = impplan_temp, extdata_y = D$extdata_y, extdata_q = D$extdata_q, extdata_m = D$extdata_m, extdata_d = D$extdata_d)
     
   }
 
-  preExport(saveplan = saveplan, extdata_y = extdata_y, extdata_q = extdata_q, extdata_m = extdata_m, extdata_d = extdata_d)
-  #print(head(extdata_y))
-  writeDatafiles(data_fname = data_fname, data_d_fname = data_d_fname, extdata_y = extdata_y, extdata_q = extdata_q, extdata_m = extdata_m, extdata_d = extdata_d, dict = dict, dict_d = dict_d)
+  D <- preExport(saveplan = saveplan, extdata_y = D$extdata_y, extdata_q = D$extdata_q, extdata_m = D$extdata_m, extdata_d = D$extdata_d)
+  writeDatafiles(data_fname = data_fname, data_d_fname = data_d_fname, extdata_y = D$extdata_y, extdata_q = D$extdata_q, extdata_m = D$extdata_m, extdata_d = D$extdata_d, dict = D$dict, dict_d = D$dict_d)
   

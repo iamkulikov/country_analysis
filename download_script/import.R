@@ -29,11 +29,12 @@ readImportParams <- function (param_fname, update_mode) {
   
   impplan <- read_excel(param_fname, sheet = "import", col_names = T, skip=1)
   parameters <- read_excel(param_fname, sheet = "scope", col_names = T, skip=1, n_max=1)
-  .GlobalEnv$year_first <- parameters$start
-  .GlobalEnv$year_final <- parameters$end
-  .GlobalEnv$saveplan <- impplan %>% filter(active == 1)
+  year_first <- parameters$start
+  year_final <- parameters$end
+  saveplan <- impplan %>% filter(active == 1)
   if (update_mode == 1) {impplan <- impplan %>% filter(update == 1)}
-  .GlobalEnv$impplan <- impplan %>% filter(active == 1)
+  impplan <- impplan %>% filter(active == 1)
+  return(list(year_first = year_first, year_final = year_final, saveplan = saveplan, impplan = impplan))
   
 }
 
@@ -50,20 +51,22 @@ generateDataContainers <- function(from, to) {
   countries <- unique(countries[,c('country','country_id')])
   countries <- subset(countries, as.numeric(rownames(countries)) > 1650)
   
-  .GlobalEnv$extdata_y <- expand.grid(paste(countries$country,countries$country_id,sep="."),years) %>%
+  extdata_y <- expand.grid(paste(countries$country,countries$country_id,sep="."),years) %>%
     mutate(country_id = str_sub(Var1, - 2, - 1) , country = str_sub(Var1, 1, -4)) %>%
     rename("year"="Var2") %>% select(country,country_id,year)
   
-  .GlobalEnv$extdata_m <- expand.grid(paste(countries$country,countries$country_id,sep="."),years,months) %>%
+  extdata_m <- expand.grid(paste(countries$country,countries$country_id,sep="."),years,months) %>%
     mutate(country_id = str_sub(Var1, - 2, - 1) , country = str_sub(Var1, 1, -4), quarter = (Var3-1)%/%3+1 ) %>%
     rename("year"="Var2", "month"="Var3") %>% select(country,country_id,year,quarter,month) %>%
     arrange(country, year, month)
   
-  .GlobalEnv$extdata_q <- extdata_m %>% filter(month %in% c(3,6,9,12)) %>% select(country,country_id,year,quarter)
+  extdata_q <- extdata_m %>% filter(month %in% c(3,6,9,12)) %>% select(country,country_id,year,quarter)
   
-  .GlobalEnv$extdata_d <- expand.grid(paste(countries$country,countries$country_id,sep="."),days) %>%
+  extdata_d <- expand.grid(paste(countries$country,countries$country_id,sep="."),days) %>%
     mutate(country_id = str_sub(Var1, - 2, - 1) , country = str_sub(Var1, 1, -4)) %>%
     rename("date"="Var2") %>% select(country,country_id,date)
+
+  return(list(extdata_y = extdata_y, extdata_q = extdata_q, extdata_m = extdata_m, extdata_d = extdata_d))
 
 }
 
@@ -76,13 +79,16 @@ importOldData <- function(data_fname, data_d_fname) {
     
     for (i in c("y", "q", "m")) {
       eval(parse(text = glue("ncols <- length(read_excel(data_fname, sheet = '{i}', col_names = T, skip=0, n_max = 0))") ))
-      eval(parse(text = glue(".GlobalEnv$extdata_{i} <- read_excel(data_fname, sheet = '{i}', col_names = T, skip=0, \\
+      eval(parse(text = glue("extdata_{i} <- read_excel(data_fname, sheet = '{i}', col_names = T, skip=0, \\
                             col_types = c('text', 'text', rep('numeric', ncols-2)))") ))
     }
     
     ncols <- length(read_excel(data_d_fname, sheet = "d", col_names = T, skip=0, n_max = 0))
-    .GlobalEnv$extdata_d <- read_excel(data_d_fname, sheet = "d", col_names = T, skip=0,
+    extdata_d <- read_excel(data_d_fname, sheet = "d", col_names = T, skip=0,
                             col_types = c("text", "text", "date", rep("numeric", ncols-3)))
+    
+    return(list(extdata_y = extdata_y, extdata_q = extdata_q, extdata_m = extdata_m, extdata_d = extdata_d))
+    
   }
 
 
@@ -119,15 +125,16 @@ updateImportPlan <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d
 ## Function to drop data, which needs to be updated
 
 dropDataToUpdate <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
-
+    
     for (i in seq_along(impplan$indicator)) { 
       
-      eval(parse( text = paste0("if ('", impplan$indicator_code[i], "' %in% names(extdata_", impplan$source_frequency[i],")) { .GlobalEnv$extdata_",
+      eval(parse( text = paste0("if ('", impplan$indicator_code[i], "' %in% names(extdata_", impplan$source_frequency[i],")) {extdata_",
                                 impplan$source_frequency[i], " <- extdata_",
                                 impplan$source_frequency[i], " %>% select(-c(", impplan$indicator_code[i],")) }") ))
-      print(glue("dropping {impplan$indicator_code[i]}"))
     
-      }
+    }
+  
+    return(list(extdata_y = extdata_y, extdata_q = extdata_q, extdata_m = extdata_m, extdata_d = extdata_d))
   
 }
 
@@ -717,10 +724,7 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
     })
         
     ##### Return imported
-    .GlobalEnv$extdata_y <- extdata_y
-    .GlobalEnv$extdata_q <- extdata_q
-    .GlobalEnv$extdata_m <- extdata_m
-    .GlobalEnv$extdata_d <- extdata_d
+    return(list(extdata_y = extdata_y, extdata_q = extdata_q, extdata_m = extdata_m, extdata_d = extdata_d))
     print("+++")
     
 }
@@ -742,10 +746,10 @@ preExport <- function(saveplan, extdata_y, extdata_q, extdata_m, extdata_d) {
     print(dict)
     
     ### Filtering databases to contain only planned output
-    .GlobalEnv$extdata_y <- extdata_y %>% select(country, country_id, year, any_of(dict_y$indicator_code))
-    .GlobalEnv$extdata_q <- extdata_q %>% select(country, country_id, year, quarter, any_of(dict_q$indicator_code))
-    .GlobalEnv$extdata_m <- extdata_m %>% select(country, country_id, year, quarter, month, any_of(dict_m$indicator_code))
-    .GlobalEnv$extdata_d <- extdata_d %>% select(country, country_id, date, any_of(dict_d$indicator_code))
+    extdata_y <- extdata_y %>% select(country, country_id, year, any_of(dict_y$indicator_code))
+    extdata_q <- extdata_q %>% select(country, country_id, year, quarter, any_of(dict_q$indicator_code))
+    extdata_m <- extdata_m %>% select(country, country_id, year, quarter, month, any_of(dict_m$indicator_code))
+    extdata_d <- extdata_d %>% select(country, country_id, date, any_of(dict_d$indicator_code))
     
     ### Checking dict if the data was successfully downloaded
     downloaded <- data.frame(indicator_code = c(names(extdata_y), names(extdata_q), names(extdata_m), names(extdata_d)))
@@ -765,10 +769,14 @@ preExport <- function(saveplan, extdata_y, extdata_q, extdata_m, extdata_d) {
       dict$end_year[i] <- a %>% select(year) %>% unique() %>% max()
       dict$n_points[i] <- a %>% select(country_id) %>% dim() %>% '['(1)
     }
+    extdata_d <- extdata_d %>% select(-c("year"))
     
-    ### Return dict
-    .GlobalEnv$dict_d <- dict %>% filter(source_frequency == "d")
-    .GlobalEnv$dict <- dict %>% filter(source_frequency != "d")
+    ### Define final variants of dict
+    dict_d <- dict %>% filter(source_frequency == "d")
+    dict <- dict %>% filter(source_frequency != "d")
+    
+    ### Return everything
+    return(list(extdata_y = extdata_y, extdata_q = extdata_q, extdata_m = extdata_m, extdata_d = extdata_d, dict = dict, dict_d = dict_d))
 
 }
 

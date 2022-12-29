@@ -722,7 +722,42 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
       }
     
     })
+    
+  
+  ##### Import UNPD aggregated data
+  try({
+    
+    pp_impplan <- impplan %>% filter(active==1, database_name=="WPP_aggr", retrieve_type=="file", source_frequency=="y")
+    pp_names <- pp_impplan$indicator_code
+    pp_codes <- pp_impplan$retrieve_code
+    pp_fname <- pp_impplan$file_name
+    pp_sheets <- pp_impplan$sheet_name
+    
+    if (length(pp_names)>0) {
+      
+      print("UNPD")
+      for (i in seq_along(pp_names)) {
         
+        #i=1
+        pp_data <- read_excel(pp_fname[i], sheet = pp_sheets[i], col_names = T, na = "#N/A", col_types='text')
+        
+        pp_data <- eval(parse(text = glue("pp_data %>% select('IMF-World Bank Country Code', year,'{pp_codes[i]}')") ))
+        pp_data <- eval(parse(text = glue("rename(pp_data,'country_id'='IMF-World Bank Country Code', 'value'='{pp_codes[i]}')") ))
+        
+        pp_data <- pp_data %>% mutate(country_id = countrycode(country_id, origin = 'imf', destination = 'iso2c'),
+                                      year = as.numeric(year), value = as.numeric(value) ) %>% select(country_id, year, value)
+        
+        ci_data <- eval(parse(text = glue("rename(pp_data,'{pp_names[i]}'='value')") ))
+        
+        extdata_y <- extdata_y %>% left_join(pp_data, by = c("country_id" = "country_id", "year"="year"), suffix=c("","_old"))
+        print("+")
+        
+      }
+      
+    }
+    
+  }) 
+      
     ##### Return imported
     return(list(extdata_y = extdata_y, extdata_q = extdata_q, extdata_m = extdata_m, extdata_d = extdata_d))
     print("+++")

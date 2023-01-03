@@ -5,10 +5,9 @@ imfTool <- function(code, database, freq, start, end) {
   downloaded <- jsonlite::fromJSON(adres)
   obs <- downloaded$CompactData$DataSet$Series$Obs
   countries <- downloaded$CompactData$DataSet$Series$`@REF_AREA`
-  # database <- "IFS"
-  # freq <- "M"
-  if (database =="PCPS" | database =="FDI" | {database == "IFS" & freq != 'A'} | database =="FM" ) {
-    if (database =="PCPS") {df <- obs[[1]]} else {df <- obs}
+
+  if (database %in% c("PCPS","FDI","FM","GFSR","GFSCOFOG","GFSE","GFSMAB") | {database == "IFS" & freq != 'A'} ) {
+    if (database %in% c("PCPS")) {df <- obs[[1]]} else {df <- obs}
     } else {
     df <- sapply(obs, as.data.table, simplify = T) }
   
@@ -66,12 +65,20 @@ imfTool <- function(code, database, freq, start, end) {
 # imfTool(code = "PALLFNF", database = "PCPS", freq = "M", start = "2019", end = "2022")
 
 # FDI Financial Development Index
+
 # adres <- "http://dataservices.imf.org/REST/SDMX_JSON.svc/CompactData/FDI/A..FD_FID_IX.?startPeriod=2000&endPeriod=2022"
 # imfTool(code = "FD_FID_IX", database = "FDI", freq = "A", start = "2019", end = "2022")
 
 # GFS
+
 # adres <- "http://dataservices.imf.org/REST/SDMX_JSON.svc/CompactData/GFSR/A..S13.XDC_R_B1GQ.W0_S1_G111"
-# imfTool(code = "FD_FID_IX", database = "FDI", freq = "A", start = "2019", end = "2022")
+# imfTool(code = "S13.XDC.W0_S1_G1", database = "GFSR", freq = "A", start = "2019", end = "2022")
+# adres <- "http://dataservices.imf.org/REST/SDMX_JSON.svc/CompactData/GFSCOFOG/A..S13.XDC_R_B1GQ._T"
+# imfTool(code = "S13.XDC_R_B1GQ._T", database = "GFSCOFOG", freq = "A", start = "2019", end = "2025")
+# adres <- "http://dataservices.imf.org/REST/SDMX_JSON.svc/CompactData/GFSE/A..S13.XDC_R_B1GQ.W0_S1_G21"
+# imfTool(code = "S13.XDC_R_B1GQ.W0_S1_G21", database = "GFSE", freq = "A", start = "2019", end = "2022")
+# adres <- "http://dataservices.imf.org/REST/SDMX_JSON.svc/CompactData/GFSMAB/A..S13.XDC_R_B1GQ.G63_F3T4"
+# imfTool(code = "S13.XDC_R_B1GQ.G63_F3T4", database = "GFSMAB", freq = "A", start = "2019", end = "2022")
 
 #GFSR - Revenues
 #GFSSSUC - Sources and Uses of Cash

@@ -803,10 +803,9 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
 
 preExport <- function(saveplan, extdata_y, extdata_q, extdata_m, extdata_d) {
 
-    dict <- saveplan %>% filter(active==1) %>% select(indicator, theme, indicator_code, source_frequency, source_name)
+    dict <- saveplan %>% select(indicator, theme, indicator_code, source_frequency, source_name) %>% arrange(theme, indicator_code)
     
     ### Collecting lists of what we planned to download
-    dict <- dict %>% arrange(theme, indicator_code)
     for (i in c("y", "q", "m", "d")) {
       eval(parse(text = glue("dict_{i} <- dict %>% filter(source_frequency=='{i}')") ))
     }
@@ -828,13 +827,15 @@ preExport <- function(saveplan, extdata_y, extdata_q, extdata_m, extdata_d) {
     
     ### Calculating availability of data: non-empty countries and years
     for (i in seq_along(dict$indicator)) {
-      a <- eval(parse(text = glue("extdata_{dict$source_frequency[i]} %>% 
-        select(country_id, year, {dict$indicator_code[i]}) %>% 
-        filter(!is.na({dict$indicator_code[i]}))") ))
-      dict$n_countries[i] <- a %>% select(country_id) %>% unique() %>% dim() %>% '['(1)
-      dict$start_year[i] <- a %>% select(year) %>% unique() %>% min()
-      dict$end_year[i] <- a %>% select(year) %>% unique() %>% max()
-      dict$n_points[i] <- a %>% select(country_id) %>% dim() %>% '['(1)
+      if (dict$success[i] == "+") {
+        a <- eval(parse(text = glue("extdata_{dict$source_frequency[i]} %>% 
+          select(country_id, year, {dict$indicator_code[i]}) %>% 
+          filter(!is.na({dict$indicator_code[i]}))") ))
+        dict$n_countries[i] <- a %>% select(country_id) %>% unique() %>% dim() %>% '['(1)
+        dict$start_year[i] <- a %>% select(year) %>% unique() %>% min()
+        dict$end_year[i] <- a %>% select(year) %>% unique() %>% max()
+        dict$n_points[i] <- a %>% select(country_id) %>% dim() %>% '['(1)
+      }
     }
     extdata_d <- extdata_d %>% select(-c("year"))
     

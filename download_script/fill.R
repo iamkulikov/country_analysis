@@ -1,3 +1,7 @@
+#   All the functions to make calculations on imported data
+
+##  Load packages
+
 library("dplyr")
 library("reshape2")
 library("countrycode")
@@ -29,8 +33,8 @@ for (i in c("y", "q", "m")) {
   eval(parse(text = glue("a <- length(read_excel(data_fname, sheet = '{i}', col_names = T, skip=0, n_max = 0))") ))
   eval(parse(text = glue("extdata_{i} <- read_excel(data_fname, sheet = '{i}', col_names = T, skip=0, \\
                           col_types = c('text', 'text', rep('numeric', a-2)))") ))
-
-  }
+  
+}
 
 a <- length(read_excel(data_d_fname, sheet = "d", col_names = T, skip=0, n_max = 0))
 extdata_d <- read_excel(data_d_fname, sheet = "d", col_names = T, skip=0,

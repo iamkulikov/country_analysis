@@ -5,15 +5,15 @@
 ##### Where is the fillinf schedule saved? What are the data files?
 #setwd("D:/Dropbox/Methods_Programs/R_utilities/country_analysis/_DB")
 setwd("C:/Projects/country_analysis/_DB")
-param_fname <- "0_database_params.xlsx"
-data_fname <- "Imported_DB.xlsx"
-data_d_fname <- "Imported_d_DB.xlsx"
-#data_fname <- "Temp.xlsx"
-#data_d_fname <- "Temp_d.xlsx"
-filled_fname <- "Filled_DB.xlsx"
-filled_d_fname <- "Filled_d_DB.xlsx"
-#filled_fname <- "Temp.xlsx"
-#filled_d_fname <- "Temp_d.xlsx"
+param_fname <- "0_database_params_test.xlsx"
+#data_fname <- "Imported_DB.xlsx"
+#data_d_fname <- "Imported_d_DB.xlsx"
+data_fname <- "Temp.xlsx"
+data_d_fname <- "Temp_d.xlsx"
+#filled_fname <- "Filled_DB.xlsx"
+#filled_d_fname <- "Filled_d_DB.xlsx"
+filled_fname <- "Temp.xlsx"
+filled_d_fname <- "Temp_d.xlsx"
 countries <- c("Armenia", "Brazil", "Bulgaria", "Greece", "China", "India", "Kyrgyz Republic", "Romania",
                "Russian Federation", "Slovak Republic", "South Africa", "Switzerland", "Ukraine")
 

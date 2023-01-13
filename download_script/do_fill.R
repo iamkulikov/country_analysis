@@ -24,37 +24,26 @@ source("../_country_analysis_scripts/download_script/fill.R")
 ##### Import parameters and schedules
 impp_params <- readImportParams(param_fname = param_fname, update_mode = update_mode)
 for(i in seq_along(imp_params)) { assign(names(imp_params)[i], imp_params[[i]]) }
-fillplan <- readFillParams(param_fname = param_fname, update_mode = update_mode)
-for(i in seq_along(fill_params)) { assign(names(fill_params)[i], fill_params[[i]]) }
+fillplan <- readFillParams(param_fname = param_fname)
 
 ##### Check integrity of the plans
-checklist[1] <- checkNames(filldata)
-checklist[2] <- checkDefinitions(filldata)
-checklist[3] <- checkExistence(filldata, impdata)
+checklist[1] <- checkNames(fillplan = fillplan)
+checklist[2] <- checkDefinitions(fillplan = fillplan)
+checklist[3] <- checkExistence(fillplan = fillplan, impplan = impplan)
+#if () {}
 
-##### New filling sequence starts
+##### The filling sequence
 D <- importOldData(data_fname, data_d_fname)
-captureDimensions(D)
+data_dim <- captureDimensions(D)
 print("Filling started")
 D <- createDateColumns(D)
+FD <- fill(fillplan = fillplan, extdata_y = D$extdata_y, extdata_q = D$extdata_q, extdata_m = D$extdata_m, extdata_d = D$extdata_d)
+remove(D)  
+FD <- dropDateColumns(FD)
 
-for (i in 1:dim(filldata)[1]) {
-  
-  oldfreq <- filldata$old_frequency[i]
-  oldfreq_long <- case_when(oldfreq == "y" ~ "year", oldfreq == "q" ~ "quarter", oldfreq == "m" ~ "month", oldfreq == "d" ~ "date")
-  newfreq <- filldata$new_frequency[i]
-  newfreq_long <- case_when(newfreq == "y" ~ "year", newfreq == "q" ~ "quarter", newfreq == "m" ~ "month", newfreq == "d" ~ "date")
-  active <- filldata$active1[i]
-  oldcode <- filldata$old_indicator_code[i]
-  newcode <- filldata$new_indicator_code[i]
-  formula <- filldata$formula[i]
-  
-  FD <- fill(D)
-  
-  }
-
-FD <- dropDate(FD)
-checkDimensions(FD)
+##### Check whether data container was broken
+if (all(captureDimension(FD) == data_dim)) {print("Dimensions were preserved")} else {
+  print("Dimensions have changed. Something was not ok during the calculation.")}
 
 ##### Export data
 

@@ -22,34 +22,36 @@ source("../_country_analysis_scripts/download_script/import.R")
 source("../_country_analysis_scripts/download_script/fill.R")
 
 ##### Import parameters and schedules
-impp_params <- readImportParams(param_fname = param_fname, update_mode = update_mode)
+imp_params <- readImportParams(param_fname = param_fname, update_mode = 0)
 for(i in seq_along(imp_params)) { assign(names(imp_params)[i], imp_params[[i]]) }
 fillplan <- readFillParams(param_fname = param_fname)
 
 ##### Check integrity of the plans
-checklist[1] <- checkNames(fillplan = fillplan)
-checklist[2] <- checkDefinitions(fillplan = fillplan)
-checklist[3] <- checkExistence(fillplan = fillplan, impplan = impplan)
-#if () {}
+fillplan <- checkNames(fillplan = fillplan)
+fillplan <- checkUnique(fillplan = fillplan)
+fillplan <- checkAvailability(fillplan = fillplan, impplan = impplan) %>% mutate(checks = check_names*check_unique*check_availability)
+error_report <- fillplan %>% filter(checks == 0)
+if (is.null(dim(error_report)[1]) | is.na(dim(error_report)[1]) | (dim(error_report)[1] == 0)) {"Checks passed"} else {print("Errors found"); print(error_report)}
 
 ##### The filling sequence
-D <- importOldData(data_fname, data_d_fname)
-data_dim <- captureDimensions(D)
+D <- importOldData(data_fname = data_fname, data_d_fname = data_d_fname)
+data_dim <- captureDimensions(extdata_y = D$extdata_y, extdata_q = D$extdata_q, extdata_m = D$extdata_m, extdata_d = D$extdata_d)
 print("Filling started")
-D <- createDateColumns(D)
+D <- createDateColumns(extdata_y = D$extdata_y, extdata_q = D$extdata_q, extdata_m = D$extdata_m, extdata_d = D$extdata_d)
 FD <- fill(fillplan = fillplan, extdata_y = D$extdata_y, extdata_q = D$extdata_q, extdata_m = D$extdata_m, extdata_d = D$extdata_d)
 remove(D)  
-FD <- dropDateColumns(FD)
+FD <- dropDateColumns(extdata_y = FD$extdata_y, extdata_q = FD$extdata_q, extdata_m = FD$extdata_m, extdata_d = FD$extdata_d)
 
-##### Check whether data container was broken
-if (all(captureDimension(FD) == data_dim)) {print("Dimensions were preserved")} else {
-  print("Dimensions have changed. Something was not ok during the calculation.")}
+##### Check whether data container was broken in the process
+if (all(captureDimensions(extdata_y = FD$extdata_y, extdata_q = FD$extdata_q, extdata_m = FD$extdata_m, extdata_d = FD$extdata_d) == data_dim)) {
+    print("Dimensions were preserved")} else {
+    print("Dimensions have changed. Something was not ok during the calculation.")}
 
 ##### Export data
 
 ### All countries
-D <- preExport(saveplan = saveplan, extdata_y = D$extdata_y, extdata_q = D$extdata_q, extdata_m = D$extdata_m, extdata_d = D$extdata_d)
-writeDatafiles(data_fname = data_fname, data_d_fname = data_d_fname, extdata_y = D$extdata_y, extdata_q = D$extdata_q, extdata_m = D$extdata_m, extdata_d = D$extdata_d, dict = D$dict, dict_d = D$dict_d)
+FD <- preExport(saveplan = saveplan, extdata_y = FD$extdata_y, extdata_q = FD$extdata_q, extdata_m = FD$extdata_m, extdata_d = FD$extdata_d)
+writeDatafiles(data_fname = data_fname, data_d_fname = data_d_fname, extdata_y = FD$extdata_y, extdata_q = FD$extdata_q, extdata_m = FD$extdata_m, extdata_d = FD$extdata_d, dict = FD$dict, dict_d = FD$dict_d)
 
 ### Single countries
 writeCountryFile(countries, extdata_y = D$extdata_y, extdata_q = D$extdata_q, extdata_m = D$extdata_m, extdata_d = D$extdata_d)

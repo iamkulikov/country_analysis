@@ -37,21 +37,39 @@ createDateColumns <- function(extdata_y, extdata_q, extdata_m, extdata_d) {
     
 }
 
-##### Function to check variable names
+##### Function to check variable names correctness
 
-checkNames <- function(fillplan) { 
-  
+checkNames <- function(fillplan) {
+    
+    # add checks for commands
+    fillplan <- fillplan %>% mutate(check_names = 1)
+    for (i in c('roll','share', 'last', 'max', 'min')) {
+      eval(parse(text = glue::glue("fillplan <- fillplan %>% mutate(check_names = check_names * str_detect(new_indicator_code, '{i}', negate = TRUE))") ))
+    }
+    
+    # add checks for special symbols
+    return(fillplan)
+    
 }
 
-##### Function to check formulas: are they
+##### Function to check uniqueness of variable definitions
 
-checkDefinitions <- function(fillplan) { 
+checkUnique <- function(fillplan) { 
+  
+  counted <- fillplan %>% count(new_indicator_code, new_frequency) %>% 
+                select(new_indicator_code, new_frequency, n) %>% rename("check_unique" = "n") %>%
+                mutate(check_unique = (check_unique == 1)*1)
+  fillplan <- fillplan %>% left_join(counted, by = c("new_indicator_code" = "new_indicator_code", "new_frequency" = "new_frequency"))
+  return(fillplan)
   
 }
 
 ##### Function to check if the calculaion is possible in terms of data availability
 
-checkExistence <- function(fillplan) { 
+checkAvailability <- function(fillplan, impplan) { 
+  
+  fillplan <- fillplan %>% mutate(check_availability = 1)
+  return(fillplan)
   
 }
 
@@ -123,7 +141,7 @@ fill <- function(fillplan, extdata_y, extdata_q, extdata_m, extdata_d) {
       
       #### Calculating shares 
       #i=68
-      if (oldfreq == newfreq & active == 1 & filldata$formula[i] =="share" ) {
+      if (oldfreq == newfreq & active == 1 & fillplan$formula[i] =="share" ) {
         
         a <- glue("extdata_{oldfreq} <- extdata_{oldfreq} %>% group_by({oldfreq_long}) %>% \\
                 mutate({newcode} = {oldcode}*100/sum({oldcode}, na.rm=T)) %>% ungroup()")
@@ -144,8 +162,12 @@ fill <- function(fillplan, extdata_y, extdata_q, extdata_m, extdata_d) {
 
 ##### Drop date
 
-for (i in c("y", "q", "m")) { eval(parse(text = glue("extdata_{i} <- extdata_{i} %>% select(-c(date))") )) }
-
+dropDateColumns <- function(extdata_y, extdata_q, extdata_m, extdata_d) {
+  
+  for (i in c("y", "q", "m")) { eval(parse(text = glue("extdata_{i} <- extdata_{i} %>% select(-c(date))") )) }
+  return(list(extdata_y = extdata_y, extdata_q = extdata_q, extdata_m = extdata_m, extdata_d = extdata_d))
+  
+}
 
 ##### Export filled data
 

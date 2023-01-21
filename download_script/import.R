@@ -803,7 +803,8 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
 
 preExport <- function(saveplan, extdata_y, extdata_q, extdata_m, extdata_d) {
 
-    dict <- saveplan %>% select(indicator, theme, indicator_code, source_frequency, source_name) %>% arrange(theme, indicator_code)
+    print("Generating the dictionary, finalizing data")
+    dict <- saveplan %>% select(indicator, theme, indicator_code, source_frequency, source_name, keep) %>% arrange(theme, indicator_code)
     
     ### Collecting lists of what we planned to download
     for (i in c("y", "q", "m", "d")) {

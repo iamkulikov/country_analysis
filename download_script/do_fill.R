@@ -12,8 +12,8 @@ data_fname <- "Temp.xlsx"
 data_d_fname <- "Temp_d.xlsx"
 #filled_fname <- "Filled_DB.xlsx"
 #filled_d_fname <- "Filled_d_DB.xlsx"
-filled_fname <- "Temp.xlsx"
-filled_d_fname <- "Temp_d.xlsx"
+filled_fname <- "Temp_filled.xlsx"
+filled_d_fname <- "Temp_filled_d.xlsx"
 countries <- c("Armenia", "Brazil", "Bulgaria", "Greece", "China", "India", "Kyrgyz Republic", "Romania",
                "Russian Federation", "Slovak Republic", "South Africa", "Switzerland", "Ukraine")
 
@@ -31,30 +31,33 @@ fillplan <- checkNames(fillplan = fillplan)
 fillplan <- checkUnique(fillplan = fillplan)
 fillplan <- checkAvailability(fillplan = fillplan, impplan = impplan) %>% mutate(checks = check_names*check_unique*check_availability)
 error_report <- fillplan %>% filter(checks == 0)
-if (is.null(dim(error_report)[1]) | is.na(dim(error_report)[1]) | (dim(error_report)[1] == 0)) {"Checks passed"} else {print("Errors found"); print(error_report)}
-
-##### The filling sequence
-D <- importOldData(data_fname = data_fname, data_d_fname = data_d_fname)
-data_dim <- captureDimensions(extdata_y = D$extdata_y, extdata_q = D$extdata_q, extdata_m = D$extdata_m, extdata_d = D$extdata_d)
-print("Filling started")
-D <- createDateColumns(extdata_y = D$extdata_y, extdata_q = D$extdata_q, extdata_m = D$extdata_m, extdata_d = D$extdata_d)
-FD <- fill(fillplan = fillplan, extdata_y = D$extdata_y, extdata_q = D$extdata_q, extdata_m = D$extdata_m, extdata_d = D$extdata_d)
-remove(D)  
-FD <- dropDateColumns(extdata_y = FD$extdata_y, extdata_q = FD$extdata_q, extdata_m = FD$extdata_m, extdata_d = FD$extdata_d)
-
-##### Check whether data container was broken in the process
-if (all(captureDimensions(extdata_y = FD$extdata_y, extdata_q = FD$extdata_q, extdata_m = FD$extdata_m, extdata_d = FD$extdata_d) == data_dim)) {
-    print("Dimensions were preserved")} else {
-    print("Dimensions have changed. Something was not ok during the calculation.")}
-
-##### Export data
-
-### All countries
-FD <- preExport(saveplan = saveplan, extdata_y = FD$extdata_y, extdata_q = FD$extdata_q, extdata_m = FD$extdata_m, extdata_d = FD$extdata_d)
-writeDatafiles(data_fname = data_fname, data_d_fname = data_d_fname, extdata_y = FD$extdata_y, extdata_q = FD$extdata_q, extdata_m = FD$extdata_m, extdata_d = FD$extdata_d, dict = FD$dict, dict_d = FD$dict_d)
-
-### Single countries
-writeCountryFile(countries, extdata_y = D$extdata_y, extdata_q = D$extdata_q, extdata_m = D$extdata_m, extdata_d = D$extdata_d)
-writeCountryModelFile(countries, extdata_y = D$extdata_y, extdata_q = D$extdata_q, extdata_m = D$extdata_m, extdata_d = D$extdata_d)
-
-
+if (is.null(dim(error_report)[1]) | is.na(dim(error_report)[1]) | (dim(error_report)[1] == 0)) {
+  
+      print("Checks passed")
+      
+      ##### The filling sequence
+      D <- importOldData(data_fname = data_fname, data_d_fname = data_d_fname)
+      data_dim <- captureDimensions(extdata_y = D$extdata_y, extdata_q = D$extdata_q, extdata_m = D$extdata_m, extdata_d = D$extdata_d)
+      print("Filling started")
+      D <- createDateColumns(extdata_y = D$extdata_y, extdata_q = D$extdata_q, extdata_m = D$extdata_m, extdata_d = D$extdata_d)
+      FD <- fill(fillplan = fillplan, extdata_y = D$extdata_y, extdata_q = D$extdata_q, extdata_m = D$extdata_m, extdata_d = D$extdata_d)
+      remove(D)  
+      FD <- dropDateColumns(extdata_y = FD$extdata_y, extdata_q = FD$extdata_q, extdata_m = FD$extdata_m, extdata_d = FD$extdata_d)
+      
+      ##### Check whether data container was broken in the process
+      if (all(captureDimensions(extdata_y = FD$extdata_y, extdata_q = FD$extdata_q, extdata_m = FD$extdata_m, extdata_d = FD$extdata_d) == data_dim)) {
+        print("Dimensions were preserved")} else {
+          print("Dimensions have changed. Something was not ok during the calculation.")}
+      
+      ##### Export data
+      
+      ### All countries
+      saveplan <- generateSaveplan(impplan = impplan, fillplan = fillplan)
+      FD <- preExport(saveplan = saveplan, extdata_y = FD$extdata_y, extdata_q = FD$extdata_q, extdata_m = FD$extdata_m, extdata_d = FD$extdata_d)
+      writeDatafiles(data_fname = filled_fname, data_d_fname = filled_d_fname, extdata_y = FD$extdata_y, extdata_q = FD$extdata_q, extdata_m = FD$extdata_m, extdata_d = FD$extdata_d, dict = FD$dict, dict_d = FD$dict_d)
+      
+      ### Single countries
+      #writeCountryFile(countries, extdata_y = D$extdata_y, extdata_q = D$extdata_q, extdata_m = D$extdata_m, extdata_d = D$extdata_d)
+      #writeCountryModelFile(countries, extdata_y = D$extdata_y, extdata_q = D$extdata_q, extdata_m = D$extdata_m, extdata_d = D$extdata_d)
+  
+  } else {print("Errors found"); print(error_report)}

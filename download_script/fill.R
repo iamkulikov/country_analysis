@@ -30,7 +30,7 @@ readFillParams <- function(param_fname) {
 
 createDateColumns <- function(extdata_y, extdata_q, extdata_m, extdata_d) { 
 
-    extdata_y <- extdata_y %>% mutate(date = make_date(year = year, month = 12, day = 1))
+    extdata_y <- extdata_y %>% mutate(date = make_date(year = year, month = 1, day = 1))
     extdata_q <- extdata_q %>% mutate(date = make_date(year = year, month = 3*(quarter-1)+1, day = 1))
     extdata_m <- extdata_m %>% mutate(date = make_date(year = year, month = month, day = 1))
     return(list(extdata_y = extdata_y, extdata_q = extdata_q, extdata_m = extdata_m, extdata_d = extdata_d))
@@ -98,6 +98,7 @@ fill <- function(fillplan, extdata_y, extdata_q, extdata_m, extdata_d) {
       newcode <- fillplan$new_indicator_code[i]
       formula <- fillplan$formula[i]
       
+      try({
       
       #### Calculating new variables of the same frequency
       
@@ -106,7 +107,7 @@ fill <- function(fillplan, extdata_y, extdata_q, extdata_m, extdata_d) {
         a <- glue("extdata_{oldfreq} <- extdata_{oldfreq} %>% group_by(country) %>% mutate({newcode} = {formula}) %>% ungroup()")
         eval(parse(text = a)); print(a)
         
-      } else {}
+      } else {};
       
       
       #### Calculating new rolling variables of the same frequency 
@@ -122,21 +123,22 @@ fill <- function(fillplan, extdata_y, extdata_q, extdata_m, extdata_d) {
                         mutate({newcode} = rollapply({oldcode}, windowlen, {type}, align='right', fill=NA)) %>% ungroup()")
         eval(parse(text = a)); print(a)
         
-      } else {}
+      } else {};
       
       
       #### Aggregating the same variables to lower frequency d > m > q > y (d<m but frequency is vice versa)
       
-      if ( oldfreq < newfreq & active == 1 & (formula=="last"|formula=="first"|formula=="mean"|formula =="max"|formula =="min"|formula=="sum") ) {
+      if ( oldfreq < newfreq & active == 1 & (formula=="last"|formula=="first"|formula=="mean"|formula=="max"|formula=="min"|formula=="sum") ) {
         
         a <- glue("aggreg <- extdata_{oldfreq} %>% select(date, country_id, {oldcode}) %>% group_by(country_id) %>% \\
-          summarise_by_time(.by = '{newfreq_long}', .date_var = date, {newcode} = {formula}({oldcode}), .type = 'floor') %>% ungroup()")
+          filter(!is.na({oldcode})) %>% \\
+          summarise_by_time(.by = '{newfreq_long}', .date_var = date, {newcode} = {formula}({oldcode}, na.rm = TRUE), .type = 'floor') %>% ungroup()")
         eval(parse(text = a)); print(a)
         
         eval(parse(text=glue("extdata_{newfreq} <- extdata_{newfreq} %>% \\
               left_join(aggreg, by = c('country_id'='country_id', 'date'='date'))") ))
         
-      } else {}
+      } else {};
       
       
       #### Calculating shares 
@@ -147,12 +149,14 @@ fill <- function(fillplan, extdata_y, extdata_q, extdata_m, extdata_d) {
                 mutate({newcode} = {oldcode}*100/sum({oldcode}, na.rm=T)) %>% ungroup()")
         eval(parse(text = a)); print(a)
         
-      } else {}
+      } else {};
       
       # check dimensions and formulas
       if (i %% 10 == 0) {gc(verbose = T)}
       print(paste(i, dim(extdata_m)[1], object.size(extdata_m)/10^6, dim(extdata_q)[1], object.size(extdata_q)/10^6, 
                   dim(extdata_y)[1], object.size(extdata_y)/10^6, sep=" "))
+      
+      })
       
     }
 

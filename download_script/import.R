@@ -828,13 +828,13 @@ preExport <- function(saveplan, extdata_y, extdata_q, extdata_m, extdata_d) {
     
     ### Calculating availability of data: non-empty countries and years
     for (i in seq_along(dict$indicator)) {
-      if (dict$success[i] == "+") {
+      if (!is.na(dict$success[i])) {
         a <- eval(parse(text = glue("extdata_{dict$source_frequency[i]} %>% 
           select(country_id, year, {dict$indicator_code[i]}) %>% 
           filter(!is.na({dict$indicator_code[i]}))") ))
         dict$n_countries[i] <- a %>% select(country_id) %>% unique() %>% dim() %>% '['(1)
-        dict$start_year[i] <- a %>% select(year) %>% unique() %>% min()
-        dict$end_year[i] <- a %>% select(year) %>% unique() %>% max()
+        dict$start_year[i] <- a %>% select(year) %>% unique() %>% min(na.rm = TRUE)
+        dict$end_year[i] <- a %>% select(year) %>% unique() %>% max(na.rm = TRUE)
         dict$n_points[i] <- a %>% select(country_id) %>% dim() %>% '['(1)
       }
     }

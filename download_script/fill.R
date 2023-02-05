@@ -39,11 +39,11 @@ createDateColumns <- function(extdata_y, extdata_q, extdata_m, extdata_d) {
 
 ##### Function to check variable names correctness
 
-checkNames <- function(fillplan) {
+checkNames <- function(fillplan, formula_words) {
     
     # add checks for commands
     fillplan <- fillplan %>% mutate(check_names = 1)
-    for (i in c('roll', 'share', 'last', 'max', 'min', 'sum')) {
+    for (i in formula_words) {
       eval(parse(text = glue::glue("fillplan <- fillplan %>% mutate(check_names = check_names * str_detect(new_indicator_code, '{i}', negate = TRUE))") ))
     }
     
@@ -68,7 +68,25 @@ checkUnique <- function(fillplan) {
 
 checkAvailability <- function(fillplan, impplan) { 
   
-  fillplan <- fillplan %>% mutate(check_availability = 1)
+  fillplan <- fillplan %>% mutate(check_availability = 0)
+  for (i in c('d','q','m','y')) {
+    eval(parse(text = glue::glue("available_{i} <- impplan %>% filter(source_frequency == '{i}') %>% pull(indicator_code)") ))
+  }
+  for (i in seq_along(fillplan$new_indicator)) {
+    
+    oldfreq <- fillplan$old_frequency[i]
+    newfreq <- fillplan$new_frequency[i]
+    eval(parse(text = glue::glue("available_now <- available_{oldfreq}") ))
+    needed <- unique(strsplit(fillplan$formula[i],"\\W+")[[1]])
+    to_drop <- na.omit(c(formula_words, as.numeric(needed), ""))
+    needed <- needed[!(needed %in% to_drop)]
+    if (all(needed %in% available_now)) {fillplan$check_availability[i] <- 1} else {
+        print(needed[!(needed %in% available_now)])
+      }
+    eval(parse(text = glue::glue("available_{newfreq} <- c(available_{newfreq}, fillplan$new_indicator_code[i])") ))
+    
+  }
+    
   return(fillplan)
   
 }
@@ -227,18 +245,20 @@ writeCountryFile <- function(countries, extdata_y, extdata_q, extdata_m, extdata
 
 ##### Function to export data on certain countries in model format (only yearly)
 
-writeCountryModelFile <- function(countries, extdata_y, extdata_q, extdata_m, extdata_d) {
+writeCountryModelFile <- function(countries, extdata_y, saveplan) {
   
   #setwd('..')
   print("Writing country model files") 
   for (countryname_export in countries) {
     
-    # убрал educ и hci пока что из select-а
+    # убрал gg_debttorev и gg_inttorev пока что из select-а
     extdata_y %>% filter(country==countryname_export) %>% select(-c("country","country_id","year")) %>%
-      select(gdp_pc_usd, gdp_pc_ppp, gdp_growth, gdp_usd, gdp, cpi_av, deflator, rnd, gcfc_gdp, open, gg_debt, gg_rev, gg_debttorev,
-             gg_exp_int, gg_bal, ca_usd, imp_gs_usd, intres_usd, intrestoimp, exp_div, neer_av, usdlc_eop, usdlc_av, wgi_va_est, wgi_ps_est,
-             wgi1, wgi_cc_est, wgi_rl_est, wgi_rq_est, wgi_ge_est, wgi2, amr_male, amr_female, amr, life_exp)-> t_data_export
+      select(gdp_pc_usd_wb, gdp_pc_ppp_wb, gdp_growth, gdp_usd, gdp, cpi_av, deflator, rnd, gcfc_gdp, open, gg_debt_weo, gg_rev_weo) -> t_data_export
+              #, gg_debttorev,
+             #gg_exp_int, gg_bal, ca_usd, imp_gs_usd, intres_usd, intrestoimp, exp_div, neer_av, usdlc_eop, usdlc_av, wgi_va_est, wgi_ps_est,
+             #wgi1, wgi_cc_est, wgi_rl_est, wgi_rq_est, wgi_ge_est, wgi2, amr_male, amr_female, amr, life_exp, educ, hci)-> t_data_export
     extdata_y %>% filter(country==countryname_export) %>% select("year") -> years
+    dict_y <- saveplan %>% filter(source_frequency == "y")
     
     data_export <- data.frame(t(t_data_export))
     names(data_export) <- unlist(years)
@@ -248,7 +268,7 @@ writeCountryModelFile <- function(countries, extdata_y, extdata_q, extdata_m, ex
     
     data_export <- list(data_export)
     names(data_export) <- c("y")
-    write_xlsx(data_export, path = paste(countryname_export, "/Data/", countryname_export, "_data_model.xlsx", sep=""), 
+    write_xlsx(data_export, path = paste("../", countryname_export, "/Data/", countryname_export, "_data_model.xlsx", sep=""), 
                col_names = T, format_headers = T)
     
   }

@@ -2,16 +2,16 @@
 
 ##### Choose import mode
 update_mode <- 1        # 0 if all the data and containers should be new, 1 if only update
-n_attempts <- 10   # how many times should we ping API's for needed data
+n_attempts <- 5   # how many times should we ping API's for needed data
 
 ##### Where is import schedule saved? What are the data files?
 #setwd("D:/Dropbox/Methods_Programs/R_utilities/country_analysis/_DB")
 setwd("C:/Projects/country_analysis/_DB")
-param_fname <- "0_database_params_test.xlsx"
-#data_fname <- "Imported_DB.xlsx"
-#data_d_fname <- "Imported_d_DB.xlsx"
-data_fname <- "Temp.xlsx"
-data_d_fname <- "Temp_d.xlsx"
+param_fname <- "0_database_params.xlsx"
+data_fname <- "Imported_DB.xlsx"
+data_d_fname <- "Imported_d_DB.xlsx"
+#data_fname <- "Temp.xlsx"
+#data_d_fname <- "Temp_d.xlsx"
 
 ##### Import function definitions
 source("../_country_analysis_scripts/download_script/import.R")

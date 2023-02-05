@@ -30,7 +30,7 @@ library("fanplot")
 library("ggfan")
 library("hrbrthemes")
 
-country_name <- "Bulgaria"
+country_name <- "Slovak Republic"
 #country_name <- "Russian Federation"
 
 ###### Define custom color palettes
@@ -82,7 +82,7 @@ country_iso3c <- countrycode(country_iso2c, origin = 'iso2c', destination = 'iso
 
 #setwd("D:/Dropbox/Methods_Programs/R_utilities/graph_library")
 peers_fname <- "1_peers_params.xlsx"
-peersdata <- read_excel(peers_fname, sheet = "groups", col_names = T, skip=6)
+peersdata <- read_excel(peers_fname, sheet = "groups", col_names = T, skip=8)
 peers_default_iso3c <- names(peersdata)[peersdata[peersdata$country_code == country_iso3c, ] == 1]
 peers_default_iso2c <- countrycode(peers_default_iso3c, origin = 'iso3c', destination = 'iso2c')
 peers_neighbours_iso3c <- peersdata %>% select(region, country_code) %>% filter(region==peersdata$region[peersdata$country_code==country_iso3c]) %>%

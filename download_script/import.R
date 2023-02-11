@@ -442,6 +442,42 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
     
     })  
       
+    ##### Import monthly BIS data on exchange rates
+    
+    try({
+      
+      bis_impplan <- impplan %>% filter(active==1, source_name=="BIS", retrieve_type=="file", database_name=="US dollar exchange rates (monthly, quarterly and annual)")
+      bis_names <- bis_impplan$indicator_code
+      bis_fname <- bis_impplan$file_name
+      bis_codes <- bis_impplan$retrieve_code
+      #bis_names <- c('usdlc_av_bis', 'usdlc_eop_bis')
+      #bis_codes <- c('A', 'E')
+      #bis_fname <- "./_extsources/WS_XRU_csv_col.csv"
+      
+      if (length(bis_names)>0) {
+        
+        print("BIS-FX-m")
+        bis_data <- read.csv(bis_fname[1], header = TRUE, sep = ",", quote = "\"",
+                             dec = ".", fill = TRUE, comment.char = "", na.strings=c(0,"..","","NA"), skip=0) %>%
+          filter(FREQ == 'M') %>% select(REF_AREA, COLLECTION, contains(".")&contains("X")&!contains("Q")) %>% 
+          pivot_longer(-c(REF_AREA, COLLECTION), names_to = "date", values_to = "value") %>%
+          mutate(year = as.numeric(substr(date,2,5)), month = as.numeric(substr(date,7,8))) %>%
+          select(-date) %>% rename('country_id' = 'REF_AREA')
+        
+        for (i in seq_along(bis_names)) {
+         
+        bis_datae <- eval(parse(text = glue("rename(bis_data,'{bis_names[i]}'='value')") ))
+        eval(parse(text = glue("bis_datae <- bis_datae %>% filter(COLLECTION == '{bis_codes[i]}') %>% select(-c(COLLECTION))") ))
+        extdata_m %>% left_join(bis_datae, by = c("country_id" = "country_id", "year"="year", "month"="month"),
+                                suffix=c("","_old")) -> extdata_m
+        }
+        
+        print("+")
+        
+      }   
+      
+    })  
+  
     ##### Import monthly BIS data on policy rates
     try({
       

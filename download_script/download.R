@@ -36,6 +36,12 @@ dest <- paste(getwd(), "full_eer_m_csv.zip", sep="/")
 download.file(url, dest)
 unzip(zipfile = dest, exdir = getwd())
 
+### Download BIS monthly data on nominal exchange rates
+url <- "https://www.bis.org/statistics/full_xru_csv.zip"
+dest <- paste(getwd(), "full_xru_csv.zip", sep="/")
+download.file(url, dest)
+unzip(zipfile = dest, exdir = getwd())
+
 ### Download UNCTAD diversification index
 url <- "http://unctadstat.unctad.org/7zip/US_ConcentDiversIndices.csv.7z"
 dest <- paste(getwd(), "US_ConcentDiversIndices.csv.7z", sep="/")

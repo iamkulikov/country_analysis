@@ -6,6 +6,7 @@
 #setwd("D:/Dropbox/Methods_Programs/R_utilities/country_analysis/_DB")
 setwd("C:/Projects/country_analysis/_DB")
 test <- 1
+
 countries <- c("Armenia", "Brazil", "Bulgaria", "Greece", "China", "India", "Kyrgyz Republic", "Romania",
                "Russian Federation", "Slovak Republic", "South Africa", "Switzerland", "Ukraine")
 formula_words <- c("lag", "rollsum", "rollavg", "rollvol", "mean", "last", "first", "min", "max", "sum", "coalesce", "share")

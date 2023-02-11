@@ -1,33 +1,32 @@
 ######## Call the sequence of import functions
 
 ##### Choose import mode
+test <- 0
 update_mode <- 1        # 0 if all the data and containers should be new, 1 if only update
 n_attempts <- 5   # how many times should we ping API's for needed data
 
 ##### Where is import schedule saved? What are the data files?
-#setwd("D:/Dropbox/Methods_Programs/R_utilities/country_analysis/_DB")
-setwd("C:/Projects/country_analysis/_DB")
-param_fname <- "0_database_params.xlsx"
-data_fname <- "Imported_DB.xlsx"
-data_d_fname <- "Imported_d_DB.xlsx"
-#data_fname <- "Temp.xlsx"
-#data_d_fname <- "Temp_d.xlsx"
+here::i_am("_country_analysis_scripts/download_script/do_import.R")
+
+if (test == 0) {param_fname <- "0_database_params.xlsx"; data_fname <- "Imported_DB.xlsx";
+data_d_fname <- "Imported_d_DB.xlsx"; filled_fname <- "Filled_DB.xlsx"; filled_d_fname <- "Filled_d_DB.xlsx"} else {
+  param_fname <- "0_database_params_test.xlsx"; data_fname <- "Temp.xlsx"; data_d_fname <- "Temp_d.xlsx";
+  filled_fname <- "Temp_filled.xlsx"; filled_d_fname <- "Temp_filled_d.xlsx"}
 
 ##### Import function definitions
-source("../_country_analysis_scripts/download_script/import.R")
+source(here("_country_analysis_scripts","download_script","import.R"))
 
 ##### New import sequence starts
 
-  imp_params <- readImportParams(param_fname = param_fname, update_mode = update_mode)
+  imp_params <- readImportParams(param_fname = here("_DB", param_fname), update_mode = update_mode)
   for(i in seq_along(imp_params)) { assign(names(imp_params)[i], imp_params[[i]]) }
   
   if (update_mode == 0) { 
       D <- generateDataContainers(from = year_first, to = year_final) 
   } else {
-      D <- importOldData(data_fname, data_d_fname)
+      D <- importOldData(here("_DB", data_fname), here("_DB", data_d_fname))
   }
   
-  #for(i in seq_along(data_containers)) { assign(names(data_containers)[i], data_containers[[i]]) }
   impplan_temp <- impplan
   
   for (t in 1:n_attempts) {
@@ -41,5 +40,5 @@ source("../_country_analysis_scripts/download_script/import.R")
   }
 
   D <- preExport(saveplan = saveplan, extdata_y = D$extdata_y, extdata_q = D$extdata_q, extdata_m = D$extdata_m, extdata_d = D$extdata_d)
-  writeDatafiles(data_fname = data_fname, data_d_fname = data_d_fname, extdata_y = D$extdata_y, extdata_q = D$extdata_q, extdata_m = D$extdata_m, extdata_d = D$extdata_d, dict = D$dict, dict_d = D$dict_d)
+  writeDatafiles(data_fname = here("_DB", data_fname), data_d_fname = here("_DB", data_d_fname), extdata_y = D$extdata_y, extdata_q = D$extdata_q, extdata_m = D$extdata_m, extdata_d = D$extdata_d, dict = D$dict, dict_d = D$dict_d)
   

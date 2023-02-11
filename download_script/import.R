@@ -19,9 +19,15 @@ library("glue")
 library("httr")
 library("jsonlite") 
 library("rlist")
+library("here")
 
 ## Import custom tools
-source("../_country_analysis_scripts/download_script/imf_tool.R")
+here::i_am("_country_analysis_scripts/download_script/import.R")
+source(here("_country_analysis_scripts","download_script","imf_tool.R"))
+
+## Set parameters
+d_container_start <- "2019-01-01"
+d_container_end <- "2023-12-31"
 
 ## Function to set import/update schedule
 
@@ -44,7 +50,7 @@ generateDataContainers <- function(from, to) {
   
   years <- c(from:to)
   months <- c(1:12)
-  days <- seq(as.Date("2019-01-01"), as.Date("2023-12-31"), by="days")
+  days <- seq(as.Date(d_container_start), as.Date(d_container_end), by="days")
   
   countries <- WDI(indicator = "NY.GDP.MKTP.CD", start = from, end = to, extra=F) %>%
     select("country", "iso2c") %>% rename("country_id" = "iso2c")
@@ -168,7 +174,7 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
       
       wgi_impplan <- impplan %>% filter(active==1, database_name=="WGI", retrieve_type=="file", source_frequency=="y")
       wgi_names <- wgi_impplan$indicator_code
-      wgi_fname <- unique(wgi_impplan$file_name)
+      wgi_fname <- here("_DB", "_extsources", wgi_impplan$file_name[1])
       wgi_sheets <- wgi_impplan$sheet_name
       wgi_type <- wgi_impplan$retrieve_code
       wgi_data <- NULL
@@ -209,7 +215,7 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
       
       unctad_impplan <- impplan %>% filter(active==1, source_name=="UNCTAD", retrieve_type=="file", source_frequency=="y")
       unctad_names <- unctad_impplan$indicator_code
-      unctad_fname <- unctad_impplan$file_name
+      unctad_fname <- here("_DB", "_extsources", unctad_impplan$file_name[1])
     
       if (length(unctad_names)>0) {
         
@@ -341,7 +347,7 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
       
       ids_impplan <- impplan %>% filter(active==1, database_name=="IDS", retrieve_type=="file", source_frequency=="y")
       ids_names <- ids_impplan$indicator_code
-      ids_fname <- unique(ids_impplan$file_name)
+      ids_fname <- here("_DB", "_extsources", ids_impplan$file_name[1])
       ids_sheets <- unique(ids_impplan$sheet_name)
       ids_codes <- ids_impplan$retrieve_code
       
@@ -355,13 +361,10 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
                               filter(variable_code %in% ids_codes)
         
         ids_data <- reshape2::melt(ids_data, id.vars = c("country_id", "variable_code"), variable.name = "year", value.name = "value") %>% 
-            mutate(year = as.numeric(as.character(year)))
-        
-        ids_data <- ids_data %>% left_join(ids_impplan %>% select(indicator_code, retrieve_code), by=c('variable_code'='retrieve_code'), suffix=c("","_old")) %>%
-                        select(-c(variable_code))
-        
-        ids_data <- ids_data %>% pivot_wider(names_from = indicator_code, values_from = value) %>%
-          mutate(country_id = countrycode(country_id, origin = 'iso3c', destination = 'iso2c', 
+            mutate(year = as.numeric(as.character(year))) %>%
+            left_join(ids_impplan %>% select(indicator_code, retrieve_code), by=c('variable_code'='retrieve_code'), suffix=c("","_old")) %>%
+            select(-c(variable_code)) %>% pivot_wider(names_from = indicator_code, values_from = value) %>%
+            mutate(country_id = countrycode(country_id, origin = 'iso3c', destination = 'iso2c', 
                                           custom_match = c('ROM' = 'RO','ADO' = 'AD','ANT' = 'AN',
                                           'KSV' = 'XK','TMP' = 'TL','WBG' = 'PS','ZAR' = 'CD'), warn = F))
           
@@ -377,11 +380,11 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
       
       bis_impplan <- impplan %>% filter(active==1, source_name=="BIS", retrieve_type=="file", database_name=="Policy rates (daily, vertical time axis)")
       bis_names <- bis_impplan$indicator_code
-      bis_fname <- bis_impplan$file_name
+      bis_fname <- here("_DB", "_extsources", bis_impplan$file_name[1])
       #bis_names <- "policy_rate_eop"
       #bis_fname <- "./_extsources/WS_CBPOL_D_csv_row.csv"
       suppressMessages({
-      EZ_countries <- read_excel("1_peers_params.xlsx", sheet = "groups", col_names = F, skip=2, n_max=7)[c(2,7),-c(1:3)]
+      EZ_countries <- read_excel(here("_DB","1_peers_params.xlsx"), sheet = "groups", col_names = F, skip=2, n_max=7)[c(2,7),-c(1:3)]
       })
       EZ_countries <- data.frame(t(EZ_countries)) %>% filter(X1 == 1) %>% select(X2) %>% unlist()
       EZ_countries <- countrycode(EZ_countries, origin = 'iso3c', destination = 'iso2c', 
@@ -394,11 +397,10 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
         bis_data <- read.csv(bis_fname, header = TRUE, sep = ",", quote = "\"",
                              dec = ".", fill = TRUE, comment.char = "", na.strings=c(0,"..","","NA"), skip=8)
   
-        
         for (i in EZ_countries) {eval(parse(text = glue("bis_data <- bis_data %>% mutate(D.{i} = D.XM)")))}
         
-        bis_data <- bis_data %>% pivot_longer(!Time.Period, names_to = "country_id", values_to = "value")
-        bis_data <- bis_data %>% mutate(date = as.Date(Time.Period), country_id = substr(country_id,3,4), value=as.numeric(value)) %>%
+        bis_data <- bis_data %>% pivot_longer(!Time.Period, names_to = "country_id", values_to = "value") %>% 
+          mutate(date = as.Date(Time.Period), country_id = substr(country_id,3,4), value=as.numeric(value)) %>%
           select(country_id, date, value)
         
         bis_data <- eval(parse(text = glue("rename(bis_data,'{bis_names}'='value')") ))
@@ -417,7 +419,7 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
     
       bis_impplan <- impplan %>% filter(active==1, source_name=="BIS", retrieve_type=="file", database_name=="US dollar exchange rates (daily, vertical time axis)")
       bis_names <- bis_impplan$indicator_code
-      bis_fname <- bis_impplan$file_name
+      bis_fname <- here("_DB", "_extsources", bis_impplan$file_name[1])
       #bis_names <- "usdlc_eop"
       #bis_fname <- "./_extsources/WS_XRU_D_csv_row.csv"
   
@@ -428,8 +430,8 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
         bis_data <- read.csv(bis_fname, header = TRUE, sep = ",", quote = "\"",
                              dec = ".", fill = TRUE, comment.char = "", na.strings=c(0,"..","","NA"), skip=8)
   
-        bis_data <- bis_data %>% pivot_longer(!Time.Period, names_to = "country_id", values_to = "value")
-        bis_data <- bis_data %>% mutate(date = as.Date(Time.Period), country_id = substr(country_id,3,4), value=as.numeric(value)) %>%
+        bis_data <- bis_data %>% pivot_longer(!Time.Period, names_to = "country_id", values_to = "value") %>% 
+          mutate(date = as.Date(Time.Period), country_id = substr(country_id,3,4), value=as.numeric(value)) %>%
           select(country_id, date, value)
         
         bis_data <- eval(parse(text = glue("rename(bis_data,'{bis_names}'='value')") ))
@@ -448,7 +450,7 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
       
       bis_impplan <- impplan %>% filter(active==1, source_name=="BIS", retrieve_type=="file", database_name=="US dollar exchange rates (monthly, quarterly and annual)")
       bis_names <- bis_impplan$indicator_code
-      bis_fname <- bis_impplan$file_name
+      bis_fname <- here("_DB", "_extsources", bis_impplan$file_name[1])
       bis_codes <- bis_impplan$retrieve_code
       #bis_names <- c('usdlc_av_bis', 'usdlc_eop_bis')
       #bis_codes <- c('A', 'E')
@@ -483,7 +485,7 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
       
       bis_impplan <- impplan %>% filter(active==1, source_name=="BIS", retrieve_type=="file", database_name=="Policy rates (monthly)")
       bis_names <- bis_impplan$indicator_code
-      bis_fname <- bis_impplan$file_name
+      bis_fname <- here("_DB", "_extsources", bis_impplan$file_name[1])
       
       if (length(bis_names)>0) {
         
@@ -493,8 +495,8 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
     
         bis_data <- bis_data %>% mutate(country_id = REF_AREA) %>% select(-c("REF_AREA"))
         bis_data <- bis_data[,-c(1:13)]
-        bis_data <- bis_data %>% pivot_longer(!country_id, names_to = "time", values_to = "value")
-        bis_data <- bis_data %>% mutate(year = as.numeric(substr(time,2,5)), month = as.numeric(substr(time,7,8)), value=as.numeric(value)) %>%
+        bis_data <- bis_data %>% pivot_longer(!country_id, names_to = "time", values_to = "value") %>% 
+          mutate(year = as.numeric(substr(time,2,5)), month = as.numeric(substr(time,7,8)), value=as.numeric(value)) %>%
           select(country_id, year, month, value)
         
         bis_data <- eval(parse(text = glue("rename(bis_data,'{bis_names}'='value')") ))
@@ -513,7 +515,7 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
       bis_impplan <- impplan %>% filter(active==1, source_name=="BIS", retrieve_type=="file", database_name=="Effective exchange rate indices (monthly)")
       bis_names <- bis_impplan$indicator_code
       bis_codes <- bis_impplan$retrieve_code
-      bis_fname <- bis_impplan$file_name
+      bis_fname <- here("_DB", "_extsources", bis_impplan$file_name[1])
       #bis_names <- "neer_av"
       #bis_fname <- "./_extsources/WS_EER_M_csv_col.csv"
       
@@ -550,7 +552,7 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
       
       fm_impplan <- impplan %>% filter(active==1, database_name=="FM", retrieve_type=="file", source_frequency=="y")
       fm_names <- fm_impplan$indicator_code
-      fm_fname <- fm_impplan$file_name
+      fm_fname <- here("_DB", "_extsources", fm_impplan$file_name[1])
       fm_sheets <- fm_impplan$sheet_name
       
       if (length(fm_names)>0) {
@@ -629,7 +631,7 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
       covid_impplan <- impplan %>% filter(active==1, source_name=="Ourworldindata", retrieve_type=="file", database_name== "COVID tracker")
       covid_names <- covid_impplan$indicator_code
       covid_codes <- covid_impplan$retrieve_code
-      covid_fname <- covid_impplan$file_name[1]
+      covid_fname <- here("_DB", "_extsources", covid_impplan$file_name[1])
       
       if (length(covid_codes)>0) {
         
@@ -657,7 +659,7 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
       unhdr_impplan <- impplan %>% filter(active==1, source_name=="UN", retrieve_type=="file", database_name=="HDR")
       unhdr_names <- unhdr_impplan$indicator_code
       unhdr_codes <- unhdr_impplan$retrieve_code
-      unhdr_fname <- unhdr_impplan$file_name
+      unhdr_fname <- here("_DB", "_extsources", unhdr_impplan$file_name)
       
       if (length(unhdr_names)>0) {
         
@@ -691,7 +693,7 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
       ci_impplan <- impplan %>% filter(active==1, database_name=="Chinn-Ito", retrieve_type=="file", source_frequency=="y")
       ci_names <- ci_impplan$indicator_code
       ci_codes <- ci_impplan$retrieve_code
-      ci_fname <- ci_impplan$file_name
+      ci_fname <- here("_DB", "_extsources", ci_impplan$file_name[1])
       ci_sheets <- ci_impplan$sheet_name
       
       if (length(ci_names)>0) {
@@ -725,7 +727,7 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
       weo_impplan <- impplan %>% filter(active==1, database_name=="WEO", retrieve_type=="file", source_frequency=="y")
       weo_names <- weo_impplan$indicator_code
       weo_codes <- weo_impplan$retrieve_code
-      weo_fname <- weo_impplan$file_name
+      weo_fname <- here("_DB", "_extsources", weo_impplan$file_name[1])
       weo_sheets <- weo_impplan$sheet_name
       
       if (length(weo_names)>0) {
@@ -735,9 +737,9 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
           
           #weo_fname = "./_extsources/WEO.xls"
           #i=1
-          weo_data <- read_tsv(weo_fname[i], na = c("", "NA", "n/a"), col_types = "c", show_col_types = FALSE)
+          weo_data <- read_tsv(weo_fname, na = c("", "NA", "n/a"), col_types = "c", show_col_types = FALSE)
           weo_data <- weo_data %>% rename('country_id' = 'ISO', 'code' = 'WEO Subject Code') %>%
-            mutate_at(.vars = vars(starts_with('19'), starts_with('20')), .funs = gsub, patter = ",", replacement = "") %>%
+            mutate_at(.vars = vars(starts_with('19'), starts_with('20')), .funs = gsub, pattern = ",", replacement = "") %>%
             mutate_at(.vars = vars(starts_with('19'), starts_with('20')), .funs = as.numeric)
           weo_data <- eval(parse(text = glue("weo_data %>% filter(code == '{weo_codes[i]}')") ))
           
@@ -766,7 +768,7 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
     pp_impplan <- impplan %>% filter(active==1, database_name=="WPP_aggr", retrieve_type=="file", source_frequency=="y")
     pp_names <- pp_impplan$indicator_code
     pp_codes <- pp_impplan$retrieve_code
-    pp_fname <- pp_impplan$file_name
+    pp_fname <- here("_DB", "_extsources", pp_impplan$file_name[1])
     
     if (length(pp_names)>0) {
       
@@ -774,7 +776,7 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
       for (i in seq_along(pp_names)) {
         
         #i=1
-        pp_data <- read.csv(pp_fname[i], header = TRUE, sep = ",", quote = "\"",
+        pp_data <- read.csv(pp_fname, header = TRUE, sep = ",", quote = "\"",
                             dec = ".", fill = TRUE, comment.char = "", na.strings=c(0,"..","","NA"))
         
         pp_data <- eval(parse(text = glue("pp_data %>% select('ISO2_code', 'Time', 'Variant', '{pp_codes[i]}')") ))
@@ -802,13 +804,13 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
     pp_names <- pp_impplan$indicator_code
     pp_codes <- pp_impplan$retrieve_code
     pp_dict <- data.frame(pp_codes, pp_names)
-    pp_fname <- pp_impplan$file_name
+    pp_fname <- here("_DB", "_extsources", pp_impplan$file_name[1])
     
     if (length(pp_names)>0) {
       
       print("UNPD 5-year groups")
         
-      pp_data <- read.csv(pp_fname[1], header = TRUE, sep = ",", quote = "\"",
+      pp_data <- read.csv(pp_fname, header = TRUE, sep = ",", quote = "\"",
                             dec = ".", fill = TRUE, comment.char = "", na.strings=c(0,"..","","NA"))
         
       pp_data <- pp_data %>% select('ISO2_code', 'Time', 'Variant', 'AgeGrp', 'PopTotal') %>% filter(Variant == "Medium") %>%

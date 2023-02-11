@@ -16,6 +16,9 @@ library("tidyquant")
 library("timetk")
 library("glue")
 library("lubridate")
+library("here")
+
+here::i_am("_country_analysis_scripts/download_script/fill.R")
 
 ##### Function to set filling schedule
 
@@ -44,7 +47,7 @@ checkNames <- function(fillplan, formula_words) {
     # add checks for commands
     fillplan <- fillplan %>% mutate(check_names = 1)
     for (i in formula_words) {
-      eval(parse(text = glue::glue("fillplan <- fillplan %>% mutate(check_names = check_names * str_detect(new_indicator_code, '{i}', negate = TRUE))") ))
+      eval(parse(text = glue("fillplan <- fillplan %>% mutate(check_names = check_names * str_detect(new_indicator_code, '{i}', negate = TRUE))") ))
     }
     
     # add checks for special symbols
@@ -70,20 +73,20 @@ checkAvailability <- function(fillplan, impplan) {
   
   fillplan <- fillplan %>% mutate(check_availability = 0)
   for (i in c('d','q','m','y')) {
-    eval(parse(text = glue::glue("available_{i} <- impplan %>% filter(source_frequency == '{i}') %>% pull(indicator_code)") ))
+    eval(parse(text = glue("available_{i} <- impplan %>% filter(source_frequency == '{i}') %>% pull(indicator_code)") ))
   }
   for (i in seq_along(fillplan$new_indicator)) {
     
     oldfreq <- fillplan$old_frequency[i]
     newfreq <- fillplan$new_frequency[i]
-    eval(parse(text = glue::glue("available_now <- available_{oldfreq}") ))
+    eval(parse(text = glue("available_now <- available_{oldfreq}") ))
     needed <- unique(strsplit(fillplan$formula[i],"\\W+")[[1]])
     to_drop <- na.omit(c(formula_words, as.numeric(needed), ""))
     needed <- needed[!(needed %in% to_drop)]
     if (all(needed %in% available_now)) {fillplan$check_availability[i] <- 1} else {
         print(needed[!(needed %in% available_now)])
       }
-    eval(parse(text = glue::glue("available_{newfreq} <- c(available_{newfreq}, fillplan$new_indicator_code[i])") ))
+    eval(parse(text = glue("available_{newfreq} <- c(available_{newfreq}, fillplan$new_indicator_code[i])") ))
     
   }
     

@@ -144,6 +144,18 @@ dropDataToUpdate <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d
   
 }
 
+### Function to check if all the necessary files for import exist
+
+checkFileExistence <- function(impplan, extdata_folder) {
+  
+  impplan_temp <- impplan %>% filter(retrieve_type == "file") %>% 
+      mutate(check_exist = 1*file.exists(here(extdata_folder, file_name))) %>%
+      select(indicator_code, source_frequency, check_exist)
+  
+  impplan <- impplan %>% left_join(impplan_temp, by = c("indicator_code" = "indicator_code", "source_frequency" = "source_frequency"))
+  return(impplan)
+  
+}
 
 ## Main import function for APIs and local files 
 

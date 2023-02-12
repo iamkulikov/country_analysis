@@ -47,7 +47,10 @@ checkNames <- function(fillplan, formula_words) {
     # add checks for commands
     fillplan <- fillplan %>% mutate(check_names = 1)
     for (i in formula_words) {
-      eval(parse(text = glue("fillplan <- fillplan %>% mutate(check_names = check_names * str_detect(new_indicator_code, '{i}', negate = TRUE))") ))
+      if ('new_indicator_code' %in% names(fillplan)) {
+      eval(parse(text = glue("fillplan <- fillplan %>% mutate(check_names = check_names * str_detect(new_indicator_code, '{i}', negate = TRUE))") )) } else{
+      eval(parse(text = glue("fillplan <- fillplan %>% mutate(check_names = check_names * str_detect(indicator_code, '{i}', negate = TRUE))") )) 
+      }
     }
     
     # add checks for special symbols
@@ -59,10 +62,18 @@ checkNames <- function(fillplan, formula_words) {
 
 checkUnique <- function(fillplan) { 
   
-  counted <- fillplan %>% count(new_indicator_code, new_frequency) %>% 
+  if ('new_indicator_code' %in% names(fillplan)) {
+    counted <- fillplan %>% count(new_indicator_code, new_frequency) %>% 
                 select(new_indicator_code, new_frequency, n) %>% rename("check_unique" = "n") %>%
                 mutate(check_unique = (check_unique == 1)*1)
-  fillplan <- fillplan %>% left_join(counted, by = c("new_indicator_code" = "new_indicator_code", "new_frequency" = "new_frequency"))
+    fillplan <- fillplan %>% left_join(counted, by = c("new_indicator_code" = "new_indicator_code", "new_frequency" = "new_frequency"))
+  } else{
+    counted <- fillplan %>% count(indicator_code, source_frequency) %>% 
+                select(indicator_code, source_frequency, n) %>% rename("check_unique" = "n") %>%
+                mutate(check_unique = (check_unique == 1)*1)
+    fillplan <- fillplan %>% left_join(counted, by = c("indicator_code" = "indicator_code", "source_frequency" = "source_frequency"))
+  }
+  
   return(fillplan)
   
 }

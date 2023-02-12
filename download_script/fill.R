@@ -91,7 +91,7 @@ checkAvailability <- function(fillplan, impplan) {
     oldfreq <- fillplan$old_frequency[i]
     newfreq <- fillplan$new_frequency[i]
     eval(parse(text = glue("available_now <- available_{oldfreq}") ))
-    needed <- unique(strsplit(fillplan$formula[i],"\\W+")[[1]])
+    needed <- unique(strsplit(fillplan$formula[i],"\\/|\\(|\\)|\\+|\\-|\\*|\\=|\\^|\\,|\\s+")[[1]])
     to_drop <- na.omit(c(formula_words, as.numeric(needed), ""))
     needed <- needed[!(needed %in% to_drop)]
     if (all(needed %in% available_now)) {fillplan$check_availability[i] <- 1} else {
@@ -100,7 +100,7 @@ checkAvailability <- function(fillplan, impplan) {
     eval(parse(text = glue("available_{newfreq} <- c(available_{newfreq}, fillplan$new_indicator_code[i])") ))
     
   }
-    
+  
   return(fillplan)
   
 }
@@ -267,10 +267,10 @@ writeCountryModelFile <- function(countries, extdata_y, saveplan) {
     
     # убрал gg_debttorev и gg_inttorev пока что из select-а
     extdata_y %>% filter(country==countryname_export) %>% select(-c("country","country_id","year")) %>%
-      select(gdp_pc_usd_wb, gdp_pc_ppp_wb, gdp_growth, gdp_usd, gdp, cpi_av, deflator, rnd, gcfc_gdp, open, gg_debt_weo, gg_rev_weo) -> t_data_export
-              #, gg_debttorev,
-             #gg_exp_int, gg_bal, ca_usd, imp_gs_usd, intres_usd, intrestoimp, exp_div, neer_av, usdlc_eop, usdlc_av, wgi_va_est, wgi_ps_est,
-             #wgi1, wgi_cc_est, wgi_rl_est, wgi_rq_est, wgi_ge_est, wgi2, amr_male, amr_female, amr, life_exp, educ, hci)-> t_data_export
+      select(any_of(c('gdp_pc_usd_wb', 'gdp_pc_ppp_wb', 'gdp_growth', 'gdp_usd', 'gdp', 'cpi_av', 'deflator', 'rnd', 'gcfc_gdp', 'open', 'gg_debt_weo', 'gg_rev_weo', 'gg_debttorev',
+                    'gg_exp_int', 'gg_bal', 'ca_usd', 'imp_gs_usd', 'intres_usd', 'intrestoimp', 'exp_div', 'neer_av', 'usdlc_eop', 'usdlc_av', 'wgi_va_est', 'wgi_ps_est',
+                    'wgi1', 'wgi_cc_est', 'wgi_rl_est', 'wgi_rq_est', 'wgi_ge_est', 'wgi2', 'amr_male', 'amr_female', 'amr', 'life_exp', 'educ', 'hci'))) -> t_data_export
+     
     extdata_y %>% filter(country==countryname_export) %>% select("year") -> years
     dict_y <- saveplan %>% filter(source_frequency == "y")
     

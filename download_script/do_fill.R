@@ -5,11 +5,11 @@ library(here)
 
 ##### Where is the fillinf schedule saved? What are the data files?
 here::i_am("_country_analysis_scripts/download_script/do_fill.R")
-test <- 1
+test <- 0
 
 countries <- c("Armenia", "Brazil", "Bulgaria", "Greece", "China", "India", "Kyrgyz Republic", "Romania",
                "Russian Federation", "Slovak Republic", "South Africa", "Switzerland", "Ukraine")
-formula_words <- c("lag", "rollsum", "rollavg", "rollvol", "mean", "last", "first", "min", "max", "sum", "coalesce", "share")
+formula_words <- c("lag", "rollsum", "rollavg", "rollvol", "mean", "last", "first", "min", "max", "sum", "coalesce", "share", "exp")
 
 if (test == 0) {param_fname <- "0_database_params.xlsx"; data_fname <- "Imported_DB.xlsx";
 data_d_fname <- "Imported_d_DB.xlsx"; filled_fname <- "Filled_DB.xlsx"; filled_d_fname <- "Filled_d_DB.xlsx"} else {

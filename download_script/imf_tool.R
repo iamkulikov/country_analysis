@@ -1,7 +1,7 @@
 imfTool <- function(code, database, freq, start, end) {
   
   start <- max(as.numeric(start), 1987) # костыль - заменить на запрос со временем
-  end <- min(as.numeric(end), 2022) # костыль - заменить на запрос со временем
+  end <- min(as.numeric(end), 2023) # костыль - заменить на запрос со временем
   adres <- glue("http://dataservices.imf.org/REST/SDMX_JSON.svc/CompactData/{database}/{freq}..{code}.?startPeriod={start}&endPeriod={end}")
   #print(adres)
   downloaded <- jsonlite::fromJSON(adres)

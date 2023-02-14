@@ -267,9 +267,13 @@ writeCountryModelFile <- function(countries, extdata_y, saveplan) {
     
     # убрал gg_debttorev и gg_inttorev пока что из select-а
     extdata_y %>% filter(country==countryname_export) %>% select(-c("country","country_id","year")) %>%
-      select(any_of(c('gdp_pc_usd_wb', 'gdp_pc_ppp_wb', 'gdp_growth', 'gdp_usd', 'gdp', 'cpi_av', 'deflator', 'rnd', 'gcfc_gdp', 'open', 'gg_debt_weo', 'gg_rev_weo', 'gg_debttorev',
-                    'gg_exp_int', 'gg_bal', 'ca_usd', 'imp_gs_usd', 'intres_usd', 'intrestoimp', 'exp_div', 'neer_av', 'usdlc_eop', 'usdlc_av', 'wgi_va_est', 'wgi_ps_est',
-                    'wgi1', 'wgi_cc_est', 'wgi_rl_est', 'wgi_rq_est', 'wgi_ge_est', 'wgi2', 'amr_male', 'amr_female', 'amr', 'life_exp', 'educ', 'hci'))) -> t_data_export
+      select(any_of(c('gdp_pc_usd_wb', 'gdp_pc_ppp_wb', 'gdp_growth', 'gdp_usd', 'gdp', 'cpi_av', 'deflator', 'rnd', 'gcfc_gdp', 'open',
+                    'gg_debt_weo', 'gg_rev_weo', 'gg_debttorev', 'gg_exns_int', 'gg_inttorev', 'gg_debt_conc_usd', 'extdebt_conc_gdp',
+                    'gg_bal_weo', 'gg_bal_gdp_weo', 'gg_debt_gdp_weo', 'gg_debt_maturity', 'dpension2030',
+                    'ca_usd', 'ca_gdp', 'imp_gs_usd', 'intres_usd', 'intrestoimp', 'ex_div', 'neer_av', 'usdlc_eop', 'usdlc_av', 
+                    'remit_usd_wb', 'remit_gdp_wb', 'extdebt_usd', 'intrestoextdebt',
+                    'wgi_va_est', 'wgi_ps_est', 'wgi1', 'wgi_cc_est', 'wgi_rl_est', 'wgi_rq_est', 'wgi_ge_est', 'wgi2',
+                    'educ', 'amr_male', 'amr_female', 'amr', 'life_length', 'hci'))) -> t_data_export
      
     extdata_y %>% filter(country==countryname_export) %>% select("year") -> years
     dict_y <- saveplan %>% filter(source_frequency == "y")
@@ -282,7 +286,7 @@ writeCountryModelFile <- function(countries, extdata_y, saveplan) {
     
     data_export <- list(data_export)
     names(data_export) <- c("y")
-    write_xlsx(data_export, path = paste("../", countryname_export, "/Data/", countryname_export, "_data_model.xlsx", sep=""), 
+    write_xlsx(data_export, path = here(countryname_export, "Data", glue("{countryname_export}_data_model.xlsx")), 
                col_names = T, format_headers = T)
     
   }

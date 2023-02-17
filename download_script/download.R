@@ -53,7 +53,7 @@ dest <- here("_DB", datafolder, "IDS_Excel.zip")
 download.file(url, dest)
 unzip(zipfile = dest, exdir = here("_DB", datafolder))
 
-### Download COVID data from Ourworldindata
+### Download COVID data from Ourworldindata (don't need to update any more)
 ### or manually from here https://github.com/owid/covid-19-data/blob/master/public/data/owid-covid-data.csv
 #url <- "https://covid.ourworldindata.org/data/owid-covid-data.csv"
 #dest <- here("_DB", datafolder, "owid-covid-data.csv")
@@ -66,6 +66,10 @@ unzip(zipfile = dest, exdir = here("_DB", datafolder))
 ### Download fresh WEO database in tab-delimited form - rename as WEO. 
 ### Attention to number to date conversion
 ### https://www.imf.org/en/Publications/SPROLLs/world-economic-outlook-databases#sort=%40imfdate%20descending
+
+### Download fresh IMF database on GG debt held in global reserves
+### and insert it to the Reserves.xlsx file manually!!!
+### https://data.imf.org/regular.aspx?key=60587813
 
 ### Download UN HDR data (links should be updated manually!!!!!)
 ### https://hdr.undp.org/data-center/documentation-and-downloads

@@ -839,6 +839,34 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
     }
     
   })
+  
+  ##### Import data on debt held in reserves
+  try({
+    
+    res_impplan <- impplan %>% filter(active==1, database_name=="BondsInReserves", retrieve_type=="file", source_frequency=="y")
+    res_names <- res_impplan$indicator_code[1]
+    res_fname <- here("_DB", "_extsources", res_impplan$file_name[1])
+    res_sheets <- res_impplan$sheet_name[1]
+    
+    if (length(res_names)>0) {
+      
+      print("BondsInReserves")
+      
+      res_data <- read_excel(res_fname, sheet = res_sheets, skip = 3, col_names = T, na = "C")
+      names(res_data)[1] <- "country_id"
+      res_data <- res_data %>% select(country_id, contains("DEC")) %>% 
+        pivot_longer(!country_id, names_to = "year", values_to = "value") %>%
+        mutate(country_id = countrycode(country_id, origin = 'country.name', destination = 'iso2c', custom_match = c('World' = '1W'), warn = F)) %>% 
+        mutate(year = as.numeric(str_sub(year, 6, 9)))
+      
+      res_data <- eval(parse(text = glue("rename(res_data,'{res_names[1]}'='value')") ))
+      
+      extdata_y <- extdata_y %>% left_join(res_data, by = c("country_id" = "country_id", "year"="year"), suffix=c("","_old"))
+      print("+")
+      
+    }
+    
+  })
     
     ##### Return imported
     return(list(extdata_y = extdata_y, extdata_q = extdata_q, extdata_m = extdata_m, extdata_d = extdata_d))

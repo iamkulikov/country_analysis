@@ -261,7 +261,12 @@ writeCountryFile <- function(countries, datalist) {
         datalist_country$dict <- datalist_country$dict %>% filter(is.finite(start_year), is.finite(end_year))
         
         for (i in c("y", "q", "m", "d")) {
-          eval(parse(text = glue("datalist_country$extdata_{i} <- datalist_country$extdata_{i} %>% discard(~all(is.na(.)))") ))
+          eval(parse(text = glue("year_min_{i} <- datalist_country$dict %>% filter(source_frequency == '{i}') %>%
+                                 select(start_year) %>% unique() %>% min(na.rm = TRUE) ") ))
+          eval(parse(text = glue("year_max_{i} <- datalist_country$dict %>% filter(source_frequency == '{i}') %>%
+                                 select(end_year) %>% unique() %>% max(na.rm = TRUE) ") ))
+          eval(parse(text = glue("datalist_country$extdata_{i} <- datalist_country$extdata_{i} %>% discard(~all(is.na(.))) %>%
+                                 filter(year >= year_min_{i}, year <= year_max_{i})") ))
         } 
         
         names(datalist_country) <- c("y", "q", "m", "d", "dict")

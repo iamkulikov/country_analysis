@@ -231,30 +231,44 @@ generateSaveplan <- function (impplan, fillplan) {
 }
 
 
-##### Function to export data on certain countries (add other frequencies)
+##### Function to export data on certain countries
 
-writeCountryFile <- function(countries, extdata_y, extdata_q, extdata_m, extdata_d) {
+writeCountryFile <- function(countries, datalist) {
 
-      #setwd('..')
-      print("Writing country files")  
+      print("Writing country files")
+      datalist$dict <- rbind(datalist$dict, datalist$dict_d) %>% select(-c(keep, success, n_countries, n_points))
+      datalist$dict_d <- NULL
+  
       for (countryname_export in countries) {
         
-        extdata_y %>% filter(country==countryname_export) %>% select(-c("country","country_id","year")) -> t_data_export
-        extdata_y %>% filter(country==countryname_export) %>% select("year") -> years
+        datalist$extdata_d <- datalist$extdata_d %>% mutate(year = year(date)) %>% select(year, date, everything())
+        datalist_country <- datalist
         
-        data_export <- data.frame(t(t_data_export))
-        names(data_export) <- unlist(years)
-        data_export <- cbind("indicator_code" = names(t_data_export), data_export)
-        data_export <- data_export %>% left_join(dict_y, "indicator_code"="indicator_code") %>% 
-          select(indicator, indicator_code, theme, source_name, everything()) %>% select(-c(keep, source_frequency))
+        for (i in c("y", "q", "m", "d")) {
+          eval(parse(text = glue("datalist_country$extdata_{i} <- datalist_country$extdata_{i} %>% 
+                                filter(country == '{countryname_export}') %>%
+                                select(-c(country, country_id))") ))
+        }
         
-        data_export <- list(data_export)
-        names(data_export) <- c("y")
-        write_xlsx(data_export, path = paste0(countryname_export, "/Data/", countryname_export, "_data_filled.xlsx"), 
+        for (i in seq_along(datalist_country$dict$indicator)) {
+            a <- eval(parse(text = glue("datalist_country$extdata_{datalist$dict$source_frequency[i]} %>% 
+                                          select(year, {datalist_country$dict$indicator_code[i]}) %>% 
+                                          filter(!is.na({datalist_country$dict$indicator_code[i]}))") ))
+            datalist_country$dict$start_year[i] <- a %>% pull(year) %>% unique() %>% min(na.rm = TRUE)
+            datalist_country$dict$end_year[i] <- a %>% pull(year) %>% unique() %>% max(na.rm = TRUE)
+        }
+        
+        datalist_country$dict <- datalist_country$dict %>% filter(is.finite(start_year), is.finite(end_year))
+        
+        for (i in c("y", "q", "m", "d")) {
+          eval(parse(text = glue("datalist_country$extdata_{i} <- datalist_country$extdata_{i} %>% discard(~all(is.na(.)))") ))
+        } 
+        
+        names(datalist_country) <- c("y", "q", "m", "d", "dict")
+        write_xlsx(datalist_country, path = here(countryname_export, "Data", glue("{countryname_export}_data_filled.xlsx")), 
                    col_names = T, format_headers = T)
         
       }
-  
 }
 
 ##### Function to export data on certain countries in model format (only yearly)

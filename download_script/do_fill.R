@@ -58,7 +58,7 @@ if (is.null(dim(error_report)[1]) | is.na(dim(error_report)[1]) | (dim(error_rep
       writeDatafiles(data_fname = here("_DB", filled_fname), data_d_fname = here("_DB", filled_d_fname), extdata_y = FD$extdata_y, extdata_q = FD$extdata_q, extdata_m = FD$extdata_m, extdata_d = FD$extdata_d, dict = FD$dict, dict_d = FD$dict_d)
       
       ### Single countries
-      #writeCountryFile(countries, extdata_y = D$extdata_y, extdata_q = D$extdata_q, extdata_m = D$extdata_m, extdata_d = D$extdata_d)
+      writeCountryFile(countries = countries, datalist = FD)
       writeCountryModelFile(countries = countries, extdata_y = FD$extdata_y, saveplan = saveplan)
   
   } else {print("Errors found"); print(error_report)}

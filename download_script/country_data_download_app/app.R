@@ -5,11 +5,10 @@ library(here)
 here::i_am("app.R")
 
 source(here("service.R"))
-data_fname <- "Filled_DB.xlsx"
-data_d_fname <- "Filled_d_DB.xlsx"
 
 # Import data
-FD <- importData(data_fname = here(data_fname), data_d_fname = here(data_d_fname))
+FD <- importData(data_y_fname = "extdata_y.csv", data_q_fname = "extdata_q.csv", data_m_fname = "extdata_m.csv", data_d_fname = "extdata_d.csv",
+                 dict_fname = "dict.csv", path = here())
 countries <- FD$extdata_y$country %>% unique()
 #countries <- c("Russia", "France", "Saudi Arabia")
 
@@ -22,13 +21,21 @@ ui <-   fluidPage(
       
       sidebarPanel(
         
+        # Input: Choose country
         selectizeInput(
           'country_choice', 'Choose a country', choices = countries,
           options = list(
             placeholder = 'Please select an option below',
-            onInitialize = I('function() { this.setValue(""); }')
+            onInitialize = I('function() { this.setValue("Russian Federation"); }')
           )
-        )
+        ),
+        
+        # Input: Choose file structure
+        selectInput("file_structure", "Choose download format:",
+                    choices = c("Model", "All data (vertical)", "All data (horizontal)")),
+        
+        # Button
+        downloadButton("downloadData", "Download")
         
       ),
       
@@ -45,18 +52,28 @@ ui <-   fluidPage(
 server <- function(input, output, session) {
   
   # Calculating a data subset for a chosen country
-  #data_subset <- reactive(data.frame(a = c(1,2), dict = c(input$country_choice,8)))
-  data_subset <- reactive(subsetCountry(country = input$country_choice, datalist = FD))
-  dict_to_show <- reactive( data_subset() %>% '[['("dict") )
-  data_to_download <- reactive( data_subset() %>% '[['("y") )
-    
+  data_subset <- reactive({ if (is.null(input$country_choice)) {return(NULL)} else {
+    subsetCountry(country = input$country_choice, datalist = FD)}
+    })
+  
+  dict_to_show <- reactive({ if (is.null(input$country_choice)) {return(NULL)} else {data_subset() %>% '[['("dict")} })
+  
+  data_to_download <- reactive({ if (is.null(input$country_choice)) {return(NULL)} else {
+    switch(input$file_structure,
+           "Model" = data_subset() %>% '[['("y") %>% generateModelSheet(dict_to_show()),
+            "All data (vertical)" = data_subset(),
+            "All data (horizontal)" = data_subset() 
+    )
+    }
+  })
+  
   # Showing the name of a chosen country
   output$chosen_country <- renderText({
     
     if (is.null(input$country_choice)) {
       return("Choose a country to download data")
     } else {
-      return(glue::glue("{input$country_choice} data found:"))
+      return(glue("{input$country_choice} data found:"))
     }
     
   })
@@ -72,6 +89,14 @@ server <- function(input, output, session) {
     
   }, escape = FALSE, options = list(pageLength = 7, autoWidth = TRUE))
   
+  # Preparing datalists to download
+  
+  # Downloadable xlsx of selected dataset
+  output$downloadData <- downloadHandler(
+    filename = function() { glue("{input$country_choice}_data_filled.xlsx") },
+    content = function(file) { write_xlsx(data_to_download(), file, col_names = T, format_headers = T) }
+  )
+    
 }
 
 # Run the application 

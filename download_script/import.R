@@ -941,6 +941,20 @@ writeDatafiles <- function(data_fname, data_d_fname, extdata_y, extdata_q, extda
 
 }
 
+## Export data on all countries to 4 csv files: yearly/quarterly/monthly database and dict
+
+writeDatafilesCsv <- function(datalist, path) {
+  
+  print("Writing csv files")
+  datalist$dict <- rbind(datalist$dict, datalist$dict_d) %>% select(-c(keep, success, n_countries, n_points))
+  datalist$dict_d <- NULL
+  
+  for (i in 1:length(datalist)) {
+    write_excel_csv2(datalist[[i]], file = here(path, glue("{names(datalist)[i]}.csv")), col_names = TRUE, na="")
+  }
+  
+}
+
 ## Export data on a specific country to the yearly database
 
 #countryname_export = "Russian Federation"

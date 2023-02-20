@@ -56,6 +56,7 @@ if (is.null(dim(error_report)[1]) | is.na(dim(error_report)[1]) | (dim(error_rep
       saveplan <- generateSaveplan(impplan = impplan, fillplan = fillplan)
       FD <- preExport(saveplan = saveplan, extdata_y = FD$extdata_y, extdata_q = FD$extdata_q, extdata_m = FD$extdata_m, extdata_d = FD$extdata_d)
       writeDatafiles(data_fname = here("_DB", filled_fname), data_d_fname = here("_DB", filled_d_fname), extdata_y = FD$extdata_y, extdata_q = FD$extdata_q, extdata_m = FD$extdata_m, extdata_d = FD$extdata_d, dict = FD$dict, dict_d = FD$dict_d)
+      writeDatafilesCsv(datalist = FD, path = here("_country_analysis_scripts", "download_script", "country_data_download_app"))
       
       ### Single countries
       writeCountryFile(countries = countries, datalist = FD)

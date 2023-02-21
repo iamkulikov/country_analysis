@@ -62,9 +62,18 @@ server <- function(input, output, session) {
     switch(input$file_structure,
            "Model" = data_subset() %>% '[['("y") %>% generateModelSheet(dict_to_show()),
             "All data (vertical)" = data_subset(),
-            "All data (horizontal)" = data_subset() 
+            "All data (horizontal)" = transposeDatalist(data_subset()) 
     )
     }
+  })
+  
+  download_filename <- reactive({ if (is.null(input$country_choice)) {return(NULL)} else {
+    switch(input$file_structure,
+           "Model" = "model",
+           "All data (vertical)" = "filled_v",
+           "All data (horizontal)" = "filled_h"
+    )
+  }
   })
   
   # Showing the name of a chosen country
@@ -93,7 +102,7 @@ server <- function(input, output, session) {
   
   # Downloadable xlsx of selected dataset
   output$downloadData <- downloadHandler(
-    filename = function() { glue("{input$country_choice}_data_filled.xlsx") },
+    filename = function() { glue("{input$country_choice}_data_{download_filename()}.xlsx") },
     content = function(file) { write_xlsx(data_to_download(), file, col_names = T, format_headers = T) }
   )
     

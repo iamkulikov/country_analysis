@@ -62,6 +62,7 @@ subsetCountry <- function(countryname_export, datalist) {
                                  filter(year >= year_min_{i}, year <= year_max_{i})") ))
     } 
     
+    datalist_country$extdata_d <- datalist_country$extdata_d %>% select(-year)
     names(datalist_country) <- c("y", "q", "m", "d", "dict")
     return(datalist_country)
     #write_xlsx(datalist_country, path = here(countryname_export, "Data", glue("{countryname_export}_data_filled.xlsx")), 
@@ -95,5 +96,26 @@ generateModelSheet <- function(yearly_data, dict) {
     data_export <- list(data_export)
     names(data_export) <- c("y")
     return(data_export)
+  
+}
+
+## Transpose data
+transposeDatalist <- function(countrydata) {
+  
+  countrydata$y <- countrydata$y %>% pivot_longer(!year, names_to = "variable", values_to = "value") %>%
+        pivot_wider(names_from = year, values_from = value)
+  
+  countrydata$q <- countrydata$q %>% pivot_longer(!c(year, quarter), names_to = "variable", values_to = "value") %>% 
+    mutate(time = glue("{year}-{quarter}")) %>% select(-c(year, quarter)) %>%
+    pivot_wider(names_from = time, values_from = value)
+  
+  countrydata$m <- countrydata$m %>% pivot_longer(!c(year, quarter, month), names_to = "variable", values_to = "value") %>% 
+    mutate(time = glue("{year}-{month}")) %>% select(-c(year, quarter, month)) %>%
+    pivot_wider(names_from = time, values_from = value)
+  
+  countrydata$d <- countrydata$d %>% pivot_longer(!date, names_to = "variable", values_to = "value") %>%
+    pivot_wider(names_from = date, values_from = value)
+  
+  return(countrydata)
   
 }

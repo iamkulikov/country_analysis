@@ -161,24 +161,48 @@ checkFileExistence <- function(impplan, extdata_folder) {
 
 tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
       
-    ##### Import WDI
+    ##### Import WDI yearly
     try({
       
-      wdi_impplan <- impplan %>% filter(active==1, database_name=="WDI", retrieve_type=="API", source_frequency=="y")
-      wdi_names <- wdi_impplan$indicator_code
-      wdi_codes <- wdi_impplan$retrieve_code
+      wdiy_impplan <- impplan %>% filter(active==1, database_name=="WDI", retrieve_type=="API", source_frequency=="y")
+      wdiy_names <- wdiy_impplan$indicator_code
+      wdiy_codes <- wdiy_impplan$retrieve_code
       
-      if (length(wdi_codes)>0) {
+      if (length(wdiy_names)>0 & all(!is.na(wdiy_names))) {
       
         print("WDI")
-        wdi_data <- WDI(indicator = wdi_codes, start = year_first, end = year_final, extra=F) %>% select(-c(country)) %>%
-          rename_at(vars(any_of(wdi_codes)), ~wdi_names)
+        wdiy_data <- WDI(indicator = wdiy_codes, start = year_first, end = year_final, extra=F) %>% select(-c(country)) %>%
+          rename_at(vars(any_of(wdiy_codes)), ~wdiy_names)
         
-        extdata_y <- extdata_y %>% left_join(wdi_data, by = c("country_id"="iso2c", "year"="year"), suffix=c("","_old"))
+        extdata_y <- extdata_y %>% left_join(wdiy_data, by = c("country_id"="iso2c", "year"="year"), suffix=c("","_old"))
         print("+")
         
         }
     
+    })
+  
+    ##### Import WDI quarterly
+    try({
+      
+      wdiq_impplan <- impplan %>% filter(active==1, database_name=="WDI", retrieve_type=="API", source_frequency=="q")
+      wdiq_names <- wdiq_impplan$indicator_code
+      wdiq_codes <- wdiq_impplan$retrieve_code
+      
+      if (length(wdiq_names)>0 & all(!is.na(wdiq_names))) {
+        
+        print("WDI")
+        wdiq_data <- WDI(indicator = wdiq_codes, start = year_first, end = year_final, extra=F) %>% select(-c(country, iso3c)) %>%
+          mutate(quarter = as.numeric(substr(year, 6, 6)), year = as.numeric(substr(year, 1, 4))) %>%
+          mutate(iso2c = countrycode(iso2c, origin = 'iso3c', destination = 'iso2c', 
+                                     custom_match = c('ROM' = 'RO','ADO' = 'AD','ANT' = 'AN',
+                                                      'KSV' = 'XK','TMP' = 'TL','WBG' = 'PS','ZAR' = 'CD'), warn = F)) %>%
+          rename_at(vars(any_of(wdiq_codes)), ~wdiq_names)
+        
+        extdata_q <- extdata_q %>% left_join(wdiq_data, by = c("country_id"="iso2c", "year"="year", "quarter"="quarter"), suffix=c("","_old"))
+        print("+")
+        
+      }
+      
     })
   
     ##### Import WGI
@@ -191,7 +215,7 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
       wgi_type <- wgi_impplan$retrieve_code
       wgi_data <- NULL
       
-      if (length(wgi_names)>0) {
+      if (length(wgi_names)>0 & all(!is.na(wdiy_names))) {
           
         print("WGI")
         for (i in seq_along(wgi_names)) {
@@ -229,7 +253,7 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
       unctad_names <- unctad_impplan$indicator_code
       unctad_fname <- here("_DB", "_extsources", unctad_impplan$file_name[1])
     
-      if (length(unctad_names)>0) {
+      if (length(unctad_names)>0 & all(!is.na(unctad_names))) {
         
         print("UNCTAD")
         unctad_data <- read.csv(unctad_fname, header = TRUE, sep = ",", quote = "\"",
@@ -260,7 +284,7 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
       imfy_names <- imfy_impplan$indicator_code
       imfy_codes <- imfy_impplan$retrieve_code
       
-      if (length(imfy_codes)>0) {
+      if (length(imfy_names)>0 & all(!is.na(imfy_names))) {
         
         print("IMF-Y")
         imf_data_in <- NULL
@@ -295,7 +319,7 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
       imfq_names <- imfq_impplan$indicator_code
       imfq_codes <- imfq_impplan$retrieve_code
       
-      if (length(imfq_codes)>0) {
+      if (length(imfq_names)>0 & all(!is.na(imfq_names))) {
       
         print("IMF-Q")
         imf_data_in <- NULL
@@ -329,7 +353,7 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
       imfm_names <- imfm_impplan$indicator_code
       imfm_codes <- imfm_impplan$retrieve_code
       
-      if (length(imfm_codes)>0) {
+      if (length(imfm_names)>0 & all(!is.na(imfm_names))) {
         
         print("IMF-M")
         imf_data_in <- NULL
@@ -363,7 +387,7 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
       ids_sheets <- unique(ids_impplan$sheet_name)
       ids_codes <- ids_impplan$retrieve_code
       
-      if (length(ids_codes)>0) {
+      if (length(ids_names)>0 & all(!is.na(ids_names))) {
         
         print("IDS")
         ids_data <- read_excel(ids_fname, sheet = ids_sheets, col_names = T, na = "#N/A")
@@ -403,7 +427,7 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
                                   custom_match = c('ROM' = 'RO','ADO' = 'AD','ANT' = 'AN',
                                           'KSV' = 'XK','TMP' = 'TL','WBG' = 'PS','ZAR' = 'CD'), warn = F)
       
-      if (length(bis_names)>0) {
+      if (length(bis_names)>0 & all(!is.na(bis_names))) {
         
         print("BIS-pol-d")
         bis_data <- read.csv(bis_fname, header = TRUE, sep = ",", quote = "\"",
@@ -436,7 +460,7 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
       #bis_fname <- "./_extsources/WS_XRU_D_csv_row.csv"
   
       
-      if (length(bis_names)>0) {
+      if (length(bis_names)>0 & all(!is.na(bis_names))) {
         
         print("BIS-FX-d")
         bis_data <- read.csv(bis_fname, header = TRUE, sep = ",", quote = "\"",
@@ -468,7 +492,7 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
       #bis_codes <- c('A', 'E')
       #bis_fname <- "./_extsources/WS_XRU_csv_col.csv"
       
-      if (length(bis_names)>0) {
+      if (length(bis_names)>0 & all(!is.na(bis_names))) {
         
         print("BIS-FX-m")
         bis_data <- read.csv(bis_fname[1], header = TRUE, sep = ",", quote = "\"",
@@ -499,7 +523,7 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
       bis_names <- bis_impplan$indicator_code
       bis_fname <- here("_DB", "_extsources", bis_impplan$file_name[1])
       
-      if (length(bis_names)>0) {
+      if (length(bis_names)>0 & all(!is.na(bis_names))) {
         
         print("BIS-pol-m")
         bis_data <- read.csv(bis_fname, header = TRUE, sep = ",", quote = "\"",
@@ -531,7 +555,7 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
       #bis_names <- "neer_av"
       #bis_fname <- "./_extsources/WS_EER_M_csv_col.csv"
       
-      if (length(bis_names)>0) {
+      if (length(bis_names)>0 & all(!is.na(bis_names))) {
        
         print("BIS-EER-m")
         
@@ -567,7 +591,7 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
       fm_fname <- here("_DB", "_extsources", fm_impplan$file_name[1])
       fm_sheets <- fm_impplan$sheet_name
       
-      if (length(fm_names)>0) {
+      if (length(fm_names)>0 & all(!is.na(fm_names))) {
         
         print("IMF-FM")
         for (i in seq_along(fm_names)) {
@@ -604,7 +628,7 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
       ilo_codes <- ilo_impplan$retrieve_code
       ilo_freq <- ilo_impplan$source_frequency
       
-      if (length(ilo_codes)>0) {
+      if (length(ilo_names)>0 & all(!is.na(ilo_names))) {
         
         print("ILOstat")
         for (i in seq_along(ilo_names)) {
@@ -645,7 +669,7 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
       covid_codes <- covid_impplan$retrieve_code
       covid_fname <- here("_DB", "_extsources", covid_impplan$file_name[1])
       
-      if (length(covid_codes)>0) {
+      if (length(covid_names)>0 & all(!is.na(covid_names))) {
         
         print("OWID")
         covid_data <- read.csv(covid_fname, header = TRUE, sep = ",", quote = "\"",
@@ -673,7 +697,7 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
       unhdr_codes <- unhdr_impplan$retrieve_code
       unhdr_fname <- here("_DB", "_extsources", unhdr_impplan$file_name)
       
-      if (length(unhdr_names)>0) {
+      if (length(unhdr_names)>0 & all(!is.na(unhdr_names))) {
         
         print("UN-HDR")
         
@@ -708,7 +732,7 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
       ci_fname <- here("_DB", "_extsources", ci_impplan$file_name[1])
       ci_sheets <- ci_impplan$sheet_name
       
-      if (length(ci_names)>0) {
+      if (length(ci_names)>0 & all(!is.na(ci_names))) {
         
         print("Chinn-Ito")
         for (i in seq_along(ci_names)) {
@@ -742,7 +766,7 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
       weo_fname <- here("_DB", "_extsources", weo_impplan$file_name[1])
       weo_sheets <- weo_impplan$sheet_name
       
-      if (length(weo_names)>0) {
+      if (length(weo_names)>0 & all(!is.na(weo_names))) {
         
         print("IMF-WEO")
         for (i in seq_along(weo_names)) {
@@ -782,7 +806,7 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
     pp_codes <- pp_impplan$retrieve_code
     pp_fname <- here("_DB", "_extsources", pp_impplan$file_name[1])
     
-    if (length(pp_names)>0) {
+    if (length(pp_names)>0 & all(!is.na(pp_names))) {
       
       print("UNPD aggregates")
       for (i in seq_along(pp_names)) {
@@ -818,7 +842,7 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
     pp_dict <- data.frame(pp_codes, pp_names)
     pp_fname <- here("_DB", "_extsources", pp_impplan$file_name[1])
     
-    if (length(pp_names)>0) {
+    if (length(pp_names)>0 & all(!is.na(pp_names))) {
       
       print("UNPD 5-year groups")
         
@@ -843,25 +867,25 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
   ##### Import data on debt held in reserves
   try({
     
-    res_impplan <- impplan %>% filter(active==1, database_name=="BondsInReserves", retrieve_type=="file", source_frequency=="y")
-    res_names <- res_impplan$indicator_code[1]
-    res_fname <- here("_DB", "_extsources", res_impplan$file_name[1])
-    res_sheets <- res_impplan$sheet_name[1]
+    hres_impplan <- impplan %>% filter(active==1, database_name=="BondsInReserves", retrieve_type=="file", source_frequency=="y")
+    hres_names <- hres_impplan$indicator_code[1]
+    hres_fname <- here("_DB", "_extsources", hres_impplan$file_name[1])
+    hres_sheets <- hres_impplan$sheet_name[1]
     
-    if (length(res_names)>0) {
+    if (length(hres_names)>0 & all(!is.na(hres_names))) {
       
       print("BondsInReserves")
       
-      res_data <- read_excel(res_fname, sheet = res_sheets, skip = 3, col_names = T, na = "C")
-      names(res_data)[1] <- "country_id"
-      res_data <- res_data %>% select(country_id, contains("DEC")) %>% 
+      hres_data <- read_excel(hres_fname, sheet = hres_sheets, skip = 3, col_names = T, na = "C")
+      names(hres_data)[1] <- "country_id"
+      hres_data <- hres_data %>% select(country_id, contains("DEC")) %>% 
         pivot_longer(!country_id, names_to = "year", values_to = "value") %>%
         mutate(country_id = countrycode(country_id, origin = 'country.name', destination = 'iso2c', custom_match = c('World' = '1W'), warn = F)) %>% 
         mutate(year = as.numeric(str_sub(year, 6, 9)))
       
-      res_data <- eval(parse(text = glue("rename(res_data,'{res_names[1]}'='value')") ))
+      hres_data <- eval(parse(text = glue("rename(hres_data,'{hres_names[1]}'='value')") ))
       
-      extdata_y <- extdata_y %>% left_join(res_data, by = c("country_id" = "country_id", "year"="year"), suffix=c("","_old"))
+      extdata_y <- extdata_y %>% left_join(hres_data, by = c("country_id" = "country_id", "year"="year"), suffix=c("","_old"))
       print("+")
       
     }

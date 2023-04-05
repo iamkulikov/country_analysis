@@ -134,7 +134,7 @@ fill <- function(fillplan, extdata_y, extdata_q, extdata_m, extdata_d) {
       
       #### Calculating new variables of the same frequency
       
-      if (oldfreq == newfreq & active == 1 & str_detect(formula, "roll") == F & formula != "share") {
+      if (oldfreq == newfreq & active == 1 & str_detect(formula, "roll") == F & str_detect(formula, "fromto") == F & formula != "share") {
         
         a <- glue("extdata_{oldfreq} <- extdata_{oldfreq} %>% group_by(country) %>% mutate({newcode} = {formula}) %>% ungroup()")
         eval(parse(text = a)); print(a)
@@ -174,11 +174,36 @@ fill <- function(fillplan, extdata_y, extdata_q, extdata_m, extdata_d) {
       
       
       #### Calculating shares 
-      #i=68
+      
       if (oldfreq == newfreq & active == 1 & fillplan$formula[i] =="share" ) {
         
         a <- glue("extdata_{oldfreq} <- extdata_{oldfreq} %>% group_by({oldfreq_long}) %>% \\
                 mutate({newcode} = {oldcode}*100/sum({oldcode}, na.rm=T)) %>% ungroup()")
+        eval(parse(text = a)); print(a)
+        
+      } else {};
+      
+      
+      #### Filling indicator values for selected countries with values from a particular country
+      
+      if (oldfreq == newfreq & active == 1 & str_detect(formula, "fromto") == T ) {
+        
+        country_from <- substr(formula, str_locate(formula, '[(]')[1,1]+1, str_locate(formula, ', ')[1,1]-1 )
+        if (is.na(country_from)) {
+          country_from <- substr(formula, str_locate(formula, '[(]')[1,1]+1, str_locate(formula, '[)]')[1,1]-1 )
+        }
+        countries_to <- substr(formula, str_locate(formula, "c[(]")[1,1]+2, str_locate(formula, '[)]')[1,1]-1 ) %>% 
+            str_split(", ") %>% '[['(1)
+        if (all(is.na(countries_to))) {countries_to <- extdata_y %>% pull(country_id) %>% unique()}
+        
+        a <- glue("from <- extdata_{oldfreq} %>% select(date, country_id, {oldcode}) %>% \\
+                    filter(country_id == '{country_from}') %>% select(-c(country_id)) ") 
+        eval(parse(text = a)); print(a)
+        from <- eval(parse(text = glue("rename(from,'{newcode}'='{oldcode}')") ))
+        from <- from %>% slice(rep(1:n(), each = length(countries_to))) %>% mutate(country_id = NA)
+        from$country_id <- rep(countries_to, dim(from)[1]/length(countries_to))
+        
+        a <- glue("extdata_{newfreq} <- extdata_{newfreq} %>% left_join(from, 'date' = 'date', 'country_id' = 'country_id')")
         eval(parse(text = a)); print(a)
         
       } else {};
@@ -288,7 +313,8 @@ writeCountryModelFile <- function(countries, extdata_y, saveplan) {
     extdata_y %>% filter(country==countryname_export) %>% select(-c("country","country_id","year")) %>%
       select(any_of(c('gdp_pc_usd_wb', 'gdp_pc_ppp_wb', 'gdp_growth', 'gdp_usd', 'gdp', 'cpi_av', 'deflator', 'rnd', 'gcfc_gdp', 'open',
                     'gg_debt_weo', 'gg_rev_weo', 'gg_debttorev', 'gg_exns_int', 'gg_inttorev', 'gg_debt_conc_usd', 'extdebt_conc_gdp',
-                    'gg_bal_weo', 'gg_bal_gdp_weo', 'extdebt_gg_usd', 'extdebt_gg_gdp', 'gg_debt_gdp_weo', 'gg_debt_held_global', 'gg_debt_maturity', 'dpension2030', 
+                    'gg_bal_weo', 'gg_bal_gdp_weo', 'extdebt_gg_usd', 'extdebt_gg_gdp', 'gg_debt_gdp_weo', 'gg_debt_held_global_usd',
+                    'gg_debt_held_global_role','gg_debt_maturity', 'dpension2030', 
                     'ca_usd', 'ca_gdp', 'imp_gs_usd', 'intres_usd', 'intrestoimp', 'niip_ex_ggcb_usd', 'niip_ex_ggcb_gdp', 
                     'ex_div', 'neer_av', 'usdlc_eop', 'usdlc_av', 'remit_usd_wb', 'remit_gdp_wb', 'extdebt_usd', 'intrestoextdebt',
                     'wgi_va_est', 'wgi_ps_est', 'wgi1', 'wgi_cc_est', 'wgi_rl_est', 'wgi_rq_est', 'wgi_ge_est', 'wgi2',

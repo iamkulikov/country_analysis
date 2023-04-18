@@ -65,8 +65,15 @@ unzip(zipfile = dest, exdir = here("_DB", datafolder))
 ### https://www.imf.org/en/Publications/FM
 
 ### Download fresh WEO database in tab-delimited form - rename as WEO. 
-### Attention to number to date conversion
+### Check that all rows contain smth, at least n/a
 ### https://www.imf.org/en/Publications/SPROLLs/world-economic-outlook-databases#sort=%40imfdate%20descending
+
+### Download fresh WEO database for aggregates in tab-delimited form, choose only GDP growth - rename as WEO_aggr.
+### Check that all rows contain smth, at least n/a
+### https://www.imf.org/en/Publications/SPROLLs/world-economic-outlook-databases#sort=%40imfdate%20descending
+
+### Download fiscal space database and check that it is called Fiscal-space-data.xlsx
+### https://www.worldbank.org/en/research/brief/fiscal-space
 
 ### Download fresh IMF database on GG debt held in global reserves
 ### and insert it to the Reserves.xlsx file manually!!!

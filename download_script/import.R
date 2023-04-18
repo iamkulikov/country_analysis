@@ -764,7 +764,6 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
       weo_names <- weo_impplan$indicator_code
       weo_codes <- weo_impplan$retrieve_code
       weo_fname <- here("_DB", "_extsources", weo_impplan$file_name[1])
-      weo_sheets <- weo_impplan$sheet_name
       
       if (length(weo_names)>0 & all(!is.na(weo_names))) {
         
@@ -796,7 +795,42 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
       }
     
     })
+
+  ##### Import WEO outlook for aggregates
+  try({
     
+    weo_impplan <- impplan %>% filter(active==1, database_name=="WEO_aggr", retrieve_type=="file", source_frequency=="y")
+    weo_names <- weo_impplan$indicator_code
+    weo_codes <- weo_impplan$retrieve_code
+    weo_fname <- here("_DB", "_extsources", weo_impplan$file_name[1])
+    
+    if (length(weo_names)>0 & all(!is.na(weo_names))) {
+      
+      print("IMF-WEO-aggr")
+      for (i in seq_along(weo_names)) {
+        
+        #i=1
+        weo_data <- read_tsv(weo_fname, na = c("", "NA", "n/a"), col_types = "c", show_col_types = F)
+        weo_data <- weo_data %>% rename('code' = 'Country Group Name', 'indicator' = 'WEO Subject Code', 
+                        'note' = 'Country/Series-specific Notes') %>%
+          mutate_at(.vars = vars(starts_with('19'), starts_with('20')), .funs = gsub, pattern = ",", replacement = "") %>%
+          mutate_at(.vars = vars(starts_with('19'), starts_with('20')), .funs = as.numeric)
+        weo_data <- eval(parse(text = glue("weo_data %>% filter(code == '{weo_codes[i]}', indicator == 'NGDP_RPCH')") ))
+        
+        weo_data <- weo_data %>% select(starts_with('19'), starts_with('20')) %>% 
+          mutate(country_id = "1W") %>% pivot_longer(!country_id, names_to = "year", values_to = "value") %>%
+          mutate(year = as.numeric(year), value = as.numeric(value))
+        
+        weo_data <- eval(parse(text = glue("rename(weo_data,'{weo_names[i]}'='value')") ))
+        
+        extdata_y <- extdata_y %>% left_join(weo_data, by = c("country_id" = "country_id", "year" = "year"), suffix=c("","_old"))
+        print("+")
+        
+      }
+      
+    }
+    
+  })  
   
   ##### Import UNPD aggregated data
   try({
@@ -892,6 +926,40 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
     
   })
     
+  ##### Import data from Fiscal Space Database
+  
+  try({
+    
+    fsdb_impplan <- impplan %>% filter(active==1, database_name=="FSDB", retrieve_type=="file", source_frequency=="y")
+    fsdb_names <- fsdb_impplan$indicator_code
+    fsdb_sheets <- fsdb_impplan$sheet_name
+    
+    
+    if (length(fsdb_names)>0 & all(!is.na(fsdb_names))) {
+      
+      print("FSDB")
+      fsdb_fname <- here("_DB", "_extsources", fsdb_impplan$file_name[i])
+      
+      for(i in seq_along(fsdb_names)) {
+      
+      fsdb_data <- read_excel(fsdb_fname, sheet = fsdb_sheets[i], col_names = T, na = "")
+      names(fsdb_data)[1] <- "country_id"
+      fsdb_data <- fsdb_data %>% select(country_id, starts_with('19'), starts_with('20')) %>% 
+        pivot_longer(!country_id, names_to = "year", values_to = "value") %>%
+        mutate(country_id = countrycode(country_id, origin = 'iso3c', destination = 'iso2c', warn = F)) %>% 
+        mutate(year = as.numeric(year), value = as.numeric(value))
+      
+      fsdb_data <- eval(parse(text = glue("rename(fsdb_data,'{fsdb_names[i]}'='value')") ))
+      
+      extdata_y <- extdata_y %>% left_join(fsdb_data, by = c("country_id" = "country_id", "year"="year"), suffix=c("","_old"))
+      print("+")
+      
+      }
+      
+    }
+    
+  })
+  
     ##### Return imported
     return(list(extdata_y = extdata_y, extdata_q = extdata_q, extdata_m = extdata_m, extdata_d = extdata_d))
     print("+++")

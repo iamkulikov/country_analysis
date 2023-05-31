@@ -1,35 +1,22 @@
 #   All the functions to import data
 
-##  Load packages
+##### Load libraries
+library_names <- c("dplyr","reshape2","WDI","countrycode","readxl","readr","tidyr","data.table","writexl","stringr",
+                   "gsubfn","jsonlite","Rilostat","glue","httr","rlist","here")
 
-library("dplyr")
-library("reshape2")
-library("WDI")
-library("countrycode")
-library("readxl")
-library("readr")
-library("tidyr")
-library("data.table")
-library("writexl")
-library("stringr")
-library("gsubfn")
-library("jsonlite")
-library("Rilostat")
-library("glue")
-library("httr")
-library("jsonlite") 
-library("rlist")
-library("here")
+for (library_name in library_names) {
+  library(library_name, character.only = TRUE)
+}
 
-## Import custom tools
+##### Import custom tools
 here::i_am("_country_analysis_scripts/download_script/import.R")
 source(here("_country_analysis_scripts","download_script","imf_tool.R"))
 
-## Set parameters
+##### Set parameters
 d_container_start <- "2019-01-01"
 d_container_end <- "2023-12-31"
 
-## Function to set import/update schedule
+##### Function to set import/update schedule
 
 readImportParams <- function (param_fname, update_mode) {
   
@@ -44,7 +31,7 @@ readImportParams <- function (param_fname, update_mode) {
   
 }
 
-## Function to generate data containers
+##### Function to generate data containers
 
 generateDataContainers <- function(from, to) {
   
@@ -76,7 +63,7 @@ generateDataContainers <- function(from, to) {
 
 }
 
-## Function to import previously downloaded data
+##### Function to import previously downloaded data
 
 importOldData <- function(data_fname, data_d_fname) {
   
@@ -98,7 +85,7 @@ importOldData <- function(data_fname, data_d_fname) {
   }
 
 
-## Function to update import schedule after each cycle of import attempts
+##### Function to update import schedule after each cycle of import attempts
 
 updateImportPlan <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
   
@@ -128,7 +115,7 @@ updateImportPlan <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d
 
 }
 
-## Function to drop data, which needs to be updated
+##### Function to drop data, which needs to be updated
 
 dropDataToUpdate <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
     
@@ -144,7 +131,7 @@ dropDataToUpdate <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d
   
 }
 
-### Function to check if all the necessary files for import exist
+##### Function to check if all the necessary files for import exist
 
 checkFileExistence <- function(impplan, extdata_folder) {
   
@@ -157,7 +144,7 @@ checkFileExistence <- function(impplan, extdata_folder) {
   
 }
 
-## Main import function for APIs and local files 
+##### Main import function for APIs and local files 
 
 tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
       
@@ -969,7 +956,7 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
 
 # Functions to export data from memory
 
-## Function to generate dict and keep only planned imports
+##### Function to generate dict and keep only planned imports
 
 preExport <- function(saveplan, extdata_y, extdata_q, extdata_m, extdata_d) {
 
@@ -1019,7 +1006,7 @@ preExport <- function(saveplan, extdata_y, extdata_q, extdata_m, extdata_d) {
 
 }
 
-## Export data on all countries to the yearly/quarterly/monthly database
+##### Export data on all countries to the yearly/quarterly/monthly database
 
 writeDatafiles <- function(data_fname, data_d_fname, extdata_y, extdata_q, extdata_m, extdata_d, dict, dict_d) {
 
@@ -1033,7 +1020,7 @@ writeDatafiles <- function(data_fname, data_d_fname, extdata_y, extdata_q, extda
 
 }
 
-## Export data on all countries to 4 csv files: yearly/quarterly/monthly database and dict
+##### Export data on all countries to 4 csv files: yearly/quarterly/monthly database and dict
 
 writeDatafilesCsv <- function(datalist, path) {
   

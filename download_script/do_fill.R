@@ -3,7 +3,7 @@ library(here)
 
 ##### Choose filling mode
 
-##### Where is the fillinf schedule saved? What are the data files?
+##### Where is the filling schedule saved? What are the data files?
 here::i_am("_country_analysis_scripts/download_script/do_fill.R")
 test <- 0
 

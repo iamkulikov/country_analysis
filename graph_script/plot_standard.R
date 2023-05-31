@@ -30,9 +30,9 @@ library("fanplot")
 library("ggfan")
 library("hrbrthemes")
 
-country_name <- "China"
+#country_name <- "China"
 #country_name <- "Brazil"
-#country_name <- "Russian Federation"
+country_name <- "Russian Federation"
 
 ###### Define custom color palettes
 

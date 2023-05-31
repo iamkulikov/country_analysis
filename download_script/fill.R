@@ -1,22 +1,12 @@
 #   All the functions to make calculations on imported data
 
-##  Load packages
+##### Load libraries
+library_names <- c("dplyr","reshape2","countrycode","readxl","tidyr","data.table","writexl","stringr","purrr",
+                   "gsubfn","tidyquant","timetk","glue","lubridate","here")
 
-library("dplyr")
-library("reshape2")
-library("countrycode")
-library("readxl")
-library("tidyr")
-library("data.table")
-library("writexl")
-library("stringr")
-library("purrr")
-library("gsubfn")
-library("tidyquant")
-library("timetk")
-library("glue")
-library("lubridate")
-library("here")
+for (library_name in library_names) {
+  library(library_name, character.only = TRUE)
+}
 
 here::i_am("_country_analysis_scripts/download_script/fill.R")
 

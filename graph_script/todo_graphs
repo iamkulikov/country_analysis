@@ -6,7 +6,7 @@ graph_template:
 
 plot_standard:
 
-  добавить в пирах опцию region: BRICS, EM, DM, infl_target
+  добавить в пирах опцию region: BRICS, EM, DM, IT, EZ, EU, EEU, OPEC_plus, ACRA
   сделать кастомную тему
   обработка ошибок: все переменные существуют в dict
   взять идеи по типам графиков с ourworldindata

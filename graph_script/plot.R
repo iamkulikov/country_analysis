@@ -87,15 +87,60 @@ getPeersCodes <- function(country_name, peers_fname) {
 
 ####### Function to get plot schedule
 
-getPlotSchedule <- function(plotparam_fname) {
+getPlotSchedule <- function(plotparam_fname, dict) {
   
+  graphplan <- read_excel(plotparam_fname, sheet = "library", col_names = T, skip=1) %>% mutate(source_name=NA)
+  
+  for (i in 1:dim(graphplan)[1]) {
+    a <- unlist(str_extract_all( string = graphplan$indicators[i], pattern = paste(na.omit(dict$indicator_code), collapse = "|") ))
+    a <- plyr::mapvalues(a, from = dict$indicator_code, to = dict$source_name, warn_missing = F)
+    a <- unlist(strsplit(a, ", "))
+    a <- a[a!="расчеты АКРА"]
+    a <- c(unique(a), "расчеты АКРА")
+    graphplan$source_name[i] = toString(a)
+  }  
+  
+  return(graphplan)
+  
+}
+
+####### Functions to check the plot schedule
+checkGraphTypes <- function(graphplan, graph_types) {
+  
+  graphplan <- graphplan %>% mutate(check_types = 1)
+  for (i in 1:dim(graphplan)[1]) {
+    
+    if(graphplan$graph_type[i] %in% graph_types) {} else {graphplan$check_types[i] = 0}
+        
+  }
+  
+  return(graphplan)
+  
+}
+
+
+checkUnique <- function(graphplan) {
+  
+  graphplan <- graphplan %>% mutate(check_unique = 1)
+  
+}
+
+
+checkAvailability <- function(graphplan, dict) {
+  
+  graphplan <- graphplan %>% mutate(check_availability = 0)
+  for (i in 1:dim(graphplan)[1]) {
+    
+    needed <- graphplan$indicators[i] %>% str_split(", ") %>% '[['(1)
+    available <- D$dict %>% filter(source_frequency == graphplan$data_frequency[i]) %>% pull(indicator_code)
+    if(all(needed %in% available)) {graphplan$check_availability[i] = 1}
+    
+  }
+  
+  return(graphplan)
   
 }
 
 ####### Function to generate plot sources
 
-generatePlotSources <- function(graphdata, dict) {
-  
-  
-}
 

@@ -1,8 +1,5 @@
 Download_data:
 
-0) interface:
-Сделать shiny-приложение для построения графиков в соответствии с планом/одиночного графика
-
 1) download:
 Download переписать как функцию?
 А потом вызывать процесс через do_download, do_import, do_fill, do_augment, do_graph, do_report
@@ -24,6 +21,7 @@ FiscalMonitor привязать к dropbox?
 Как брать CDS с cbonds? Где брать ставки по госбондам?
 Взять что-нибудь с WHO - expected healthy life? 
 Качать ли ARA IMF? https://www.imf.org/external/datamapper/Reserves_ARA@ARA/CHN/IND/BRA/RUS/ZAF
+Добавить дефолты (расчетные) и из базы BOC-BOE (или нашей?)
 
 3) fill:
 
@@ -44,6 +42,8 @@ FiscalMonitor привязать к dropbox?
 дописать все, нужное для модели (дефолты)
 добавить поле short_label для использования на графиках
 сделать правильный combine для extebt_fc_role и extdebt_sr_role
+сделать курс и ставку для еврозоны
+добавить экспорт csv-шек в приложения для графиков
 
 4) augment:
 

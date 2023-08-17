@@ -5,7 +5,7 @@ library(here)
 here::i_am("_country_analysis_scripts/graph_script/do_plot.R")
 
 ##### Parameters and source names
-country_name <- "China"
+country_name <- "Switzerland"
 file_output <- "jpeg"
 horizontal_size <- c(1800, 900)
 vertical_size <- c(900, 900)

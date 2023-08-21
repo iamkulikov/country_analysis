@@ -14,13 +14,14 @@ FD <- importData(data_y_fname = "extdata_y.csv", data_q_fname = "extdata_q.csv",
 
 # Menu lists
 countries <- FD$extdata_y$country %>% unique()
-indicators <- c("gdp_g", "cpi_yoy")
+indicators <- list("", "GDP" = "gdp_g", "CPI" = "cpi_yoy", "Death rate" = "dead", "R&D, % GDP" = "rnd", "WGI index" = "wgi1")
 indicator_groups <- c("GDP decomposition", "GDP growth decomposition", "BOP", "BOP detailed", "IIP", "IIP detailed", 
                       "Budget revenue","Budget expenditure", "Budget balance", "Population drivers")
 graph_types <- c("scatter_dynamic", "scatter_country_comparison", "structure_dynamic", "structure_country_comparison",
                  "structure_country_comparison_norm", "bar_dynamic", "bar_country_comparison", "bar_country_comparison_norm", 
                  "bar_year_comparison", "lines_country_comparison", "lines_indicator_comparison", "distribution_dynamic")
-peers <- c("none", "default", "neighbours", "EU", "EZ", "EEU", "IT", "OPEC_plus", "BRICS", "EM", "DM", "ACRA")
+peers <- c("none", "default", "custom", "neighbours", "formula", "EU", "EZ", "EEU", "IT", "OPEC_plus", "BRICS", "EM", "DM", "ACRA")
+graph_groups <- c("macro", "budget", "external", "institutional", "demogr", "covid", "other")
 graph_filetypes <- c("jpeg", "png")
 
 # Interface
@@ -37,7 +38,7 @@ ui <-   fluidPage(
       ## Basic Input
       
       selectizeInput(
-        'graph_type_choice', 'Graph type', choices = graph_types,
+        'graph_type', 'Graph type', choices = graph_types,
         options = list(
           placeholder = 'Select an option below',
           onInitialize = I('function() { this.setValue("bar_country_comparison"); }')
@@ -54,7 +55,7 @@ ui <-   fluidPage(
       
       column(4,     
       selectizeInput(
-        'freq_choice', 'Data freq', choices = c("y", "q", "m", "d"),
+        'data_frequency', 'Data freq', choices = c("y", "q", "m", "d"),
         options = list(
           placeholder = 'Please select an option below',
           onInitialize = I('function() { this.setValue("y"); }')
@@ -63,37 +64,29 @@ ui <-   fluidPage(
       
       ## Indicator input and comparison
       
-      h3("Indicators"),
-      fluidRow(column(8,
-                      selectizeInput(
-                        'ind1', 'Indicator 1', choices = indicators,
-                          options = list(
-                            placeholder = 'Please select an option below',
-                            onInitialize = I('function() { this.setValue("gdp_g"); }')
-                        ))
-                      ),
-               column(4, textInput("time_fix1", "Time fix", "none"))
-      ),
-      
-      fluidRow(column(8,
-                      selectizeInput(
-                        'ind2', 'Indicator 2', choices = indicators,
-                        options = list(
-                          placeholder = 'Please select an option below',
-                          onInitialize = I('function() { this.setValue("NA"); }')
-                        ))
-                      ),
-              column(4, textInput("time_fix2", "Time fix", "none"))
-      ),
-      
+      selectizeInput('indicators', 'Indicators', choices = indicators, multiple = T,
+              options = list(
+                 placeholder = 'Please select an option below',
+                 onInitialize = I('function() { this.setValue("gdp_g"); }')
+                        )),
       selectInput("ind_group", "Indicator group", choices = indicator_groups, NULL),
+      textInput("time_fix1", "Time fix", "none"),
+
       
       h3("Peers"),
-      fluidRow(column(6,selectizeInput("peers", "Peer group", choices = peers)),
-               column(6,textInput("all", "All", 8))
+      fluidRow(column(9,selectizeInput("peers", "Peer group", choices = peers)),
+               column(3,radioButtons("all", "All", choices = " ", selected = character(0), inline = T))
       ),
       
-      textInput("peers_list", "Custom", "RU, CN, BR"),
+      selectizeInput(
+        'peers_custom', 'Custom list', choices = countries, multiple = T,
+        options = list(
+          placeholder = 'Select an option below',
+          onInitialize = I('function() { this.setValue("Chile"); }')
+        )),
+      
+      textInput("peers_formula", "Formula", NULL),
+      
       
       ## Style
       
@@ -101,44 +94,51 @@ ui <-   fluidPage(
       fluidRow(
                column(4,textInput("x_min", "X min", 8)),
                column(4,textInput("x_max", "X max", 8)),
-               column(4,textInput("x_log", "X log", 8))
+               column(4,radioButtons("x_log", "X log", choices = " ", selected = character(0), inline = T))
                       ),
       
       fluidRow(
                column(4,textInput("y_min", "Y min", 8)),
                column(4,textInput("y_max", "Y max", 8)),
-               column(4,textInput("y_log", "Y log", 8))
+               column(4,radioButtons("y_log", "Y log", choices = " ", selected = character(0), inline = T))
       ),
       
-      textInput("swap_axis", "Swap axis", "NA"),
+      fluidRow(
+        column(4,selectizeInput("sec_y_axis_ind", "2nd Y-axis", choices = indicators)),
+        column(4,textInput("sec_y_axis_coeff", "Axis mult", 10)),
+        column(4,radioButtons("swap_axis", "Swap axis", choices = " ", selected = character(0), inline = T))
+      ),
 
       fluidRow(
-        column(4,textInput("trend_type", "Trend", "NA")),
-        column(4,textInput("recession", "Recession", "No")),
-        column(4,selectInput("style", "Style preset", "ACRA"))
+        column(4,radioButtons("trend_type", "Trend", choices = " ", selected = character(0), inline = T)),
+        column(4,radioButtons("recession", "Recession", choices = " ", selected = character(0), inline = T)),
+        column(4,radioButtons("index", "Index", choices = " ", selected = character(0), inline = T))
       ),
+      
+      selectInput("style", "Style preset", "ACRA"),
       
       ## Output
       
       h3("Output"),
-      selectizeInput(
-        'indicators_choice', 'Choose the graph type', choices = indicators,
-        options = list(
-          placeholder = 'Please select an option below',
-          onInitialize = I('function() { this.setValue("gdp_growth"); }')
-        )
-      ),
       
-      selectInput("orientation", "Choose orientation",
-                  choices = c("horizontal", "vertical")),
+      fluidRow(
+        column(6, selectizeInput(
+          'graph_group', 'Graph group', choices = graph_groups,
+          options = list(
+            placeholder = 'Please select an option below',
+            onInitialize = I('function() { this.setValue("macro"); }')
+          )
+        )),
+        column(6, selectInput("orientation", "Orientation", choices = c("horizontal", "vertical")))
+      ),
       
       fluidRow(
         column(8,textAreaInput("graph_title", "Graph Title", "Graph Title")),
-        column(4,textInput("show_title", "Show", "No")),
+        column(4,radioButtons("show_title", "Show Title", choices = " ", selected = character(0), inline = T)),
       ),
       
       fluidRow(
-        column(8,textInput("filename", "File name", "goodgraph")),
+        column(8,textInput("graph_name", "File name", "goodgraph")),
         column(4,selectInput("filetype", "File type", choices = graph_filetypes)),
       ),
       

@@ -14,18 +14,18 @@ FD <- importData(data_y_fname = "extdata_y.csv", data_q_fname = "extdata_q.csv",
                  data_d_fname = "extdata_d.csv", dict_fname = "dict.csv", path = here())
 
 # Menu lists
+graph_types <- c("scatter_dynamic", "scatter_country_comparison", "structure_dynamic", "structure_country_comparison",
+                 "structure_country_comparison_norm", "bar_dynamic", "bar_country_comparison", "bar_country_comparison_norm", 
+                 "bar_year_comparison", "lines_country_comparison", "lines_indicator_comparison", "distribution_dynamic")
 countries <- FD$extdata_y$country %>% unique()
 indicators <- list("", "GDP" = "gdp_g", "CPI" = "cpi_yoy", "Death rate" = "dead", "R&D, % GDP" = "rnd", "WGI index" = "wgi1")
 indicator_groups <- c("", "GDP decomposition", "GDP growth decomposition", "BOP", "BOP detailed", "IIP", "IIP detailed", 
                       "Budget revenue","Budget expenditure", "Budget balance", "Population drivers")
-graph_types <- c("scatter_dynamic", "scatter_country_comparison", "structure_dynamic", "structure_country_comparison",
-                 "structure_country_comparison_norm", "bar_dynamic", "bar_country_comparison", "bar_country_comparison_norm", 
-                 "bar_year_comparison", "lines_country_comparison", "lines_indicator_comparison", "distribution_dynamic")
 peers <- c("none","default", "custom", "neighbours", "formula", "EU", "EZ", "EEU", "IT", "OPEC_plus", "BRICS", "EM", "DM", "ACRA")
+trend_types <- c("lm", "loess")
+graph_themes <- c("ACRA", "ipsum", "economist", "minimal")
 graph_groups <- c("macro", "budget", "external", "institutional", "demogr", "covid", "other")
 graph_filetypes <- c("jpeg", "png")
-
-# Container definitions
 
 
 # Interface
@@ -131,7 +131,7 @@ ui <-   fluidPage(
         column(4,checkboxInput("index", "Index"))
       ),
       
-      selectInput("theme", "Style preset", "ACRA"),
+      selectInput("theme", "Style preset", graph_themes),
       
       ## Output
       
@@ -207,7 +207,7 @@ server <- function(input, output, session) {
                             )
                       })
 
-  
+  # Table to export to excel plan
   output$table <- renderTable({ graphrow() })
   output$check <- renderText({input$x_min == ""})
   

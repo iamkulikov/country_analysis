@@ -2,6 +2,7 @@
 
 library(shiny)
 library(here)
+library(shinyWidgets)
 here::i_am("app.R")
 
 # Import all the necessary assets except data
@@ -15,21 +16,26 @@ FD <- importData(data_y_fname = "extdata_y.csv", data_q_fname = "extdata_q.csv",
 # Menu lists
 countries <- FD$extdata_y$country %>% unique()
 indicators <- list("", "GDP" = "gdp_g", "CPI" = "cpi_yoy", "Death rate" = "dead", "R&D, % GDP" = "rnd", "WGI index" = "wgi1")
-indicator_groups <- c("GDP decomposition", "GDP growth decomposition", "BOP", "BOP detailed", "IIP", "IIP detailed", 
+indicator_groups <- c("", "GDP decomposition", "GDP growth decomposition", "BOP", "BOP detailed", "IIP", "IIP detailed", 
                       "Budget revenue","Budget expenditure", "Budget balance", "Population drivers")
 graph_types <- c("scatter_dynamic", "scatter_country_comparison", "structure_dynamic", "structure_country_comparison",
                  "structure_country_comparison_norm", "bar_dynamic", "bar_country_comparison", "bar_country_comparison_norm", 
                  "bar_year_comparison", "lines_country_comparison", "lines_indicator_comparison", "distribution_dynamic")
-peers <- c("none", "default", "custom", "neighbours", "formula", "EU", "EZ", "EEU", "IT", "OPEC_plus", "BRICS", "EM", "DM", "ACRA")
+peers <- c("none","default", "custom", "neighbours", "formula", "EU", "EZ", "EEU", "IT", "OPEC_plus", "BRICS", "EM", "DM", "ACRA")
 graph_groups <- c("macro", "budget", "external", "institutional", "demogr", "covid", "other")
 graph_filetypes <- c("jpeg", "png")
+
+# Container definitions
+
 
 # Interface
 
 ui <-   fluidPage(
-  
+
   theme = bslib::bs_theme(bootswatch = "flatly"),
   titlePanel("Graph parameters"),
+
+  #tags$head(uiOutput("colour_helper")),
   
   sidebarLayout(
     
@@ -65,17 +71,22 @@ ui <-   fluidPage(
       ## Indicator input and comparison
       
       selectizeInput('indicators', 'Indicators', choices = indicators, multiple = T,
-              options = list(
-                 placeholder = 'Please select an option below',
-                 onInitialize = I('function() { this.setValue("gdp_g"); }')
-                        )),
-      selectInput("ind_group", "Indicator group", choices = indicator_groups, NULL),
-      textInput("time_fix1", "Time fix", "none"),
+                options = list(
+                   placeholder = 'Please select an option below',
+                   onInitialize = I('function() { this.setValue("gdp_g"); }')
+                          )),
+      selectInput("ind_group", "Indicator group", choices = indicator_groups, selected = ""),
+      textInput("time_fix", "Time fix", ""),
 
       
       h3("Peers"),
-      fluidRow(column(9,selectizeInput("peers", "Peer group", choices = peers)),
-               column(3,radioButtons("all", "All", choices = " ", selected = character(0), inline = T))
+      fluidRow(column(9,selectizeInput("peers", "Peer group", choices = peers,
+                            options = list(
+                                    placeholder = 'Please select an option below',
+                                    onInitialize = I('function() { this.setValue("default"); }')
+                                          )
+                                       )),
+               column(3,checkboxInput("all", "All"))
       ),
       
       selectizeInput(
@@ -85,37 +96,42 @@ ui <-   fluidPage(
           onInitialize = I('function() { this.setValue("Chile"); }')
         )),
       
-      textInput("peers_formula", "Formula", NULL),
+      textInput("peers_formula", "Formula", ""),
       
       
       ## Style
       
       h3("Style"),
       fluidRow(
-               column(4,textInput("x_min", "X min", 8)),
-               column(4,textInput("x_max", "X max", 8)),
-               column(4,radioButtons("x_log", "X log", choices = " ", selected = character(0), inline = T))
+               column(4,textInput("x_min", "X min")),
+               column(4,textInput("x_max", "X max")),
+               column(4,checkboxInput("x_log", "X log"))
                       ),
       
       fluidRow(
-               column(4,textInput("y_min", "Y min", 8)),
-               column(4,textInput("y_max", "Y max", 8)),
-               column(4,radioButtons("y_log", "Y log", choices = " ", selected = character(0), inline = T))
+               column(4,textInput("y_min", "Y min")),
+               column(4,textInput("y_max", "Y max")),
+               column(4,checkboxInput("y_log", "Y log"))
       ),
       
       fluidRow(
-        column(4,selectizeInput("sec_y_axis_ind", "2nd Y-axis", choices = indicators)),
+        column(4,selectizeInput("sec_y_axis_ind", "2nd Y-axis", choices = indicators, 
+                        options = list(
+                          placeholder = 'Select an option below',
+                          onInitialize = I('function() { this.setValue("Chile"); }')
+                                        )
+                                )),
         column(4,textInput("sec_y_axis_coeff", "Axis mult", 10)),
-        column(4,radioButtons("swap_axis", "Swap axis", choices = " ", selected = character(0), inline = T))
+        column(4,checkboxInput("swap_axis", "Swap axis"))
       ),
 
       fluidRow(
-        column(4,radioButtons("trend_type", "Trend", choices = " ", selected = character(0), inline = T)),
-        column(4,radioButtons("recession", "Recession", choices = " ", selected = character(0), inline = T)),
-        column(4,radioButtons("index", "Index", choices = " ", selected = character(0), inline = T))
+        column(4,checkboxInput("trend_type", "Trend")),
+        column(4,checkboxInput("recession", "Recession")),
+        column(4,checkboxInput("index", "Index"))
       ),
       
-      selectInput("style", "Style preset", "ACRA"),
+      selectInput("theme", "Style preset", "ACRA"),
       
       ## Output
       
@@ -134,7 +150,7 @@ ui <-   fluidPage(
       
       fluidRow(
         column(8,textAreaInput("graph_title", "Graph Title", "Graph Title")),
-        column(4,radioButtons("show_title", "Show Title", choices = " ", selected = character(0), inline = T)),
+        column(4,checkboxInput("show_title", "Show Title")),
       ),
       
       fluidRow(
@@ -150,7 +166,9 @@ ui <-   fluidPage(
     mainPanel(
       
       textOutput("chosen_country"),
-      dataTableOutput("table")
+      #plotOutput("graph"),
+      tableOutput("table"),
+      textOutput("check")
       
     )
   )
@@ -159,34 +177,39 @@ ui <-   fluidPage(
 # Calculations
 
 server <- function(input, output, session) {
+
   
-  # Import peers for a chosen country
-  country_info <- reactive({getPeersCodes(country_name = country_name, peers_fname = peers_fname)})
+  # Listening to the user
+  graphrow <- reactive({
+                  data.frame(
+                            graph_name = input$graph_name,
+                            graph_title = input$graph_title,
+                            graph_type = input$graph_type,
+                            graph_group = input$graph_group,
+                            data_frequency = input$data_frequency,
+                            indicators = paste(input$indicators, collapse = ", "),
+                            time_fix = input$time_fix,
+                            peers = input$peers, # прописать конструктор
+                            all = 1*input$all,
+                            x_log = 1*input$x_log,
+                            y_log = 1*input$y_log,
+                            x_min = input$x_min,
+                            x_max = input$x_max,
+                            y_min = input$y_min,
+                            y_max = input$y_max,
+                            trend_type = input$trend_type,
+                            index = 1*input$index,
+                            #sec_y_axis = 1*input$sec_y_axis_ind,  прописать конструктор
+                            theme = input$theme,
+                            orientation = input$orientation,
+                            show_title = 1*input$show_title,
+                            active = 1
+                            )
+                      })
+
   
-  # Calculating a data subset for a chosen country
-  data_subset <- reactive({ if (is.null(input$country_choice)) {return(NULL)} else {
-    subsetCountry(country = input$country_choice, datalist = FD)}
-  })
-  
-  dict_to_show <- reactive({ if (is.null(input$country_choice)) {return(NULL)} else {data_subset() %>% '[['("dict")} })
-  
-  data_to_download <- reactive({ if (is.null(input$country_choice)) {return(NULL)} else {
-    switch(input$file_structure,
-           "Model" = data_subset() %>% '[['("y") %>% generateModelSheet(dict_to_show()),
-           "All data (vertical)" = data_subset(),
-           "All data (horizontal)" = transposeDatalist(data_subset()) 
-    )
-  }
-  })
-  
-  download_filename <- reactive({ if (is.null(input$country_choice)) {return(NULL)} else {
-    switch(input$file_structure,
-           "Model" = "model",
-           "All data (vertical)" = "filled_v",
-           "All data (horizontal)" = "filled_h"
-    )
-  }
-  })
+  output$table <- renderTable({ graphrow() })
+  output$check <- renderText({input$x_min == ""})
   
   # Showing the name of a chosen country
   output$chosen_country <- renderText({
@@ -199,24 +222,6 @@ server <- function(input, output, session) {
     
   })
   
-  # Printing a table with a dict for a chosen country
-  output$table <- renderDataTable({
-    
-    if (is.null(input$country_choice)) {
-      return(NULL)
-    } else {
-      dict_to_show()
-    }
-    
-  }, escape = FALSE, options = list(pageLength = 7, autoWidth = TRUE))
-  
-  # Preparing datalists to download
-  
-  # Downloadable xlsx of selected dataset
-  output$downloadData <- downloadHandler(
-    filename = function() { glue("{input$country_choice}_data_{download_filename()}.xlsx") },
-    content = function(file) { write_xlsx(data_to_download(), file, col_names = T, format_headers = T) }
-  )
   
 }
 

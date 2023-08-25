@@ -29,7 +29,7 @@ names(indicators) <- indicators_temp %>% pull(indicator)
 indicator_groups <- c("", "GDP decomposition", "GDP growth decomposition", "BOP", "BOP detailed", "IIP", "IIP detailed", 
                       "Budget revenue","Budget expenditure", "Budget balance", "Population drivers")
 peers <- c("none","default", "custom", "neighbours", "formula", "EU", "EZ", "EEU", "IT", "OPEC_plus", "BRICS", "EM", "DM", "ACRA")
-trend_types <- c("lm", "loess")
+trend_types <- c("", "lm", "loess")
 graph_themes <- c("ACRA", "ipsum", "economist", "minimal")
 graph_groups <- c("macro", "budget", "external", "institutional", "demogr", "covid", "other")
 graph_filetypes <- c("jpeg", "png")
@@ -45,8 +45,6 @@ ui <-   fluidPage(
 
   theme = bslib::bs_theme(bootswatch = "flatly"),
   titlePanel("Graph parameters"),
-
-  #tags$head(uiOutput("colour_helper")),
   
   sidebarLayout(
     
@@ -83,7 +81,7 @@ ui <-   fluidPage(
       
       selectizeInput('indicators', 'Indicators', choices = indicators, multiple = T,
                 options = list(
-                   placeholder = 'Please select an option below',
+                   placeholder = 'Please select one or more options below',
                    onInitialize = I('function() { this.setValue("gdp_g"); }')
                           )),
       selectInput("ind_group", "Indicator group", choices = indicator_groups, selected = ""),
@@ -91,13 +89,13 @@ ui <-   fluidPage(
       
       
       h3("Peers"),
-      fluidRow(column(9,selectizeInput("peers", "Peer group", choices = peers,
+      fluidRow(column(6,selectizeInput("peers", "Peer group", choices = peers,
                             options = list(
-                                    placeholder = 'Please select an option below',
+                                    placeholder = 'Select',
                                     onInitialize = I('function() { this.setValue("default"); }')
                                           )
                                        )),
-               column(3,checkboxInput("all", "All"))
+               column(6,textInput("peers_formula", "Formula", "")),
       ),
       
       selectizeInput(
@@ -107,77 +105,82 @@ ui <-   fluidPage(
           onInitialize = I('function() { this.setValue(""); }')
         )),
       
-      textInput("peers_formula", "Formula", ""),
+      checkboxInput("all", "Show all countries"),
       
       
       ## Style
       
       h3("Style"),
       fluidRow(
-               column(4,textInput("x_min", "X min")),
-               column(4,textInput("x_max", "X max")),
-               column(4,checkboxInput("x_log", "X log"))
+               column(3,textInput("x_min", "X min")),
+               column(3,textInput("x_max", "X max")),
+               column(3,textInput("y_min", "Y min")),
+               column(3,textInput("y_max", "Y max"))             
                       ),
       
       fluidRow(
-               column(4,textInput("y_min", "Y min")),
-               column(4,textInput("y_max", "Y max")),
-               column(4,checkboxInput("y_log", "Y log"))
+                column(4,checkboxInput("x_log", "X log")),
+                column(3,checkboxInput("y_log", "Y log")),
+                column(5,checkboxInput("swap_axis", "Swap axis"))
       ),
       
-      fluidRow(
-        column(4,selectizeInput("sec_y_axis_ind", "2nd Y-axis", choices = indicators, multiple = T,
-                        options = list(
-                          placeholder = 'Select an option below',
-                          onInitialize = I('function() { this.setValue(""); }')
-                                        )
-                                )),
-        column(4,textInput("sec_y_axis_coeff", "Axis mult", "")),
-        column(4,checkboxInput("swap_axis", "Swap axis"))
-      ),
 
       fluidRow(
-        column(4,checkboxInput("trend_type", "Trend")),
         column(4,checkboxInput("recession", "Recession")),
-        column(4,checkboxInput("index", "Index"))
+        column(3,checkboxInput("index", "Index")),
+        column(5,checkboxInput("long_legend", "Long legend"))
       ),
       
-      selectInput("theme", "Style preset", graph_themes, selected = "ipsum"),
-      
-      ## Output
-      
-      h3("Output"),
+      fluidRow(
+        column(4,selectInput("trend_type", "Trend", choices = trend_types, selected = "")),
+        column(8,selectInput("theme", "Style preset", graph_themes, selected = "ipsum"))
+      ),
       
       fluidRow(
-        column(6, selectizeInput(
-          'graph_group', 'Graph group', choices = graph_groups,
-          options = list(
-            placeholder = 'Please select an option below',
-            onInitialize = I('function() { this.setValue("macro"); }')
-          )
+        column(8,selectizeInput("sec_y_axis_ind", "2nd Y-axis", choices = indicators, multiple = T,
+                                options = list(
+                                  placeholder = 'Select an option below',
+                                  onInitialize = I('function() { this.setValue(""); }')
+                                )
         )),
-        column(6, selectInput("orientation", "Orientation", choices = c("horizontal", "vertical")))
+        column(4,textInput("sec_y_axis_coeff", "Axis mult", "")),
+        
       ),
-      
-      fluidRow(
-        column(8,textAreaInput("graph_title", "Graph Title", "Graph Title")),
-        column(4,checkboxInput("show_title", "Show Title")),
-      ),
-      
-      fluidRow(
-        column(8,textInput("graph_name", "File name", "goodgraph")),
-        column(4,selectInput("filetype", "File type", choices = graph_filetypes)),
-      ),
-      
-      ## Button
-      actionButton("plot_button", "Update Plot")
       
     ),
     
     mainPanel(
       
-      textOutput("chosen_country"),
+      actionButton("plot_button", "Update Plot"),
       plotOutput("graph"),
+      
+      ## Output panel
+      
+      fluidRow(
+        column(3, downloadButton("downloadJpeg", "Download jpeg")),
+        column(3, downloadButton("downloadPng", "Download png")),
+        column(3, downloadButton("downloadData", "Download data")),
+        column(3, actionButton("copyPlan", "Copy plan"))
+        ),
+      
+      br(),
+        
+      fluidRow(
+        column(5,textAreaInput("graph_title", "Graph Title", "Graph Title")),
+        column(2, selectizeInput(
+          'graph_group', 'Graph group', choices = graph_groups,
+          options = list(
+            placeholder = '',
+            onInitialize = I('function() { this.setValue("macro"); }')
+          )
+        )),
+        column(3,textInput("graph_name", "File name", "goodgraph")),
+        column(2, selectInput("orientation", "Orientation", choices = c("horizontal", "vertical")))
+      ),
+        
+      checkboxInput("show_title", "Show Title"),
+
+      
       tableOutput("table"),
       textOutput("check"),
       textOutput("check1"),
@@ -305,6 +308,12 @@ server <- function(input, output, session) {
   output$check1 <- renderText({ paste0("all non-empty" ,all(input$sec_y_axis_ind != "")) })
   output$check2 <- renderText({ paste0("all non-na" ,all(!is.na(input$sec_y_axis_ind ))) })
   output$check3 <- renderText({ paste0("non-na" ,!is.na(input$sec_y_axis_ind)) })
+  
+  # Downloadable files
+  # output$downloadData <- downloadHandler(
+  #   filename = function() { glue("{input$country_choice}_data_{download_filename()}.xlsx") },
+  #   content = function(file) { write_xlsx(data_to_download(), file, col_names = T, format_headers = T) }
+  # )
   
   # Showing the name of a chosen country
   output$chosen_country <- renderText({

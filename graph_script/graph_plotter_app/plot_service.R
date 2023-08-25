@@ -1,3 +1,4 @@
+###### Copied from plot.R
 ###### Load libraries
 library_names <- c("dplyr","reshape2","ggplot2","ggthemes","countrycode","readxl","tidyr","data.table","writexl","unikn",
                    "ggtext","svglite","stringr","directlabels","fanplot","ggfan","hrbrthemes", "glue", "readr")
@@ -40,6 +41,11 @@ importData <- function(data_y_fname, data_q_fname, data_m_fname, data_d_fname, d
   
   dict <- read_csv2(here(path, dict_fname), col_names = T, skip=0, na = '')
   extdata_d <- extdata_d %>% mutate(date = as.Date(date))
+  
+  extdata_y <- extdata_y %>% mutate(time=year-1987)
+  extdata_q <- extdata_q %>% mutate(time=(year-1987)*4+quarter)
+  extdata_m <- extdata_m %>% mutate(time=(year-1987)*12+month)
+  #extdata_d <- extdata_d %>% mutate(time=year-1987)
   
   return(list(extdata_y = extdata_y, extdata_q = extdata_q, extdata_m = extdata_m, extdata_d = extdata_d, dict = dict))
   
@@ -313,7 +319,7 @@ funcNameTransform <- function(graph_type) {
 
 ###### Scatter plot
 
-scatterCountryComparison <- function(data, graph_params, country_iso2c, peers_iso2c, verbose) {
+scatterCountryComparison <- function(data, graph_params, country_iso2c, peers_iso2c, verbose=T) {
   
   for (j in seq_along(graph_params)) { eval(parse(text = paste0(names(graph_params)[j], " <- graph_params$", names(graph_params)[j]) )) }
   if (verbose == T) {print(graph_name)}
@@ -349,7 +355,7 @@ scatterCountryComparison <- function(data, graph_params, country_iso2c, peers_is
 
 ###### Bar country comparison - dodged, stacked or stacked and normalized
 
-barCountryComparison <- function(data, graph_params, country_iso2c, peers_iso2c, verbose) {
+barCountryComparison <- function(data, graph_params, country_iso2c, peers_iso2c, verbose=T) {
   
   for (j in seq_along(graph_params)) { eval(parse(text = paste0(names(graph_params)[j], " <- graph_params$", names(graph_params)[j]) )) }
   if (verbose == T) {print(graph_name)}
@@ -413,7 +419,7 @@ structureCountryComparisonNorm <- barCountryComparison
 
 ###### Bar multi-year comparison for multiple variables
 
-barYearComparison <- function(data, graph_params, country_iso2c, peers_iso2c, verbose) {
+barYearComparison <- function(data, graph_params, country_iso2c, peers_iso2c, verbose=T) {
   
   for (j in seq_along(graph_params)) { eval(parse(text = paste0(names(graph_params)[j], " <- graph_params$", names(graph_params)[j]) )) }
   if (verbose == T) {print(graph_name)}
@@ -443,7 +449,7 @@ barYearComparison <- function(data, graph_params, country_iso2c, peers_iso2c, ve
 
 ###### Bar dynamic - dodged, stacked or stacked and normalized
 
-barDynamic <- function(data, graph_params, country_iso2c, peers_iso2c, verbose) {
+barDynamic <- function(data, graph_params, country_iso2c, peers_iso2c, verbose=T) {
   
   for (j in seq_along(graph_params)) { eval(parse(text = paste0(names(graph_params)[j], " <- graph_params$", names(graph_params)[j]) )) }
   if (verbose == T) {print(graph_name)}
@@ -498,7 +504,7 @@ structureDynamicNorm <- barDynamic
 
 ###### Lines indicator comparison
 
-linesIndicatorComparison <- function(data, graph_params, country_iso2c, peers_iso2c, verbose) {
+linesIndicatorComparison <- function(data, graph_params, country_iso2c, peers_iso2c, verbose=T) {
   
   for (j in seq_along(graph_params)) { eval(parse(text = paste0(names(graph_params)[j], " <- graph_params$", names(graph_params)[j]) )) }
   if (verbose == T) {print(graph_name)}
@@ -541,7 +547,7 @@ linesIndicatorComparison <- function(data, graph_params, country_iso2c, peers_is
 
 ###### Lines country comparison
 
-linesCountryComparison <- function(data, graph_params, country_iso2c, peers_iso2c, verbose) {
+linesCountryComparison <- function(data, graph_params, country_iso2c, peers_iso2c, verbose=T) {
   
   for (j in seq_along(graph_params)) { eval(parse(text = paste0(names(graph_params)[j], " <- graph_params$", names(graph_params)[j]) )) }
   if (verbose == T) {print(graph_name)}
@@ -585,7 +591,7 @@ linesCountryComparison <- function(data, graph_params, country_iso2c, peers_iso2
 
 ###### Distribution dynamics (fan plot)
 
-distributionDynamic <- function(data, graph_params, country_iso2c, peers_iso2c, verbose) {
+distributionDynamic <- function(data, graph_params, country_iso2c, peers_iso2c, verbose=T) {
   
   for (j in seq_along(graph_params)) { eval(parse(text = paste0(names(graph_params)[j], " <- graph_params$", names(graph_params)[j]) )) }
   if (verbose == T) {print(graph_name)}

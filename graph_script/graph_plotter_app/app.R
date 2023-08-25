@@ -10,15 +10,22 @@ source(here("plot_service.R"))
 peers_fname <- here("1_peers_params.xlsx")
 
 # Import data
-FD <- importData(data_y_fname = "extdata_y.csv", data_q_fname = "extdata_q.csv", data_m_fname = "extdata_m.csv", 
+D <- importData(data_y_fname = "extdata_y.csv", data_q_fname = "extdata_q.csv", data_m_fname = "extdata_m.csv", 
                  data_d_fname = "extdata_d.csv", dict_fname = "dict.csv", path = here())
 
 # Menu lists
 graph_types <- c("scatter_dynamic", "scatter_country_comparison", "structure_dynamic", "structure_country_comparison",
                  "structure_country_comparison_norm", "bar_dynamic", "bar_country_comparison", "bar_country_comparison_norm", 
                  "bar_year_comparison", "lines_country_comparison", "lines_indicator_comparison", "distribution_dynamic")
-countries <- FD$extdata_y$country %>% unique()
-indicators <- list("", "GDP" = "gdp_g", "CPI" = "cpi_yoy", "Death rate" = "dead", "R&D, % GDP" = "rnd", "WGI index" = "wgi1")
+
+countries_peers <- as.list(D$extdata_y$country_id %>% unique())
+countries <- D$extdata_y$country %>% unique()
+names(countries_peers) <- countries
+
+indicators_temp <- D$dict %>% select(indicator, indicator_code, source_frequency)
+indicators <- as.list(indicators_temp %>% pull(indicator_code))
+names(indicators) <- indicators_temp %>% pull(indicator)
+
 indicator_groups <- c("", "GDP decomposition", "GDP growth decomposition", "BOP", "BOP detailed", "IIP", "IIP detailed", 
                       "Budget revenue","Budget expenditure", "Budget balance", "Population drivers")
 peers <- c("none","default", "custom", "neighbours", "formula", "EU", "EZ", "EEU", "IT", "OPEC_plus", "BRICS", "EM", "DM", "ACRA")
@@ -27,6 +34,10 @@ graph_themes <- c("ACRA", "ipsum", "economist", "minimal")
 graph_groups <- c("macro", "budget", "external", "institutional", "demogr", "covid", "other")
 graph_filetypes <- c("jpeg", "png")
 
+# Parameters
+horizontal_size <- c(1800, 900)
+vertical_size <- c(900, 900)
+verbose <- F
 
 # Interface
 
@@ -64,7 +75,7 @@ ui <-   fluidPage(
         'data_frequency', 'Data freq', choices = c("y", "q", "m", "d"),
         options = list(
           placeholder = 'Please select an option below',
-          onInitialize = I('function() { this.setValue("y"); }')
+          onInitialize = I('function() { this.setValue(""); }')
         )
       ))),
       
@@ -77,7 +88,7 @@ ui <-   fluidPage(
                           )),
       selectInput("ind_group", "Indicator group", choices = indicator_groups, selected = ""),
       textInput("time_fix", "Time fix", ""),
-
+      
       
       h3("Peers"),
       fluidRow(column(9,selectizeInput("peers", "Peer group", choices = peers,
@@ -90,10 +101,10 @@ ui <-   fluidPage(
       ),
       
       selectizeInput(
-        'peers_custom', 'Custom list', choices = countries, multiple = T,
+        'peers_custom', 'Custom list', choices = countries_peers, multiple = T,
         options = list(
           placeholder = 'Select an option below',
-          onInitialize = I('function() { this.setValue("Chile"); }')
+          onInitialize = I('function() { this.setValue(""); }')
         )),
       
       textInput("peers_formula", "Formula", ""),
@@ -115,13 +126,13 @@ ui <-   fluidPage(
       ),
       
       fluidRow(
-        column(4,selectizeInput("sec_y_axis_ind", "2nd Y-axis", choices = indicators, 
+        column(4,selectizeInput("sec_y_axis_ind", "2nd Y-axis", choices = indicators, multiple = T,
                         options = list(
                           placeholder = 'Select an option below',
-                          onInitialize = I('function() { this.setValue("Chile"); }')
+                          onInitialize = I('function() { this.setValue(""); }')
                                         )
                                 )),
-        column(4,textInput("sec_y_axis_coeff", "Axis mult", 10)),
+        column(4,textInput("sec_y_axis_coeff", "Axis mult", "")),
         column(4,checkboxInput("swap_axis", "Swap axis"))
       ),
 
@@ -131,7 +142,7 @@ ui <-   fluidPage(
         column(4,checkboxInput("index", "Index"))
       ),
       
-      selectInput("theme", "Style preset", graph_themes),
+      selectInput("theme", "Style preset", graph_themes, selected = "ipsum"),
       
       ## Output
       
@@ -158,17 +169,20 @@ ui <-   fluidPage(
         column(4,selectInput("filetype", "File type", choices = graph_filetypes)),
       ),
       
-      # Button
-      downloadButton("dData", "Plot")
+      ## Button
+      actionButton("plot_button", "Update Plot")
       
     ),
     
     mainPanel(
       
       textOutput("chosen_country"),
-      #plotOutput("graph"),
+      plotOutput("graph"),
       tableOutput("table"),
-      textOutput("check")
+      textOutput("check"),
+      textOutput("check1"),
+      textOutput("check2"),
+      textOutput("check3")
       
     )
   )
@@ -179,8 +193,8 @@ ui <-   fluidPage(
 server <- function(input, output, session) {
 
   
-  # Listening to the user
-  graphrow <- reactive({
+  ## Listening to the user
+  graphplan <- reactive({
                   data.frame(
                             graph_name = input$graph_name,
                             graph_title = input$graph_title,
@@ -189,7 +203,7 @@ server <- function(input, output, session) {
                             data_frequency = input$data_frequency,
                             indicators = paste(input$indicators, collapse = ", "),
                             time_fix = input$time_fix,
-                            peers = input$peers, # прописать конструктор
+                            peers = peers_string(), # external constructor
                             all = 1*input$all,
                             x_log = 1*input$x_log,
                             y_log = 1*input$y_log,
@@ -199,17 +213,98 @@ server <- function(input, output, session) {
                             y_max = input$y_max,
                             trend_type = input$trend_type,
                             index = 1*input$index,
-                            #sec_y_axis = 1*input$sec_y_axis_ind,  прописать конструктор
+                            sec_y_axis = sec_y_string(),  # external constructor
                             theme = input$theme,
                             orientation = input$orientation,
                             show_title = 1*input$show_title,
-                            active = 1
-                            )
+                            active = 1,
+                            source_name = "ACRA"
+                            ) %>% mutate(across(everything(), ~replace(., . ==  "" , NA)))
                       })
 
+  
+  ## Constructing peers string from inputs
+  
+  peers_string <- reactive({
+    ifelse(
+      input$peers == "none", 
+      0,
+      ifelse(
+        input$peers %in% c("default", "neighbours", "EU", "EZ", "EEU", "IT", "OPEC_plus", "BRICS", "EM", "DM", "ACRA"),
+        input$peers,
+        ifelse(
+          input$peers == "custom",
+          paste0("custom: ", paste(input$peers_custom, collapse = ", ")),
+          ifelse(
+            input$peers == "formula",
+            input$peers_formula,
+            0
+                )
+              )
+            )
+          )
+  })
+
+  ## Constructing second axis string from inputs
+  
+  sec_y_string_temp <- reactive({ ifelse(all(input$sec_y_axis_ind != ""), paste(input$sec_y_axis_ind, collapse = ", "), NA) })
+  sec_y_string <- reactive({ ifelse(input$sec_y_axis_coeff != "", 
+                                    paste(c(sec_y_string_temp(), input$sec_y_axis_coeff), collapse = ", "), 
+                                    sec_y_string_temp()) })
+  
+  
+  ## Producing graph (copied from do_plot)
+  
+  observeEvent(input$plot_button, {
+  
+        ##### Update country groups
+        country_info <- getPeersCodes(country_name = input$country_choice, peers_fname = peers_fname)
+    
+        ##### Check integrity of the plans
+        graphplan_aug <- graphplan() %>% filter(active == 1) %>%
+          checkGraphTypes(graph_types = graph_types) %>% 
+          checkUnique %>%
+          checkPeers(peer_groups = country_info$regions) %>% # после того как напишу check проверить
+          checkAvailability(dict = D$dict) %>%
+          mutate(checks = check_types*check_unique*check_peers*check_availability)
+        error_report <- graphplan_aug %>% filter(checks == 0)
+      
+        
+        if (is.null(dim(error_report)[1]) | is.na(dim(error_report)[1]) | (dim(error_report)[1] == 0)) {
+          
+            
+            ### Parsing single graph parameters  
+            graph_params <- parseGraphPlan(graphrow = graphplan(), dict = D$dict, horizontal_size = horizontal_size, vertical_size = vertical_size)
+            
+            ### Fixing peers
+            peers_iso2c <- fixPeers(country_info = country_info, peers = graph_params$peers, data = D)
+            
+            ### Filtering data to include only needed for the graph
+            data_temp <- subsetData(data = D, graph_params = graph_params, country = country_info$country_iso2c, peers = peers_iso2c)
+            
+            ### Choosing the needed function based on the graph type 
+            func_name <- funcNameTransform(graph_type = graph_params$graph_type)
+            
+            ### Producing the graph
+            eval(parse(text= paste0( 
+              "output$graph <- renderPlot(", func_name, "(data = data_temp, graph_params = graph_params, country_iso2c = country_info$country_iso2c, peers_iso2c = peers_iso2c, verbose = verbose))"
+            ) ))
+            
+          
+        } else {print("Errors found"); print(error_report)}
+        
+
+        
+    })
+
   # Table to export to excel plan
-  output$table <- renderTable({ graphrow() })
-  output$check <- renderText({input$x_min == ""})
+  output$table <- renderTable({ graphplan() })
+  
+  # Checks
+  output$check <- renderText({ paste0("non-empty" ,input$sec_y_axis_ind != "") })
+  output$check1 <- renderText({ paste0("all non-empty" ,all(input$sec_y_axis_ind != "")) })
+  output$check2 <- renderText({ paste0("all non-na" ,all(!is.na(input$sec_y_axis_ind ))) })
+  output$check3 <- renderText({ paste0("non-na" ,!is.na(input$sec_y_axis_ind)) })
   
   # Showing the name of a chosen country
   output$chosen_country <- renderText({
@@ -221,6 +316,12 @@ server <- function(input, output, session) {
     }
     
   })
+
+  # Saving file
+  # filename <- paste(graph_params$graph_name, file_output, sep=".")
+  # ggsave(path = here(country_name, "Auto_report"), filename = filename,  plot = theplot, device = file_output,
+  #        width = graph_params$width, height = graph_params$height, units = "px", dpi = 150)
+  #theplot
   
   
 }

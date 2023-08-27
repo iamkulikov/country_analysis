@@ -22,9 +22,9 @@ countries_peers <- as.list(D$extdata_y$country_id %>% unique())
 countries <- D$extdata_y$country %>% unique()
 names(countries_peers) <- countries
 
-indicators_temp <- D$dict %>% select(indicator, indicator_code, source_frequency)
-indicators <- as.list(indicators_temp %>% pull(indicator_code))
-names(indicators) <- indicators_temp %>% pull(indicator)
+indicators_all <- D$dict %>% select(indicator, indicator_code, source_frequency)
+indicators_start <- as.list(indicators_all %>% pull(indicator_code))
+names(indicators_start) <- indicators_all %>% pull(indicator)
 
 indicator_groups <- c("", "GDP decomposition", "GDP growth decomposition", "BOP", "BOP detailed", "IIP", "IIP detailed", 
                       "Budget revenue","Budget expenditure", "Budget balance", "Population drivers")
@@ -70,16 +70,16 @@ ui <-   fluidPage(
       
       column(4,     
       selectizeInput(
-        'data_frequency', 'Data freq', choices = c("y", "q", "m", "d"),
+        'data_frequency', 'Data freq', choices = c(" ", "y", "q", "m", "d"),
         options = list(
           placeholder = 'Please select an option below',
-          onInitialize = I('function() { this.setValue(""); }')
+          onInitialize = I('function() { this.setValue(" "); }')
         )
       ))),
       
       ## Indicator input and comparison
       
-      selectizeInput('indicators', 'Indicators', choices = indicators, multiple = T,
+      selectizeInput('indicators', 'Indicators', choices = indicators_start, multiple = T,
                 options = list(
                    placeholder = 'Please select one or more options below',
                    onInitialize = I('function() { this.setValue("gdp_g"); }')
@@ -137,7 +137,7 @@ ui <-   fluidPage(
       ),
       
       fluidRow(
-        column(8,selectizeInput("sec_y_axis_ind", "2nd Y-axis", choices = indicators, multiple = T,
+        column(8,selectizeInput("sec_y_axis_ind", "2nd Y-axis", choices = indicators_start, multiple = T,
                                 options = list(
                                   placeholder = 'Select an option below',
                                   onInitialize = I('function() { this.setValue(""); }')
@@ -256,6 +256,19 @@ server <- function(input, output, session) {
                                     sec_y_string_temp()) })
   
   
+  ## Updating indicators list based on the chosen frequency
+  
+  observeEvent( input$data_frequency,
+                {   
+                  if (input$data_frequency != " ") {
+                  indicators_temp <- indicators_all %>% filter(source_frequency == input$data_frequency)} else {
+                  indicators_temp <-indicators_all}
+                  indicators <- as.list( indicators_temp %>% pull(indicator_code) )
+                  names(indicators) <- indicators_temp %>% pull(indicator)
+                  updateSelectizeInput(session, "indicators", label = "Indicators", choices = indicators, selected = "") 
+                  })
+
+  
   ## Producing graph (copied from do_plot)
   
   observeEvent(input$plot_button, {
@@ -302,11 +315,12 @@ server <- function(input, output, session) {
 
   # Table to export to excel plan
   output$table <- renderTable({ graphplan() })
+  #output$table <- renderTable({ indicators_temp() })
   
   # Checks
-  output$check <- renderText({ paste0("non-empty" ,input$sec_y_axis_ind != "") })
-  output$check1 <- renderText({ paste0("all non-empty" ,all(input$sec_y_axis_ind != "")) })
-  output$check2 <- renderText({ paste0("all non-na" ,all(!is.na(input$sec_y_axis_ind ))) })
+  output$check <- renderText({ paste0("freq empty" ,input$data_frequency == "") })
+  output$check1 <- renderText({ paste0("all non-empty" , TRUE ) })
+  output$check2 <- renderText({ paste0("all non-na" , input$data_frequency != "" ) })
   output$check3 <- renderText({ paste0("non-na" ,!is.na(input$sec_y_axis_ind)) })
   
   # Downloadable files

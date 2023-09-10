@@ -7,8 +7,8 @@ library(here)
 here::i_am("_country_analysis_scripts/download_script/do_fill.R")
 test <- 0
 
-countries <- c("Armenia", "Brazil", "Bulgaria", "Greece", "China", "India", "Kyrgyz Republic", "Romania",
-               "Russian Federation", "Slovak Republic", "South Africa", "Switzerland", "Ukraine")
+countries <- c("Armenia", "Brazil", "Bulgaria", "Greece", "China", "India", "Kazakhstan", "Kyrgyz Republic", "Romania",
+               "Russian Federation", "Slovak Republic", "South Africa", "Switzerland", "Ukraine", "United Arab Emirates")
 formula_words <- c("lag", "rollsum", "rollavg", "rollvol", "mean", "last", "first", "min", "max", "sum", "coalesce", "share", "exp",
                    "fromto", "1W")
 

@@ -44,7 +44,7 @@ verbose <- F
 ui <-   fluidPage(
 
   theme = bslib::bs_theme(bootswatch = "flatly"),
-  titlePanel("Graph parameters"),
+  titlePanel("Graph country data"),
   
   sidebarLayout(
     
@@ -114,8 +114,8 @@ ui <-   fluidPage(
       fluidRow(
                column(3,textInput("x_min", "X min")),
                column(3,textInput("x_max", "X max")),
-               column(3,textInput("y_min", "Y min")),
-               column(3,textInput("y_max", "Y max"))             
+               column(3,numericInput("y_min", "Y min", "")),
+               column(3,numericInput("y_max", "Y max", ""))             
                       ),
       
       fluidRow(
@@ -143,7 +143,7 @@ ui <-   fluidPage(
                                   onInitialize = I('function() { this.setValue(""); }')
                                 )
         )),
-        column(4,textInput("sec_y_axis_coeff", "Axis mult", "")),
+        column(4,numericInput("sec_y_axis_coeff", "Axis mult", "")),
         
       ),
       
@@ -204,7 +204,7 @@ server <- function(input, output, session) {
                             graph_type = input$graph_type,
                             graph_group = input$graph_group,
                             data_frequency = input$data_frequency,
-                            indicators = paste(input$indicators, collapse = ", "),
+                            indicators = indicators(), # external constructor
                             time_fix = input$time_fix,
                             peers = peers_string(), # external constructor
                             all = 1*input$all,
@@ -221,10 +221,9 @@ server <- function(input, output, session) {
                             orientation = input$orientation,
                             show_title = 1*input$show_title,
                             active = 1,
-                            source_name = "ACRA"
+                            source_name = sources()
                             ) %>% mutate(across(everything(), ~replace(., . ==  "" , NA)))
                       })
-
   
   ## Constructing peers string from inputs
   
@@ -233,7 +232,7 @@ server <- function(input, output, session) {
       input$peers == "none", 
       0,
       ifelse(
-        input$peers %in% c("default", "neighbours", "EU", "EZ", "EEU", "IT", "OPEC_plus", "BRICS", "EM", "DM", "ACRA"),
+        input$peers %in% peers,
         input$peers,
         ifelse(
           input$peers == "custom",
@@ -251,10 +250,22 @@ server <- function(input, output, session) {
   ## Constructing second axis string from inputs
   
   sec_y_string_temp <- reactive({ ifelse(all(input$sec_y_axis_ind != ""), paste(input$sec_y_axis_ind, collapse = ", "), NA) })
-  sec_y_string <- reactive({ ifelse(input$sec_y_axis_coeff != "", 
+  sec_y_string <- reactive({ ifelse(!is.na(input$sec_y_axis_coeff), 
                                     paste(c(sec_y_string_temp(), input$sec_y_axis_coeff), collapse = ", "), 
                                     sec_y_string_temp()) })
   
+  ## Updating second axis indicator list based on the chosen indicators
+  
+  observeEvent( input$indicators,
+                {   
+                  if (all(input$indicators != " ")) {
+                    indicators_selected_temp <- indicators_all %>% filter(indicator_code %in% input$indicators) 
+                    indicators_selected <- indicators_selected_temp %>% pull(indicator_code) %>% as.list
+                    names(indicators_selected) <- indicators_selected_temp %>% pull(indicator)
+                    updateSelectizeInput(session, "sec_y_axis_ind", label = "2nd Y-axis", 
+                                         choices = indicators_selected, selected = "")
+                  }
+                })
   
   ## Updating indicators list based on the chosen frequency
   
@@ -269,10 +280,27 @@ server <- function(input, output, session) {
                   })
 
   
+  ## Updating source string based on updated indicators 
+  
+  generateSources <- function(indicators, dict) {
+    x <- unlist(str_extract_all( string = indicators, pattern = paste(na.omit(dict$indicator_code), collapse = "|") ))
+    x <- plyr::mapvalues(x, from = dict$indicator_code, to = dict$source_name, warn_missing = F)
+    x <- unlist(strsplit(x, ", "))
+    x <- x[x!="расчеты АКРА"]
+    x <- c(unique(x), "расчеты АКРА")
+    x <- toString(x)
+    return(x)
+  }
+  
+  indicators <- reactive({ paste(input$indicators, collapse = ", ") })
+  sources <-  reactive({ generateSources(indicators = indicators(), dict = D$dict)  })
+  
   ## Producing graph (copied from do_plot)
   
   observeEvent(input$plot_button, {
   
+        ##### Update graphplan     
+    
         ##### Update country groups
         country_info <- getPeersCodes(country_name = input$country_choice, peers_fname = peers_fname)
     
@@ -318,8 +346,8 @@ server <- function(input, output, session) {
   #output$table <- renderTable({ indicators_temp() })
   
   # Checks
-  output$check <- renderText({ paste0("freq empty" ,input$data_frequency == "") })
-  output$check1 <- renderText({ paste0("all non-empty" , TRUE ) })
+  output$check <- renderText({ sec_y_string_temp() })
+  output$check1 <- renderText({ input$sec_y_axis_coeff != "" })
   output$check2 <- renderText({ paste0("all non-na" , input$data_frequency != "" ) })
   output$check3 <- renderText({ paste0("non-na" ,!is.na(input$sec_y_axis_ind)) })
   

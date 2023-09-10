@@ -28,7 +28,8 @@ names(indicators_start) <- indicators_all %>% pull(indicator)
 
 indicator_groups <- c("", "GDP decomposition", "GDP growth decomposition", "BOP", "BOP detailed", "IIP", "IIP detailed", 
                       "Budget revenue","Budget expenditure", "Budget balance", "Population drivers")
-peers <- c("none","default", "custom", "neighbours", "formula", "EU", "EZ", "EEU", "IT", "OPEC_plus", "BRICS", "EM", "DM", "ACRA")
+peers <- c("default", "neighbours", "EU", "EZ", "EEU", "IT", "OPEC_plus", "BRICS", "EM", "DM", "ACRA")
+peers_choice <- c("none", "default", "custom", "neighbours", "formula", "EU", "EZ", "EEU", "IT", "OPEC_plus", "BRICS", "EM", "DM", "ACRA")
 trend_types <- c("", "lm", "loess")
 graph_themes <- c("ACRA", "ipsum", "economist", "minimal")
 graph_groups <- c("macro", "budget", "external", "institutional", "demogr", "covid", "other")
@@ -89,7 +90,7 @@ ui <-   fluidPage(
       
       
       h3("Peers"),
-      fluidRow(column(6,selectizeInput("peers", "Peer group", choices = peers,
+      fluidRow(column(6,selectizeInput("peers", "Peer group", choices = peers_choice,
                             options = list(
                                     placeholder = 'Select',
                                     onInitialize = I('function() { this.setValue("default"); }')
@@ -322,6 +323,7 @@ server <- function(input, output, session) {
             
             ### Fixing peers
             peers_iso2c <- fixPeers(country_info = country_info, peers = graph_params$peers, data = D)
+            updateSelectizeInput(session, "peers_custom", label = "Custom list", choices = countries_peers, selected = peers_iso2c)
             
             ### Filtering data to include only needed for the graph
             data_temp <- subsetData(data = D, graph_params = graph_params, country = country_info$country_iso2c, peers = peers_iso2c)

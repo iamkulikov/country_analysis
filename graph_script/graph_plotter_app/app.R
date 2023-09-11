@@ -25,11 +25,27 @@ names(countries_peers) <- countries
 indicators_all <- D$dict %>% select(indicator, indicator_code, source_frequency)
 indicators_start <- as.list(indicators_all %>% pull(indicator_code))
 names(indicators_start) <- indicators_all %>% pull(indicator)
-
-indicator_groups <- c("", "GDP decomposition", "GDP growth decomposition", "BOP", "BOP detailed", "IIP", "IIP detailed", 
+indicator_groups <- c("", "GDP decomposition", "GDP growth decomposition", "World shares", "BOP (Y)", "BOP (Q)",
+                      "Trade balance (Y)","Trade balance (Q)", "IIP assets (Y)", "IIP liabilities (Y)", 
                       "Budget revenue","Budget expenditure", "Budget balance", "Population drivers")
+indicator_groups_content <- list("", 
+                                 c("cons", "govcons", "gcfc", "netex", "other"), 
+                                 c("cons_role", "govcons_role", "gcfc_role", "netex_role", "other_role"),
+                                 c("pop_shr", "gdp_ppp_shr", "ex_gs_shr"),
+                                 c("ca_gdp", "bop_finacc_nrmns_gdp", "bop_res_mns_gdp", "bop_capacc_gdp", "bop_err_gdp"),
+                                 c("ca_gdp_sm", "bop_finacc_nrmns_gdp_sm", "bop_res_mns_gdp_sm", "bop_capacc_gdp_sm", "bop_err_gdp_sm"),
+                                 c("tb_g_gdp", "tb_s_gdp", "primainc_gdp", "secinc_gdp"),
+                                 c("tb_g_gdp_sm", "tb_s_gdp_sm", "primainc_gdp_sm", "secinc_gdp_sm"),
+                                 c("iip_a_di_gdp", "iip_a_pi_gdp", "iip_a_der_gdp", "iip_a_oth_gdp", "iip_a_res_gdp"),
+                                 c("iip_l_di_gdp", "iip_l_pi_gdp", "iip_l_der_gdp", "iip_l_oth_gdp"),
+                                 c("cons", "govcons", "gcfc", "netex", "other"),
+                                 c("cons", "govcons", "gcfc", "netex", "other"),
+                                 c("cons", "govcons", "gcfc", "netex", "other"),
+                                 c("cons", "govcons", "gcfc", "netex", "other"))
+
 peers <- c("default", "neighbours", "EU", "EZ", "EEU", "IT", "OPEC_plus", "BRICS", "EM", "DM", "ACRA")
 peers_choice <- c("none", "default", "custom", "neighbours", "formula", "EU", "EZ", "EEU", "IT", "OPEC_plus", "BRICS", "EM", "DM", "ACRA")
+
 trend_types <- c("", "lm", "loess")
 graph_themes <- c("ACRA", "ipsum", "economist", "minimal")
 graph_groups <- c("macro", "budget", "external", "institutional", "demogr", "covid", "other")
@@ -275,11 +291,27 @@ server <- function(input, output, session) {
                   if (input$data_frequency != " ") {
                   indicators_temp <- indicators_all %>% filter(source_frequency == input$data_frequency)} else {
                   indicators_temp <-indicators_all}
-                  indicators <- as.list( indicators_temp %>% pull(indicator_code) )
-                  names(indicators) <- indicators_temp %>% pull(indicator)
-                  updateSelectizeInput(session, "indicators", label = "Indicators", choices = indicators, selected = "") 
+                  indicators_variants <- as.list( indicators_temp %>% pull(indicator_code) )
+                  names(indicators_variants) <- indicators_temp %>% pull(indicator)
+                  updateSelectizeInput(session, "indicators", label = "Indicators", choices = indicators_variants, selected = "") 
                   })
 
+  ## Updating indicators chosen based on the chosen preset
+  
+  observeEvent( input$ind_group,
+                {   
+                  if (input$ind_group != "") {
+                    if (input$data_frequency != " ") {
+                    indicators_temp <- indicators_all %>% filter(source_frequency == input$data_frequency)} else {
+                    indicators_temp <-indicators_all}
+                    indicators_variants <- as.list( indicators_temp %>% pull(indicator_code) )
+                    names(indicators_variants) <- indicators_temp %>% pull(indicator)
+                    indicators_chosen <- indicator_groups_content[[which(indicator_groups == input$ind_group)]]
+                    updateSelectizeInput(session, "indicators", label = "Indicators", 
+                                         choices = indicators_variants, selected = indicators_chosen) 
+                    }
+                })
+  
   
   ## Updating source string based on updated indicators 
   
@@ -348,9 +380,9 @@ server <- function(input, output, session) {
   #output$table <- renderTable({ indicators_temp() })
   
   # Checks
-  output$check <- renderText({ sec_y_string_temp() })
-  output$check1 <- renderText({ input$sec_y_axis_coeff != "" })
-  output$check2 <- renderText({ paste0("all non-na" , input$data_frequency != "" ) })
+  output$check <- renderText({ input$ind_group != "" })
+  output$check1 <- renderText({ which(indicator_groups == input$ind_group) })
+  output$check2 <- renderText({ indicator_groups_content[[which(indicator_groups == input$ind_group)]] })
   output$check3 <- renderText({ paste0("non-na" ,!is.na(input$sec_y_axis_ind)) })
   
   # Downloadable files

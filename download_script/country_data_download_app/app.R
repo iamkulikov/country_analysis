@@ -1,4 +1,4 @@
-# Descriprtion
+# An app to download updated data for a particular country
 
 library(shiny)
 library(here)

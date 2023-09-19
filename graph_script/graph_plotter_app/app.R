@@ -6,7 +6,7 @@ library(shinyWidgets)
 here::i_am("app.R")
 
 # Import all the necessary assets except data
-source(here("plot_service.R"))
+source(here("plot.R"))
 peers_fname <- here("1_peers_params.xlsx")
 
 # Import data

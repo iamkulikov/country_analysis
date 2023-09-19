@@ -1,8 +1,6 @@
 Download_data:
 
 1) download:
-Download переписать как функцию?
-А потом вызывать процесс через do_download, do_import, do_fill, do_augment, do_graph, do_report
 FiscalMonitor привязать к dropbox?
 
 2) import:

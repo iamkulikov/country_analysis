@@ -1,6 +1,6 @@
 ###### Load libraries
 library_names <- c("dplyr","reshape2","ggplot2","ggthemes","countrycode","readxl","tidyr","data.table","writexl","unikn",
-                   "ggtext","svglite","stringr","directlabels","fanplot","ggfan","hrbrthemes")
+                   "ggtext","svglite","stringr","directlabels","fanplot","ggfan","hrbrthemes","glue","readr")
 
 for (library_name in library_names) {
   library(library_name, character.only = TRUE)
@@ -40,6 +40,12 @@ importData <- function(data_y_fname, data_q_fname, data_m_fname, data_d_fname, d
   
   dict <- read_csv2(here(path, dict_fname), col_names = T, skip=0, na = '')
   extdata_d <- extdata_d %>% mutate(date = as.Date(date))
+  
+  
+  extdata_y <- extdata_y %>% mutate(time=year-1987)
+  extdata_q <- extdata_q %>% mutate(time=(year-1987)*4+quarter)
+  extdata_m <- extdata_m %>% mutate(time=(year-1987)*12+month)
+  #extdata_d <- extdata_d %>% mutate(time=year-1987)
   
   return(list(extdata_y = extdata_y, extdata_q = extdata_q, extdata_m = extdata_m, extdata_d = extdata_d, dict = dict))
   
@@ -270,10 +276,9 @@ fixPeers <- function(country_info, peers, data) {
     }
     
     peers_iso2c <- peers_iso2c[peers_iso2c!=country_info$country_iso2c]
+    return(peers_iso2c)
     
   }
-  
-  return(peers_iso2c)
   
 }
 

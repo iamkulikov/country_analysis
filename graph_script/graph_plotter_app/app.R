@@ -315,32 +315,6 @@ server <- function(input, output, session) {
                                        choices = indicators_variants, selected = indicators_chosen) 
                 })
   
-  # observeEvent( input$data_frequency,
-  #               {   
-  #                 if (input$data_frequency != " ") {
-  #                 indicators_temp <- indicators_all %>% filter(source_frequency == input$data_frequency)} else {
-  #                 indicators_temp <-indicators_all}
-  #                 indicators_variants <- as.list( indicators_temp %>% pull(indicator_code) )
-  #                 names(indicators_variants) <- indicators_temp %>% pull(indicator)
-  #                 updateSelectizeInput(session, "indicators", label = "Indicators", choices = indicators_variants, selected = "") 
-  #                 })
-
-  ## Updating indicators chosen based on the chosen preset
-  
-  # observeEvent( input$ind_group,
-  #               {   
-  #                 if (input$ind_group != "") {
-  #                   if (input$data_frequency != " ") {
-  #                   indicators_temp <- indicators_all %>% filter(source_frequency == input$data_frequency)} else {
-  #                   indicators_temp <-indicators_all}
-  #                   indicators_variants <- as.list( indicators_temp %>% pull(indicator_code) )
-  #                   names(indicators_variants) <- indicators_temp %>% pull(indicator)
-  #                   indicators_chosen <- indicator_groups_content[[which(indicator_groups == input$ind_group)]]
-  #                   updateSelectizeInput(session, "indicators", label = "Indicators", 
-  #                                        choices = indicators_variants, selected = indicators_chosen) 
-  #                   }
-  #               })
-  # 
   
   ## Updating source string based on updated indicators 
   
@@ -393,15 +367,14 @@ server <- function(input, output, session) {
             func_name <- funcNameTransform(graph_type = graph_params$graph_type)
             
             ### Producing the graph
-            eval(parse(text= paste0( 
-              "output$graph <- renderPlot(", func_name, "(data = data_temp, graph_params = graph_params, country_iso2c = country_info$country_iso2c, peers_iso2c = peers_iso2c, verbose = verbose))"
+            graph_calculated <<- eval(parse(text= paste0( 
+              func_name, "(data = data_temp, graph_params = graph_params, country_iso2c = country_info$country_iso2c, peers_iso2c = peers_iso2c, verbose = verbose)"
             ) ))
-            
+            output$graph <- renderPlot(graph_calculated)
           
         } else {print("Errors found"); print(error_report)}
         
-
-        
+   
     })
 
   # Table to export to excel plan
@@ -414,11 +387,32 @@ server <- function(input, output, session) {
   output$check2 <- renderText({ indicator_groups_content[[which(indicator_groups == input$ind_group)]] })
   output$check3 <- renderText({ paste0("non-na" ,!is.na(input$sec_y_axis_ind)) })
   
-  # Downloadable files
-  # output$downloadData <- downloadHandler(
-  #   filename = function() { glue("{input$country_choice}_data_{download_filename()}.xlsx") },
-  #   content = function(file) { write_xlsx(data_to_download(), file, col_names = T, format_headers = T) }
-  # )
+  # Downloade files
+  
+  graph_size <- reactive(ifelse(input$orientation == "horizontal", horizontal_size, vertical_size))
+  #graph_name <- reactive()
+  
+  output$downloadJpeg <- downloadHandler(
+    
+    filename = function() {
+      paste("plot", "jpeg", sep = ".")
+    },
+    content = function(file){
+      ggsave(file, graph_calculated, device = "jpeg", width = graph_size()[1], height = graph_size()[2], units = "px", dpi = 150)
+    }
+    
+  )
+  
+  output$downloadPng <- downloadHandler(
+    
+    filename = function() {
+      paste("plot", "png", sep = ".")
+    },
+    content = function(file){
+      ggsave(file, graph_calculated, device = "png", width = graph_size()[1], height = graph_size()[2], units = "px", dpi = 150)
+    }
+    
+  )
   
   # Showing the name of a chosen country
   output$chosen_country <- renderText({

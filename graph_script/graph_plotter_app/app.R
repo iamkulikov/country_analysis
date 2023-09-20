@@ -1,11 +1,33 @@
 # An app to plot the country graphs
 
-library(shiny)
-library(here)
-library(shinyWidgets)
-here::i_am("app.R")
+###### Load libraries (need to declare them old school way, because shinyapps cannot detect dependencies)
+
+library("dplyr")
+library("reshape2")
+library("ggplot2")
+library("ggthemes")
+library("countrycode")
+library("readxl")
+library("tidyr")
+library("data.table")
+library("writexl")
+library("unikn")
+library("ggtext")
+library("svglite")
+library("stringr")
+library("directlabels")
+library("fanplot")
+library("ggfan")
+library("hrbrthemes")
+library("glue")
+library("readr")
+library("shiny")
+library("here")
+library("shinyWidgets")
+library("showtext")
 
 # Import all the necessary assets except data
+here::i_am("app.R")
 source(here("plot.R"))
 peers_fname <- here("1_peers_params.xlsx")
 
@@ -56,12 +78,14 @@ peers_choice <- c("none", "default", "custom", "neighbours", "formula", "EU", "E
 
 trend_types <- c("", "lm", "loess")
 graph_themes <- c("ACRA", "ipsum", "economist", "minimal")
-graph_groups <- c("macro", "budget", "external", "institutional", "demogr", "covid", "other")
-graph_filetypes <- c("jpeg", "png")
+graph_groups <- list(macro = "ec", budget = "budg", external = "budg", institutional = "inst", demography = "demogr", 
+                     covid = "covid", other = "oth")
 
 # Parameters
 horizontal_size <- c(1800, 900)
 vertical_size <- c(900, 900)
+# horizontal_size <- c(30, 14.5)
+# vertical_size <- c(14.5, 14.5)
 verbose <- F
 
 # Interface
@@ -370,7 +394,7 @@ server <- function(input, output, session) {
             graph_calculated <<- eval(parse(text= paste0( 
               func_name, "(data = data_temp, graph_params = graph_params, country_iso2c = country_info$country_iso2c, peers_iso2c = peers_iso2c, verbose = verbose)"
             ) ))
-            output$graph <- renderPlot(graph_calculated)
+            output$graph <- renderPlot(graph_calculated$graph)
           
         } else {print("Errors found"); print(error_report)}
         
@@ -387,18 +411,19 @@ server <- function(input, output, session) {
   output$check2 <- renderText({ indicator_groups_content[[which(indicator_groups == input$ind_group)]] })
   output$check3 <- renderText({ paste0("non-na" ,!is.na(input$sec_y_axis_ind)) })
   
-  # Downloade files
+  # Download files
   
   graph_size <- reactive(ifelse(input$orientation == "horizontal", horizontal_size, vertical_size))
-  #graph_name <- reactive()
+  output_name <- reactive(glue("{input$graph_group}_{input$graph_name}"))
   
   output$downloadJpeg <- downloadHandler(
     
     filename = function() {
-      paste("plot", "jpeg", sep = ".")
+      paste(output_name(), "jpeg", sep = ".")
     },
     content = function(file){
-      ggsave(file, graph_calculated, device = "jpeg", width = graph_size()[1], height = graph_size()[2], units = "px", dpi = 150)
+      ggsave(file, graph_calculated$graph, device = "jpeg", width = graph_size()[1], height = graph_size()[2],
+             units = "px", dpi = 150, bg = "white")
     }
     
   )
@@ -406,11 +431,19 @@ server <- function(input, output, session) {
   output$downloadPng <- downloadHandler(
     
     filename = function() {
-      paste("plot", "png", sep = ".")
+      paste(output_name(), "png", sep = ".")
     },
     content = function(file){
-      ggsave(file, graph_calculated, device = "png", width = graph_size()[1], height = graph_size()[2], units = "px", dpi = 150)
+      ggsave(file, graph_calculated$graph, device = "png", width = graph_size()[1], height = graph_size()[2],
+             units = "px", dpi = 150, bg = "white")
     }
+    
+  )
+  
+  output$downloadData <- downloadHandler(
+    
+    filename = function() { glue("{input$graph_group}_{input$graph_name}.xlsx") },
+    content = function(file) { write_xlsx(graph_calculated$data, file, col_names = T, format_headers = T) }
     
   )
   
@@ -424,12 +457,6 @@ server <- function(input, output, session) {
     }
     
   })
-
-  # Saving file
-  # filename <- paste(graph_params$graph_name, file_output, sep=".")
-  # ggsave(path = here(country_name, "Auto_report"), filename = filename,  plot = theplot, device = file_output,
-  #        width = graph_params$width, height = graph_params$height, units = "px", dpi = 150)
-  #theplot
   
   
 }

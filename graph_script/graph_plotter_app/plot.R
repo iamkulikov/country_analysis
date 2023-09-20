@@ -1,13 +1,16 @@
-###### Load libraries
+###### Load libraries and fonts
 library_names <- c("dplyr","reshape2","ggplot2","ggthemes","countrycode","readxl","tidyr","data.table","writexl","unikn",
-                   "ggtext","svglite","stringr","directlabels","fanplot","ggfan","hrbrthemes","glue","readr")
+                   "ggtext","svglite","stringr","directlabels","fanplot","ggfan","hrbrthemes","glue","readr", "showtext")
 
 for (library_name in library_names) {
-  #library(library_name, character.only = TRUE)
-  eval(parse(text = paste0("require(", library_name, ")") ))
+  library(library_name, character.only = TRUE)
 }
 
-###### Define custom color palettes
+font_add_google("Nunito Sans", regular.wt = 400, bold.wt = 700)
+showtext_opts(dpi = 150)
+showtext_auto()
+
+###### Define custom color palettes and modifying themes
 
 ## ACRA palette
 ACRA <- newpal( col = c(rgb(147, 202, 116, maxColorValue = 255),rgb(153, 38, 115, maxColorValue = 255),
@@ -20,12 +23,20 @@ ACRA <- newpal( col = c(rgb(147, 202, 116, maxColorValue = 255),rgb(153, 38, 115
                           "sec4", "sec5", "sec6", "sec7", "sec8" )
 )
 
-#seecol(ACRA, 
-#       col_brd = "white", lwd_brd = 4, 
-#       title = "Colours of ACRA", 
+# seecol(ACRA,
+#       col_brd = "white", lwd_brd = 4,
+#       title = "Colours of ACRA",
 #       mar_note = "For fuck's sake")
 
 #using +scale_color_manual(values = ACRA)
+
+# if (theme == "theme_ipsum") { theplot <- theplot + theme(text = element_text(family = "Nunito Sans"),
+#                                                          panel.background = element_rect(fill = "white"),  # Set the plot background to white
+#                                                          plot.background = element_rect(fill = "white"),   # Set the background behind the plot panel to white
+#                                                          legend.background = element_rect(fill = "white"), # Set the legend background to white
+#                                                          plot.title = element_text(color = "black", size = 40),       # Set the title color to black
+#                                                          axis.text = element_text(size = 25)               # Adjust the size of axis labels (change 12 to your preferred size)
+# )}
 
 
 ####### Function to import filled data
@@ -348,8 +359,9 @@ scatterCountryComparison <- function(data, graph_params, country_iso2c, peers_is
               nudge_y = 0.03*(layer_scales(theplot)$y$range$range[2]-layer_scales(theplot)$y$range$range[1]), 
               check_overlap = F, colour=ACRA['dark'])
   theplot <- theplot + theme(plot.title = element_textbox_simple())
+  if (theme == "theme_ipsum") { theplot <- theplot + theme(text = element_text(family = "Nunito Sans")) }
   
-  return(theplot)
+  return(list(graph = theplot, data = data_all))
   
 }
 
@@ -388,6 +400,7 @@ barCountryComparison <- function(data, graph_params, country_iso2c, peers_iso2c,
   
   if (length(indicators)==1) {theplot <- ggplot(data_all, aes(reorder(country_id, -value), value, fill = highlight)) } else 
   {theplot <- ggplot(data_all, aes(reorder(country_id, ordering), value, fill = variable)) }
+  
   eval(parse(text = paste("theplot <- theplot + ", theme, sep="") ))
   
   theplot <- theplot + geom_col(aes(size=highlight2), color="black", alpha=.8,
@@ -410,7 +423,8 @@ barCountryComparison <- function(data, graph_params, country_iso2c, peers_iso2c,
     theplot <- theplot + theme(axis.text.x = element_text(angle = 0, hjust = 0.5, vjust = 1))
   }
   
-  return(theplot)
+  if (theme == "theme_ipsum") { theplot <- theplot + theme(text = element_text(family = "Nunito Sans")) }
+  return(list(graph = theplot, data = data_all))
   
 }
 
@@ -443,7 +457,8 @@ barYearComparison <- function(data, graph_params, country_iso2c, peers_iso2c, ve
   eval(parse(text = paste("theplot <- theplot + ", theme, sep="") ))
   theplot <- theplot + theme(plot.title = element_textbox_simple(), axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5))
   
-  return(theplot)
+  if (theme == "theme_ipsum") { theplot <- theplot + theme(text = element_text(family = "Nunito Sans")) }
+  return(list(graph = theplot, data = data_all))
   
 }
 
@@ -495,7 +510,8 @@ barDynamic <- function(data, graph_params, country_iso2c, peers_iso2c, verbose=T
   theplot <- theplot + theme(plot.title = element_textbox_simple(), legend.position="bottom")
   if (length(indicators)==1) {theplot <- theplot + guides(fill = "none")}
   
-  return(theplot)
+  if (theme == "theme_ipsum") { theplot <- theplot + theme(text = element_text(family = "Nunito Sans")) }
+  return(list(graph = theplot, data = data_all))
   
 }
 
@@ -541,7 +557,8 @@ linesIndicatorComparison <- function(data, graph_params, country_iso2c, peers_is
   theplot <- theplot + theme(plot.title = element_textbox_simple(), plot.margin = margin(r = 100)) +
     labs(caption = caption, x=NULL, y=NULL) + guides(colour = "none")
   
-  return(theplot)
+  if (theme == "theme_ipsum") { theplot <- theplot + theme(text = element_text(family = "Nunito Sans")) }
+  return(list(graph = theplot, data = data_all))
   
 }
 
@@ -585,7 +602,8 @@ linesCountryComparison <- function(data, graph_params, country_iso2c, peers_iso2
     geom_dl(data = data_country, aes(label = country_id), method = list(dl.trans(x = x + 0.2), "last.points", cex = 0.8, colour = ACRA['dark'], alpha=1)) +
     geom_dl(data = data_country, aes(label = country_id), method = list(dl.trans(x = x - 0.2), "first.points", cex = 0.8, colour = ACRA['dark'], alpha=1))
   
-  return(theplot)
+  if (theme == "theme_ipsum") { theplot <- theplot + theme(text = element_text(family = "Nunito Sans")) }
+  return(list(graph = theplot, data = data_all))
   
 }
 
@@ -621,6 +639,7 @@ distributionDynamic <- function(data, graph_params, country_iso2c, peers_iso2c, 
   theplot <- theplot + ggtitle(title) + theme(plot.title = element_textbox_simple()) +
     labs(caption = caption, x=NULL, y=y_lab) + guides(fill = "none")
   
-  return(theplot)
+  if (theme == "theme_ipsum") { theplot <- theplot + theme(text = element_text(family = "Nunito Sans")) }
+  return(list(graph = theplot, data = data_all))
   
 }

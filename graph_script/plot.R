@@ -1,12 +1,16 @@
-###### Load libraries
+###### Load libraries and fonts
 library_names <- c("dplyr","reshape2","ggplot2","ggthemes","countrycode","readxl","tidyr","data.table","writexl","unikn",
-                   "ggtext","svglite","stringr","directlabels","fanplot","ggfan","hrbrthemes","glue","readr")
+                   "ggtext","svglite","stringr","directlabels","fanplot","ggfan","hrbrthemes","glue","readr", "showtext")
 
 for (library_name in library_names) {
   library(library_name, character.only = TRUE)
 }
 
-###### Define custom color palettes
+font_add_google("Nunito Sans", regular.wt = 400, bold.wt = 700)
+showtext_opts(dpi = 150)
+showtext_auto()
+
+###### Define custom color palettes and modifying themes
 
 ## ACRA palette
 ACRA <- newpal( col = c(rgb(147, 202, 116, maxColorValue = 255),rgb(153, 38, 115, maxColorValue = 255),
@@ -19,12 +23,20 @@ ACRA <- newpal( col = c(rgb(147, 202, 116, maxColorValue = 255),rgb(153, 38, 115
                           "sec4", "sec5", "sec6", "sec7", "sec8" )
 )
 
-#seecol(ACRA, 
-#       col_brd = "white", lwd_brd = 4, 
-#       title = "Colours of ACRA", 
+# seecol(ACRA,
+#       col_brd = "white", lwd_brd = 4,
+#       title = "Colours of ACRA",
 #       mar_note = "For fuck's sake")
 
 #using +scale_color_manual(values = ACRA)
+
+# if (theme == "theme_ipsum") { theplot <- theplot + theme(text = element_text(family = "Nunito Sans"),
+#                                                          panel.background = element_rect(fill = "white"),  # Set the plot background to white
+#                                                          plot.background = element_rect(fill = "white"),   # Set the background behind the plot panel to white
+#                                                          legend.background = element_rect(fill = "white"), # Set the legend background to white
+#                                                          plot.title = element_text(color = "black", size = 40),       # Set the title color to black
+#                                                          axis.text = element_text(size = 25)               # Adjust the size of axis labels (change 12 to your preferred size)
+# )}
 
 
 ####### Function to import filled data
@@ -73,7 +85,7 @@ importFilledData <- function(data_fname, data_d_fname) {
   dict <- read_excel(data_fname, sheet = "dict", col_names = T, skip=0,
                      col_types = rep("text", ncols))
   dict_d <- read_excel(data_d_fname, sheet = "dict_d", col_names = T, skip=0,
-                     col_types = rep("text", ncols))
+                       col_types = rep("text", ncols))
   dict <- rbind(dict, dict_d)
   
   return(list(extdata_y = extdata_y, extdata_q = extdata_q, extdata_m = extdata_m, extdata_d = extdata_d, dict = dict))
@@ -92,8 +104,8 @@ getPeersCodes <- function(country_name, peers_fname) {
   country_iso3c <- groupsdata %>% filter(rownames(groupsdata) == country_name) %>% pull(country_code)
   country_iso2c <- countrycode(country_iso3c, origin = 'iso3c', destination = 'iso2c')
   groupsdata <- groupsdata %>% select(-c(region)) %>% 
-      mutate(country_iso2c = countrycode(country_code, origin = 'iso3c', destination = 'iso2c')) %>%
-      rename('country_iso3c' = 'country_code') %>% as_tibble
+    mutate(country_iso2c = countrycode(country_code, origin = 'iso3c', destination = 'iso2c')) %>%
+    rename('country_iso3c' = 'country_code') %>% as_tibble
   
   peersdata <- read_excel(peers_fname, sheet = "groups", col_names = T, skip=11)
   peers_default_iso3c <- names(peersdata)[peersdata[peersdata$country_code == country_iso3c, ] == 1]
@@ -134,7 +146,7 @@ checkGraphTypes <- function(graphplan, graph_types) {
   for (i in 1:dim(graphplan)[1]) {
     
     if(graphplan$graph_type[i] %in% graph_types) {} else {graphplan$check_types[i] = 0}
-        
+    
   }
   
   return(graphplan)
@@ -175,71 +187,71 @@ checkAvailability <- function(graphplan, dict) {
 
 parseGraphPlan <- function(graphrow, dict, horizontal_size, vertical_size) {
   
-        ###### Fix graph parameters
-        for (j in seq_along(graphrow)) { eval(parse(text = paste0(names(graphrow)[j], " <- graphrow$", names(graphrow)[j]) )) }
-        #    show_title <- 0   
-        
-        ## indicators and limits fixation
-        indicators <- unlist(strsplit(indicators, ", "))
-        x_ind <- indicators[1]
-        y_ind <- indicators[2]
-        
-        x_min <- as.numeric(unlist(strsplit(x_min, "q|m|d" )))
-        x_max <- as.numeric(unlist(strsplit(x_max, "q|m|d" )))
-        
-        if (graph_type %in% c("bar_dynamic", "lines_country_comparison", "lines_indicator_comparison", "distribution_dynamic",
-                              "structure_dynamic", "structure_dynamic_norm")) {
-          if (data_frequency=="y") { time_start <- x_min[1]-1987 ; time_end <- x_max[1]-1987; 
-          labfreq <- 1; timetony_start <- 0; timetony_end <- 1}
-          if (data_frequency=="q") { time_start <- (x_min[1]-1987)*4+x_min[2]; time_end <- (x_max[1]-1987)*4+x_max[2];
-          labfreq <- 4; timetony_start <- (5-x_min[2])%%4; timetony_end <- x_min[2] }
-          if (data_frequency=="m") { time_start <- (x_min[1]-1987)*12+x_min[2] ; time_end <- (x_max[1]-1987)*12+x_max[2];
-          labfreq <- 12; timetony_start <- (13-x_min[2])%%12; timetony_end <- x_min[2] }
-          #if (data_frequency=="d") { time_start <- (x_min[1]-1987)*365+x_min[2] ; time_end <- (x_max[1]-1987)*365+x_max[2];
-          #labfreq <- 30; timetony_start <- (13-x_min[2])%%12; timetony_end <- x_min[2] }   
-        } else {time_start <- NA; time_end <- NA; timetony_start <- NA; timetony_end <- NA; labfreq <- NA}
-        
-        y_min <- as.numeric(y_min)
-        y_max <- as.numeric(y_max)
-        if (is.na(sec_y_axis) == F) {
-          indicators_sec <- unlist(strsplit(sec_y_axis, ", "))
-          coeff <- as.numeric(tail(indicators_sec, 1))
-          indicators_sec <- head(indicators_sec, -1)
-        } else {indicators_sec <- NA; coeff <- NA}
-        
-        time_fix_label <- time_fix
-        time_fix <- unlist(strsplit(time_fix, ", "))
-        if (graph_type =="bar_year_comparison") { time_fix <- as.numeric(time_fix)} else 
-        {time_fix <- as.numeric(unlist(strsplit(time_fix, "q|m|d" )))}
-        if (graph_type %in% c("scatter_country_comparison", "bar_country_comparison", "structure_country_comparison",
-                  "structure_country_comparison_norm")) {
-          if (data_frequency=="y") { time_fix <- time_fix[1]-1987 }
-          if (data_frequency=="q") { time_fix <- (time_fix[1]-1987)*4+time_fix[2] }
-          if (data_frequency=="m") { time_fix <- (time_fix[1]-1987)*12+time_fix[2] }   
-        }
-        
-        ## logs calculation 
-        if (x_log==1) { x_lab <- paste0("log(", dict[dict$indicator_code==x_ind & dict$source_frequency==data_frequency,1], "), ", time_fix_label); 
-        x_ind <- paste0("log(", x_ind, ")") } else {
-          x_lab <- paste0(dict[dict$indicator_code==x_ind & dict$source_frequency==data_frequency,1], ", ", time_fix_label) }
-        if (y_log==1) { y_lab <- paste0("log(", dict[dict$indicator_code==y_ind & dict$source_frequency==data_frequency,1], "), ", time_fix_label);
-        y_ind <- paste0("log(", y_ind, ")") } else {
-          y_lab <- paste0(dict[dict$indicator_code==y_ind & dict$source_frequency==data_frequency,1], ", ", time_fix_label) }
-        
-        ## theme and labs calculation
-        if (show_title == 1) { title <- graph_title } else {title <- ""} 
-        caption <- paste("Источники:", source_name)
-        theme <- paste("theme_", theme, "()", sep="")
-        if (orientation=="vertical") {width = vertical_size[1]; height = vertical_size[2]} else {
-                width = horizontal_size[1]; height = horizontal_size[2]}
+  ###### Fix graph parameters
+  for (j in seq_along(graphrow)) { eval(parse(text = paste0(names(graphrow)[j], " <- graphrow$", names(graphrow)[j]) )) }
+  #    show_title <- 0   
   
-        return(list(indicators = indicators, graph_type = graph_type, x_ind = x_ind, y_ind = y_ind, x_min = x_min, y_min = y_min, 
-                x_max = x_max, y_max = y_max, data_frequency = data_frequency, time_start = time_start, labfreq = labfreq,
-                time_end = time_end, timetony_start = timetony_start, trend_type = trend_type, graph_name = graph_name,
-                timetony_end = timetony_end, time_fix = time_fix, time_fix_label = time_fix_label, indicators_sec = indicators_sec, 
-                peers = peers, x_lab = x_lab, y_lab = y_lab, caption = caption, title = title, theme = theme, all = all,
-                width = width, height = height, sec_y_axis = sec_y_axis, coeff = coeff, index = index))
-        
+  ## indicators and limits fixation
+  indicators <- unlist(strsplit(indicators, ", "))
+  x_ind <- indicators[1]
+  y_ind <- indicators[2]
+  
+  x_min <- as.numeric(unlist(strsplit(x_min, "q|m|d" )))
+  x_max <- as.numeric(unlist(strsplit(x_max, "q|m|d" )))
+  
+  if (graph_type %in% c("bar_dynamic", "lines_country_comparison", "lines_indicator_comparison", "distribution_dynamic",
+                        "structure_dynamic", "structure_dynamic_norm")) {
+    if (data_frequency=="y") { time_start <- x_min[1]-1987 ; time_end <- x_max[1]-1987; 
+    labfreq <- 1; timetony_start <- 0; timetony_end <- 1}
+    if (data_frequency=="q") { time_start <- (x_min[1]-1987)*4+x_min[2]; time_end <- (x_max[1]-1987)*4+x_max[2];
+    labfreq <- 4; timetony_start <- (5-x_min[2])%%4; timetony_end <- x_min[2] }
+    if (data_frequency=="m") { time_start <- (x_min[1]-1987)*12+x_min[2] ; time_end <- (x_max[1]-1987)*12+x_max[2];
+    labfreq <- 12; timetony_start <- (13-x_min[2])%%12; timetony_end <- x_min[2] }
+    #if (data_frequency=="d") { time_start <- (x_min[1]-1987)*365+x_min[2] ; time_end <- (x_max[1]-1987)*365+x_max[2];
+    #labfreq <- 30; timetony_start <- (13-x_min[2])%%12; timetony_end <- x_min[2] }   
+  } else {time_start <- NA; time_end <- NA; timetony_start <- NA; timetony_end <- NA; labfreq <- NA}
+  
+  y_min <- as.numeric(y_min)
+  y_max <- as.numeric(y_max)
+  if (is.na(sec_y_axis) == F) {
+    indicators_sec <- unlist(strsplit(sec_y_axis, ", "))
+    coeff <- as.numeric(tail(indicators_sec, 1))
+    indicators_sec <- head(indicators_sec, -1)
+  } else {indicators_sec <- NA; coeff <- NA}
+  
+  time_fix_label <- time_fix
+  time_fix <- unlist(strsplit(time_fix, ", "))
+  if (graph_type =="bar_year_comparison") { time_fix <- as.numeric(time_fix)} else 
+  {time_fix <- as.numeric(unlist(strsplit(time_fix, "q|m|d" )))}
+  if (graph_type %in% c("scatter_country_comparison", "bar_country_comparison", "structure_country_comparison",
+                        "structure_country_comparison_norm")) {
+    if (data_frequency=="y") { time_fix <- time_fix[1]-1987 }
+    if (data_frequency=="q") { time_fix <- (time_fix[1]-1987)*4+time_fix[2] }
+    if (data_frequency=="m") { time_fix <- (time_fix[1]-1987)*12+time_fix[2] }   
+  }
+  
+  ## logs calculation 
+  if (x_log==1) { x_lab <- paste0("log(", dict[dict$indicator_code==x_ind & dict$source_frequency==data_frequency,1], "), ", time_fix_label); 
+  x_ind <- paste0("log(", x_ind, ")") } else {
+    x_lab <- paste0(dict[dict$indicator_code==x_ind & dict$source_frequency==data_frequency,1], ", ", time_fix_label) }
+  if (y_log==1) { y_lab <- paste0("log(", dict[dict$indicator_code==y_ind & dict$source_frequency==data_frequency,1], "), ", time_fix_label);
+  y_ind <- paste0("log(", y_ind, ")") } else {
+    y_lab <- paste0(dict[dict$indicator_code==y_ind & dict$source_frequency==data_frequency,1], ", ", time_fix_label) }
+  
+  ## theme and labs calculation
+  if (show_title == 1) { title <- graph_title } else {title <- ""} 
+  caption <- paste("Источники:", source_name)
+  theme <- paste("theme_", theme, "()", sep="")
+  if (orientation=="vertical") {width = vertical_size[1]; height = vertical_size[2]} else {
+    width = horizontal_size[1]; height = horizontal_size[2]}
+  
+  return(list(indicators = indicators, graph_type = graph_type, x_ind = x_ind, y_ind = y_ind, x_min = x_min, y_min = y_min, 
+              x_max = x_max, y_max = y_max, data_frequency = data_frequency, time_start = time_start, labfreq = labfreq,
+              time_end = time_end, timetony_start = timetony_start, trend_type = trend_type, graph_name = graph_name,
+              timetony_end = timetony_end, time_fix = time_fix, time_fix_label = time_fix_label, indicators_sec = indicators_sec, 
+              peers = peers, x_lab = x_lab, y_lab = y_lab, caption = caption, title = title, theme = theme, all = all,
+              width = width, height = height, sec_y_axis = sec_y_axis, coeff = coeff, index = index))
+  
 }
 
 
@@ -296,24 +308,24 @@ subsetData <- function(data, graph_params, country, peers) {
 ####### Function to choose the needed function based on the graph type (simply transforming the name) 
 
 funcNameTransform <- function(graph_type) {
-
-      # Split the input string by underscores
-      words <- strsplit(graph_type, "_", fixed = TRUE)[[1]]
-      
-      # Capitalize the letters after underscore
-      words <- sapply(words, function(word) {
-        if (nchar(word) > 1) {
-          paste0(toupper(substr(word, 1, 1)), substr(word, 2, nchar(word)))
-        } else {
-          word
-        }
-      })
-      
-      # Combine the words back into a single string without underscores
-      output_string <- paste(words, collapse = "")
-      output_string <- paste0(tolower(substr(output_string, 1, 1)), substr(output_string, 2, nchar(output_string)))
-      return(output_string)
-      
+  
+  # Split the input string by underscores
+  words <- strsplit(graph_type, "_", fixed = TRUE)[[1]]
+  
+  # Capitalize the letters after underscore
+  words <- sapply(words, function(word) {
+    if (nchar(word) > 1) {
+      paste0(toupper(substr(word, 1, 1)), substr(word, 2, nchar(word)))
+    } else {
+      word
+    }
+  })
+  
+  # Combine the words back into a single string without underscores
+  output_string <- paste(words, collapse = "")
+  output_string <- paste0(tolower(substr(output_string, 1, 1)), substr(output_string, 2, nchar(output_string)))
+  return(output_string)
+  
 }
 
 
@@ -347,8 +359,9 @@ scatterCountryComparison <- function(data, graph_params, country_iso2c, peers_is
               nudge_y = 0.03*(layer_scales(theplot)$y$range$range[2]-layer_scales(theplot)$y$range$range[1]), 
               check_overlap = F, colour=ACRA['dark'])
   theplot <- theplot + theme(plot.title = element_textbox_simple())
+  if (theme == "theme_ipsum") { theplot <- theplot + theme(text = element_text(family = "Nunito Sans")) }
   
-  return(theplot)
+  return(list(graph = theplot, data = data_all))
   
 }
 
@@ -387,6 +400,7 @@ barCountryComparison <- function(data, graph_params, country_iso2c, peers_iso2c,
   
   if (length(indicators)==1) {theplot <- ggplot(data_all, aes(reorder(country_id, -value), value, fill = highlight)) } else 
   {theplot <- ggplot(data_all, aes(reorder(country_id, ordering), value, fill = variable)) }
+  
   eval(parse(text = paste("theplot <- theplot + ", theme, sep="") ))
   
   theplot <- theplot + geom_col(aes(size=highlight2), color="black", alpha=.8,
@@ -409,7 +423,8 @@ barCountryComparison <- function(data, graph_params, country_iso2c, peers_iso2c,
     theplot <- theplot + theme(axis.text.x = element_text(angle = 0, hjust = 0.5, vjust = 1))
   }
   
-  return(theplot)
+  if (theme == "theme_ipsum") { theplot <- theplot + theme(text = element_text(family = "Nunito Sans")) }
+  return(list(graph = theplot, data = data_all))
   
 }
 
@@ -442,7 +457,8 @@ barYearComparison <- function(data, graph_params, country_iso2c, peers_iso2c, ve
   eval(parse(text = paste("theplot <- theplot + ", theme, sep="") ))
   theplot <- theplot + theme(plot.title = element_textbox_simple(), axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5))
   
-  return(theplot)
+  if (theme == "theme_ipsum") { theplot <- theplot + theme(text = element_text(family = "Nunito Sans")) }
+  return(list(graph = theplot, data = data_all))
   
 }
 
@@ -494,7 +510,8 @@ barDynamic <- function(data, graph_params, country_iso2c, peers_iso2c, verbose=T
   theplot <- theplot + theme(plot.title = element_textbox_simple(), legend.position="bottom")
   if (length(indicators)==1) {theplot <- theplot + guides(fill = "none")}
   
-  return(theplot)
+  if (theme == "theme_ipsum") { theplot <- theplot + theme(text = element_text(family = "Nunito Sans")) }
+  return(list(graph = theplot, data = data_all))
   
 }
 
@@ -540,7 +557,8 @@ linesIndicatorComparison <- function(data, graph_params, country_iso2c, peers_is
   theplot <- theplot + theme(plot.title = element_textbox_simple(), plot.margin = margin(r = 100)) +
     labs(caption = caption, x=NULL, y=NULL) + guides(colour = "none")
   
-  return(theplot)
+  if (theme == "theme_ipsum") { theplot <- theplot + theme(text = element_text(family = "Nunito Sans")) }
+  return(list(graph = theplot, data = data_all))
   
 }
 
@@ -584,7 +602,8 @@ linesCountryComparison <- function(data, graph_params, country_iso2c, peers_iso2
     geom_dl(data = data_country, aes(label = country_id), method = list(dl.trans(x = x + 0.2), "last.points", cex = 0.8, colour = ACRA['dark'], alpha=1)) +
     geom_dl(data = data_country, aes(label = country_id), method = list(dl.trans(x = x - 0.2), "first.points", cex = 0.8, colour = ACRA['dark'], alpha=1))
   
-  return(theplot)
+  if (theme == "theme_ipsum") { theplot <- theplot + theme(text = element_text(family = "Nunito Sans")) }
+  return(list(graph = theplot, data = data_all))
   
 }
 
@@ -620,6 +639,7 @@ distributionDynamic <- function(data, graph_params, country_iso2c, peers_iso2c, 
   theplot <- theplot + ggtitle(title) + theme(plot.title = element_textbox_simple()) +
     labs(caption = caption, x=NULL, y=y_lab) + guides(fill = "none")
   
-  return(theplot)
+  if (theme == "theme_ipsum") { theplot <- theplot + theme(text = element_text(family = "Nunito Sans")) }
+  return(list(graph = theplot, data = data_all))
   
 }

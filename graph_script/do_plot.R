@@ -68,7 +68,7 @@ if (is.null(dim(error_report)[1]) | is.na(dim(error_report)[1]) | (dim(error_rep
       
       ### Saving file
       filename <- paste(graph_params$graph_name, file_output, sep=".")
-      ggsave(path = here(country_name, "Auto_report"), filename = filename,  plot = theplot, device = file_output,
+      ggsave(path = here(country_name, "Auto_report"), filename = filename,  plot = theplot$graph, device = file_output,
              width = graph_params$width, height = graph_params$height, units = "px", dpi = 150)
       #theplot
       

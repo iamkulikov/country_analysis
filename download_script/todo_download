@@ -8,6 +8,7 @@ FiscalMonitor привязать к dropbox?
 добавить last_update в dict
 для imf_tool дописать, чтобы последняя дата была существующей вне зависимости от запроса (запрашивать у базы)
 дублировать xlsx в csv для быстродействия
+ЧТО С КОДОМ ТУРЦИИ?? почему пиры не находятся
 
 Данные:
 Углубить историю FM (2011-2012)
@@ -20,6 +21,7 @@ FiscalMonitor привязать к dropbox?
 Взять что-нибудь с WHO - expected healthy life? 
 Качать ли ARA IMF? https://www.imf.org/external/datamapper/Reserves_ARA@ARA/CHN/IND/BRA/RUS/ZAF
 Добавить дефолты (расчетные) и из базы BOC-BOE (или нашей?)
+В пирах добавить BRICS_plus
 
 3) fill:
 
@@ -41,7 +43,6 @@ FiscalMonitor привязать к dropbox?
 добавить поле short_label для использования на графиках
 сделать правильный combine для extebt_fc_role и extdebt_sr_role
 сделать курс и ставку для еврозоны
-добавить экспорт csv-шек в приложения для графиков
 
 4) augment:
 

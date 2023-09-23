@@ -30,14 +30,6 @@ ACRA <- newpal( col = c(rgb(147, 202, 116, maxColorValue = 255),rgb(153, 38, 115
 
 #using +scale_color_manual(values = ACRA)
 
-# if (theme == "theme_ipsum") { theplot <- theplot + theme(text = element_text(family = "Nunito Sans"),
-#                                                          panel.background = element_rect(fill = "white"),  # Set the plot background to white
-#                                                          plot.background = element_rect(fill = "white"),   # Set the background behind the plot panel to white
-#                                                          legend.background = element_rect(fill = "white"), # Set the legend background to white
-#                                                          plot.title = element_text(color = "black", size = 40),       # Set the title color to black
-#                                                          axis.text = element_text(size = 25)               # Adjust the size of axis labels (change 12 to your preferred size)
-# )}
-
 
 ####### Function to import filled data
 
@@ -97,7 +89,9 @@ importFilledData <- function(data_fname, data_d_fname) {
 
 getPeersCodes <- function(country_name, peers_fname) {
   
-  groupsdata <- t(read_excel(peers_fname, sheet = "groups", col_names = T, n_max = 11))
+  n_groups = 12
+  
+  groupsdata <- t(read_excel(peers_fname, sheet = "groups", col_names = T, n_max = n_groups))
   labels <- c("region", groupsdata[3,-1])
   groupsdata <- data.frame(groupsdata[-c(1:3),])
   colnames(groupsdata) <- labels
@@ -107,7 +101,7 @@ getPeersCodes <- function(country_name, peers_fname) {
       mutate(country_iso2c = countrycode(country_code, origin = 'iso3c', destination = 'iso2c')) %>%
       rename('country_iso3c' = 'country_code') %>% as_tibble
   
-  peersdata <- read_excel(peers_fname, sheet = "groups", col_names = T, skip=11)
+  peersdata <- read_excel(peers_fname, sheet = "groups", col_names = T, skip=n_groups)
   peers_default_iso3c <- names(peersdata)[peersdata[peersdata$country_code == country_iso3c, ] == 1]
   peers_default_iso2c <- countrycode(peers_default_iso3c, origin = 'iso3c', destination = 'iso2c')
   peers_neighbours_iso3c <- peersdata %>% select(region, country_code) %>% filter(region==peersdata$region[peersdata$country_code==country_iso3c]) %>%

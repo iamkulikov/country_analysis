@@ -25,6 +25,7 @@ library("shiny")
 library("here")
 library("shinyWidgets")
 library("showtext")
+library("clipr")
 
 # Import all the necessary assets except data
 here::i_am("app.R")
@@ -73,20 +74,19 @@ indicator_groups_content <- list("",
                                  c("wgi_va_rnk", "wgi_ps_rnk", "wgi_cc_rnk", "wgi_rl_rnk", "wgi_rq_rnk", "wgi_ge_rnk"),
                                  c("birth_rate", "death_rate", "migr_rate"))
 
-peers <- c("default", "neighbours", "EU", "EZ", "EEU", "IT", "OPEC_plus", "BRICS", "EM", "DM", "ACRA")
-peers_choice <- c("none", "default", "custom", "neighbours", "formula", "EU", "EZ", "EEU", "IT", "OPEC_plus", "BRICS", "EM", "DM", "ACRA")
+peers <- c("default", "neighbours", "EU", "EZ", "EEU", "IT", "OPEC_plus", "BRICS", "BRICS_plus", "EM", "DM", "ACRA")
+peers_choice <- c("none", "default", "custom", "neighbours", "formula", "EU", "EZ", "EEU", "IT", "OPEC_plus", "BRICS", "BRICS_plus", "EM", "DM", "ACRA")
 
 trend_types <- c("", "lm", "loess")
 graph_themes <- c("ACRA", "ipsum", "economist", "minimal")
-graph_groups <- list(macro = "ec", budget = "budg", external = "budg", institutional = "inst", demography = "demogr", 
-                     covid = "covid", other = "oth")
+graph_groups <- list(macro = "ec", budget = "budg", external = "ext", institutional = "inst", demography = "demogr", 
+                     covid = "covid", model = "model", other = "oth")
 
 # Parameters
 horizontal_size <- c(1800, 900)
 vertical_size <- c(900, 900)
-# horizontal_size <- c(30, 14.5)
-# vertical_size <- c(14.5, 14.5)
 verbose <- F
+
 
 # Interface
 
@@ -168,19 +168,6 @@ ui <-   fluidPage(
                       ),
       
       fluidRow(
-                column(4,checkboxInput("x_log", "X log")),
-                column(3,checkboxInput("y_log", "Y log")),
-                column(5,checkboxInput("swap_axis", "Swap axis"))
-      ),
-      
-
-      fluidRow(
-        column(4,checkboxInput("recession", "Recession")),
-        column(3,checkboxInput("index", "Index")),
-        column(5,checkboxInput("long_legend", "Long legend"))
-      ),
-      
-      fluidRow(
         column(4,selectInput("trend_type", "Trend", choices = trend_types, selected = "")),
         column(8,selectInput("theme", "Style preset", graph_themes, selected = "ipsum"))
       ),
@@ -196,12 +183,35 @@ ui <-   fluidPage(
         
       ),
       
+      fluidRow(
+        column(4,checkboxInput("x_log", "X log")),
+        column(3,checkboxInput("y_log", "Y log")),
+        column(5,checkboxInput("swap_axis", "Swap axis"))
+      ),
+      
+      
+      fluidRow(
+        column(4,checkboxInput("recession", "Recession")),
+        column(3,checkboxInput("index", "Index")),
+        column(5,checkboxInput("long_legend", "Long legend"))
+      ),
+      
+      fluidRow(
+        column(6,checkboxInput("short_names", "Short indicator names")),
+        column(6,checkboxInput("vert_lab", "Vertical X labels")),
+      ),
+      
     ),
     
     mainPanel(
-      
-      actionButton("plot_button", "Update Plot"),
+      fluidRow( 
+        column(3, actionButton("plot_button", "Update Plot")),
+        column(3, actionButton("fill_button", "Help with defaults")),
+        column(3, actionButton("getPlan", "Import plan"))
+      ),
+      br(),
       plotOutput("graph"),
+      br(),
       
       ## Output panel
       
@@ -209,7 +219,7 @@ ui <-   fluidPage(
         column(3, downloadButton("downloadJpeg", "Download jpeg")),
         column(3, downloadButton("downloadPng", "Download png")),
         column(3, downloadButton("downloadData", "Download data")),
-        column(3, actionButton("copyPlan", "Copy plan"))
+        column(3, actionButton("copyPlan", "Export plan"))
         ),
       
       br(),
@@ -231,6 +241,7 @@ ui <-   fluidPage(
 
       
       tableOutput("table"),
+      tableOutput("table2"),
       textOutput("check"),
       textOutput("check1"),
       textOutput("check2"),
@@ -239,6 +250,7 @@ ui <-   fluidPage(
     )
   )
 )
+
 
 # Calculations
 
@@ -265,7 +277,12 @@ server <- function(input, output, session) {
                             y_max = input$y_max,
                             trend_type = input$trend_type,
                             index = 1*input$index,
+                            recession = 1*input$recession,
                             sec_y_axis = sec_y_string(),  # external constructor
+                            swap_axis = 1*input$swap_axis,
+                            long_legend = 1*input$long_legend,
+                            vert_lab = 1*input$vert_lab,
+                            short_names = 1*input$short_names,
                             theme = input$theme,
                             orientation = input$orientation,
                             show_title = 1*input$show_title,
@@ -332,14 +349,156 @@ server <- function(input, output, session) {
                   names(indicators_variants) <- indicators_temp %>% pull(indicator)
                   
                   if (input$ind_group != "") {
-                    indicators_chosen <- indicator_groups_content[[which(indicator_groups == input$ind_group)]]} else {
+                    
+                    indicators_chosen <- indicator_groups_content[[which(indicator_groups == input$ind_group)]]
+                    updateSelectizeInput(session, "indicators", label = "Indicators", 
+                                         choices = indicators_variants, selected = indicators_chosen) 
+                    
+                    } else {
                     indicators_chosen <- ""}
                   
-                  updateSelectizeInput(session, "indicators", label = "Indicators", 
-                                       choices = indicators_variants, selected = indicators_chosen) 
                 })
   
+  ## Fill graphplan's empty cells
   
+    observeEvent(input$fill_button, {
+        
+        ##### Fill time fix
+        if (input$graph_type %in% c("scatter_country_comparison", "structure_country_comparison",
+                                    "structure_country_comparison_norm", "bar_country_comparison", "bar_country_comparison_norm") & input$time_fix == "") {
+          
+          a <- case_when(
+            input$data_frequency == "y" ~ "2021",
+            input$data_frequency == "q" ~ "2022q4",
+            input$data_frequency == "m" ~ "2023m6",
+            TRUE ~ "2021"
+          )
+          
+          updateTextInput(session, "time_fix", label = "Time fix", value = a)
+        }
+        
+        ##### Fill left X limit
+        if (input$graph_type %in% c("scatter_dynamic", "structure_dynamic", "bar_dynamic", "lines_country_comparison", 
+                                    "lines_indicator_comparison", "distribution_dynamic") & input$x_min == "") {
+          
+          a <- case_when(
+            input$data_frequency == "y" ~ c("2005"),
+            input$data_frequency == "q" ~ c("2018q1"),
+            input$data_frequency == "m" ~ c("2020m1"),
+            TRUE ~ "2005"
+          )            
+          
+          updateTextInput(session, "x_min", "X min", value = a)
+        }
+
+        ##### Fill right X limit        
+        if (input$graph_type %in% c("scatter_dynamic", "structure_dynamic", "bar_dynamic", "lines_country_comparison", 
+                                    "lines_indicator_comparison", "distribution_dynamic") & input$x_max == "") {
+          
+          a <- case_when(
+            input$data_frequency == "y" ~ c("2022"),
+            input$data_frequency == "q" ~ c("2023q1"),
+            input$data_frequency == "m" ~ c("2023m7"),
+            TRUE ~ "2022"
+          )            
+          
+          updateTextInput(session, "x_max", "X max", value = a)
+        }          
+        
+        ##### Fill multiple time fix
+        if (input$graph_type == "bar_year_comparison") {
+          updateTextInput(session, "time_fix", label = "Time fix", value = "2005, 2014, 2021") }
+  
+    })
+  
+  ## Import graph plan from excel
+    
+  observeEvent(input$getPlan, {
+      
+    imported <- read_clip_tbl(header = F)
+    output$table2 <- renderTable({ imported })
+    
+    
+    updateTextInput(session, inputId = "graph_name", label = "File name", 
+                    value = gsub(glue("^({paste(paste0(graph_groups,'_'), collapse='|')})"), "", imported[1,1]) )
+    
+    updateTextAreaInput(session, inputId = "graph_title", label = "Graph Title", value = imported[1,2])
+    updateSelectizeInput(session, inputId = 'graph_type', label = 'Graph type', choices = graph_types, selected = imported[1,3])
+    updateSelectizeInput(session, inputId = 'graph_group', label = 'Graph group', choices = graph_groups, 
+                         selected = graph_groups[[ imported[1,4] ]])
+    updateSelectizeInput(session, inputId = 'data_frequency', label = 'Data freq', 
+                         choices = c(" ", "y", "q", "m", "d"), selected = imported[1,5])
+    updateSelectInput(session, inputId = "ind_group", label = "Indicator group", choices = indicator_groups, selected = "")
+    
+    updateSelectizeInput(session, inputId = 'indicators', label = 'Indicators', choices = indicators_start,          
+                    selected = strsplit(imported[1,6], ", |,")[[1]])  
+    updateTextInput(session, inputId = "time_fix", label = "Time fix", value = imported[1,7])
+    
+    if (imported[1,8] == 0) {
+        updateSelectizeInput(session, inputId = "peers", label = "Peer group", choices = peers_choice, selected = "none")
+        updateTextInput(session, inputId = "peers_formula", label = "Formula", value = "")
+        updateSelectizeInput(session, inputId = 'peers_custom', label = 'Custom list', choices = countries_peers, selected = "")
+    }
+    
+    if (imported[1,8] != 0) {
+      
+        peers_vec <- unlist(strsplit(imported[1,8], ": |:"))
+        peers_type <- peers_vec[1]
+        peers_vec <- unlist(strsplit(peers_vec[2], ", "))
+  
+      
+      if (imported[1,8] %in% peers) {
+          updateSelectizeInput(session, inputId = "peers", label = "Peer group", choices = peers_choice, 
+                               selected = imported[1,8])
+          updateTextInput(session, inputId = "peers_formula", label = "Formula", value = "")
+          updateSelectizeInput(session, inputId = 'peers_custom', label = 'Custom list', choices = countries_peers, selected = "")
+      }
+      
+      if (peers_type == "custom") {    
+          updateSelectizeInput(session, inputId = "peers", label = "Peer group", choices = peers_choice, selected = peers_type)
+          updateTextInput(session, inputId = "peers_formula", label = "Formula", value = "")
+          updateSelectizeInput(session, inputId = 'peers_custom', label = 'Custom list', choices = countries_peers, selected = peers_vec)
+      }
+      
+      if (peers_type %in% c("top", "low", "similar")) {    
+          updateSelectizeInput(session, inputId = "peers", label = "Peer group", choices = peers_choice, selected = "formula")
+          updateTextInput(session, inputId = "peers_formula", label = "Formula", value = imported[1,8])
+          updateSelectizeInput(session, inputId = 'peers_custom', label = 'Custom list', choices = countries_peers, selected = "")
+      }
+
+    }
+    # updateSelectizeInput(session, inputId = "peers", label = "Peer group", choices = peers_choice, selected = "BRICS") # сделать
+    # updateTextInput(session, inputId = "peers_formula", label = "Formula", value = "")
+    # updateSelectizeInput(session, inputId = 'peers_custom', label = 'Custom list', 
+    #                      choices = countries_peers, selected = c("BR","TR"))
+    
+    updateCheckboxInput(session, inputId = "all", label = "Show all countries", value = (imported[1,9] == 1))
+    updateCheckboxInput(session, inputId = "x_log", label = "X log", value = (imported[1,10] == 1))
+    updateCheckboxInput(session, inputId = "y_log", label = "Y log", value = (imported[1,11] == 1))
+    updateTextInput(session, inputId = "x_min", label = "X min", value = imported[1,12])
+    updateTextInput(session, inputId = "x_max", label = "X max", value = imported[1,13])
+    updateNumericInput(session, inputId = "y_min", label = "Y min",  value = imported[1,14])
+    updateNumericInput(session, inputId = "y_max", label = "Y max",  value = imported[1,15])
+    updateSelectInput(session, inputId = "trend_type", label = "Trend", choices = trend_types, selected = imported[1,16])
+    updateCheckboxInput(session, inputId = "index", label = "Index", value = (imported[1,17] == 1))
+    updateCheckboxInput(session, inputId = "recession", label = "Recession", value = (imported[1,18] == 1))
+    
+    a <- strsplit(ifelse(imported[1,19]!="" & !is.null(imported[1,19]) & !is.na(imported[1,19]),imported[1,19],""), ", |,")[[1]]
+    updateSelectizeInput(session, inputId = "sec_y_axis_ind", label = "2nd Y-axis", choices = indicators_start, 
+                         selected = a[!grepl("^\\d+$", a)])                    # почему пропадают? reactive? да
+    updateNumericInput(session, inputId = "sec_y_axis_coeff", label = "Axis mult", value = a[grepl("^\\d+$", a)][1])
+    
+    updateCheckboxInput(session, inputId = "swap_axis", label = "Swap axis", value = (imported[1,20] == 1))
+    updateCheckboxInput(session, inputId = "long legend", label = "Long legend", value = (imported[1,21] == 1))
+    updateCheckboxInput(session, inputId = "vert_lab", label = "Vertical X labels", value = (imported[1,22] == 1))
+    updateCheckboxInput(session, inputId = "short_names", label = "Short indicator names", value = (imported[1,23] == 1))
+    
+    updateSelectInput(session, inputId = "theme", label = "Style preset", choices = graph_themes, selected = imported[1,24])
+    updateSelectInput(session, inputId = "orientation", label = "Orientation", choices = c("horizontal", "vertical"), selected = imported[1,25])
+    updateCheckboxInput(session, inputId = "show_title", label = "Show Title", value = (imported[1,26] == 1))
+
+  })
+    
   ## Updating source string based on updated indicators 
   
   generateSources <- function(indicators, dict) {
@@ -358,8 +517,6 @@ server <- function(input, output, session) {
   ## Producing graph (copied from do_plot)
   
   observeEvent(input$plot_button, {
-  
-        ##### Update graphplan     
     
         ##### Update country groups
         country_info <- getPeersCodes(country_name = input$country_choice, peers_fname = peers_fname)
@@ -390,11 +547,16 @@ server <- function(input, output, session) {
             ### Choosing the needed function based on the graph type 
             func_name <- funcNameTransform(graph_type = graph_params$graph_type)
             
-            ### Producing the graph
+            ### Producing the graph to show in app
             graph_calculated <<- eval(parse(text= paste0( 
               func_name, "(data = data_temp, graph_params = graph_params, country_iso2c = country_info$country_iso2c, peers_iso2c = peers_iso2c, verbose = verbose)"
             ) ))
             output$graph <- renderPlot(graph_calculated$graph)
+            
+            ### Reproducing the graph for download
+            graph_calculated2 <<- eval(parse(text= paste0( 
+              func_name, "(data = data_temp, graph_params = graph_params, country_iso2c = country_info$country_iso2c, peers_iso2c = peers_iso2c, verbose = verbose)"
+            ) ))
           
         } else {print("Errors found"); print(error_report)}
         
@@ -406,23 +568,26 @@ server <- function(input, output, session) {
   #output$table <- renderTable({ indicators_temp() })
   
   # Checks
-  output$check <- renderText({ input$ind_group != "" })
-  output$check1 <- renderText({ which(indicator_groups == input$ind_group) })
-  output$check2 <- renderText({ indicator_groups_content[[which(indicator_groups == input$ind_group)]] })
+  output$check <- renderText({ input$x_min == "" })
+  output$check1 <- renderText({ is.na(input$x_min == "") })
+  output$check2 <- renderText({ is.null(input$x_min == "") })
   output$check3 <- renderText({ paste0("non-na" ,!is.na(input$sec_y_axis_ind)) })
+  
   
   # Download files
   
+  ### Calculating output parameters
   graph_size <- reactive(ifelse(input$orientation == "horizontal", horizontal_size, vertical_size))
   output_name <- reactive(glue("{input$graph_group}_{input$graph_name}"))
   
+  ### Download handlers
   output$downloadJpeg <- downloadHandler(
     
     filename = function() {
       paste(output_name(), "jpeg", sep = ".")
     },
     content = function(file){
-      ggsave(file, graph_calculated$graph, device = "jpeg", width = graph_size()[1], height = graph_size()[2],
+      ggsave(file, graph_calculated2$graph, device = "jpeg", width = graph_size()[1], height = graph_size()[2],
              units = "px", dpi = 150, bg = "white")
     }
     
@@ -434,7 +599,7 @@ server <- function(input, output, session) {
       paste(output_name(), "png", sep = ".")
     },
     content = function(file){
-      ggsave(file, graph_calculated$graph, device = "png", width = graph_size()[1], height = graph_size()[2],
+      ggsave(file, graph_calculated2$graph, device = "png", width = graph_size()[1], height = graph_size()[2],
              units = "px", dpi = 150, bg = "white")
     }
     
@@ -447,15 +612,19 @@ server <- function(input, output, session) {
     
   )
   
-  # Showing the name of a chosen country
-  output$chosen_country <- renderText({
+  observeEvent(input$copyPlan, {
     
-    if (is.null(input$country_choice)) {
-      return("Choose a country to download data")
-    } else {
-      return(glue("{input$country_choice} data found:"))
+    plan_to_copy <- graphplan() %>% select(-c(source_name))
+    names(plan_to_copy) <- NULL
+    
+    if (!is.null(plan_to_copy)) {
+      write_clip(plan_to_copy)
+      showModal(modalDialog(
+        title = "Clipboard Copy",
+        "Data copied to clipboard!",
+        easyClose = TRUE
+      ))
     }
-    
   })
   
   

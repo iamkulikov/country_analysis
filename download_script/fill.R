@@ -68,7 +68,7 @@ checkUnique <- function(fillplan) {
   
 }
 
-##### Function to check if the calculaion is possible in terms of data availability
+##### Function to check if the calculation is possible in terms of data availability
 
 checkAvailability <- function(fillplan, impplan) { 
   
@@ -82,7 +82,7 @@ checkAvailability <- function(fillplan, impplan) {
     newfreq <- fillplan$new_frequency[i]
     eval(parse(text = glue("available_now <- available_{oldfreq}") ))
     needed <- unique(strsplit(fillplan$formula[i],"\\/|\\(|\\)|\\+|\\-|\\*|\\=|\\^|\\,|\\s+")[[1]])
-    to_drop <- na.omit(c(formula_words, as.numeric(needed), ""))
+    to_drop <- na.omit(c(formula_words, as.numeric(needed), "", needed[nchar(needed) <= 2]))
     needed <- needed[!(needed %in% to_drop)]
     if (all(needed %in% available_now)) {fillplan$check_availability[i] <- 1} else {
         print(needed[!(needed %in% available_now)])

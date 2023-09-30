@@ -23,6 +23,10 @@ ACRA <- newpal( col = c(rgb(147, 202, 116, maxColorValue = 255),rgb(153, 38, 115
                           "sec4", "sec5", "sec6", "sec7", "sec8" )
 )
 
+ipsum_theme <- function(base_size = 12, base_family = "Nunito Sans") {
+  theme_ipsum() + theme( axis.line.x = element_line(color = "black", size = 3) )
+}
+
 # seecol(ACRA,
 #       col_brd = "white", lwd_brd = 4,
 #       title = "Colours of ACRA",
@@ -227,10 +231,16 @@ parseGraphPlan <- function(graphrow, dict, horizontal_size, vertical_size) {
   ## logs calculation 
   if (x_log==1) { x_lab <- paste0("log(", dict[dict$indicator_code==x_ind & dict$source_frequency==data_frequency,1], "), ", time_fix_label); 
   x_ind <- paste0("log(", x_ind, ")") } else {
-    x_lab <- paste0(dict[dict$indicator_code==x_ind & dict$source_frequency==data_frequency,1], ", ", time_fix_label) }
+    if (!is.na(time_fix_label)) {
+      x_lab <- paste0(dict[dict$indicator_code==x_ind & dict$source_frequency==data_frequency,1], ", ", time_fix_label)
+    } else {x_lab <- dict[dict$indicator_code==x_ind & dict$source_frequency==data_frequency,1]}
+  }
   if (y_log==1) { y_lab <- paste0("log(", dict[dict$indicator_code==y_ind & dict$source_frequency==data_frequency,1], "), ", time_fix_label);
   y_ind <- paste0("log(", y_ind, ")") } else {
-    y_lab <- paste0(dict[dict$indicator_code==y_ind & dict$source_frequency==data_frequency,1], ", ", time_fix_label) }
+    if (!is.na(time_fix_label)) {
+      y_lab <- paste0(dict[dict$indicator_code==y_ind & dict$source_frequency==data_frequency,1], ", ", time_fix_label) 
+    } else {y_lab <- dict[dict$indicator_code==y_ind & dict$source_frequency==data_frequency,1] }
+  }
   
   ## theme and labs calculation
   if (show_title == 1) { title <- graph_title } else {title <- ""} 
@@ -352,7 +362,8 @@ scatterCountryComparison <- function(data, graph_params, country_iso2c, peers_is
               nudge_x = 0.03*(layer_scales(theplot)$x$range$range[2]-layer_scales(theplot)$x$range$range[1]), 
               nudge_y = 0.03*(layer_scales(theplot)$y$range$range[2]-layer_scales(theplot)$y$range$range[1]), 
               check_overlap = F, colour=ACRA['dark'])
-  theplot <- theplot + theme(plot.title = element_textbox_simple())
+  theplot <- theplot + theme(plot.title = element_textbox_simple()) + 
+    geom_hline(yintercept = 0, color = "dark grey", size = 1)
   if (theme == "theme_ipsum") { theplot <- theplot + theme(text = element_text(family = "Nunito Sans")) }
   
   return(list(graph = theplot, data = data_all))
@@ -407,7 +418,8 @@ barCountryComparison <- function(data, graph_params, country_iso2c, peers_iso2c,
   theplot <- theplot + scale_fill_manual(values = as.vector(ACRA[c('green','sec2','dark','sec1','red','sec3','sec6')]), name="", labels=y_lab) +
     labs(x=NULL, y = ifelse(length(indicators)==1, y_lab, ""), caption = caption) + ggtitle(title) +
     guides(size="none") + scale_size_manual(values = c(0,1)) +
-    theme(plot.title = element_textbox_simple(), legend.position="bottom")
+    theme(plot.title = element_textbox_simple(), legend.position="bottom") + 
+    geom_hline(yintercept = 0, color = "dark grey", size = 1)
   
   if (length(indicators)==1) {theplot <- theplot + guides(fill = "none")}
   
@@ -449,7 +461,8 @@ barYearComparison <- function(data, graph_params, country_iso2c, peers_iso2c, ve
     ggtitle(title) + labs(caption = caption, x=NULL, y=NULL)
   
   eval(parse(text = paste("theplot <- theplot + ", theme, sep="") ))
-  theplot <- theplot + theme(plot.title = element_textbox_simple(), axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5))
+  theplot <- theplot + theme(plot.title = element_textbox_simple(), axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) +
+    geom_hline(yintercept = 0, color = "dark grey", size = 1)
   
   if (theme == "theme_ipsum") { theplot <- theplot + theme(text = element_text(family = "Nunito Sans")) }
   return(list(graph = theplot, data = data_all))
@@ -499,7 +512,8 @@ barDynamic <- function(data, graph_params, country_iso2c, peers_iso2c, verbose=T
   
   theplot <- theplot + 
     scale_fill_manual(values = as.vector(ACRA[c('green','sec2','dark','sec1','red','sec3','sec6')]), name="", labels=y_lab) +
-    ggtitle(title) + labs(caption = caption, x=NULL, y=NULL)
+    ggtitle(title) + labs(caption = caption, x=NULL, y=NULL) +
+    geom_hline(yintercept = 0, color = "dark grey", size = 1)
   
   theplot <- theplot + theme(plot.title = element_textbox_simple(), legend.position="bottom")
   if (length(indicators)==1) {theplot <- theplot + guides(fill = "none")}
@@ -544,12 +558,13 @@ linesIndicatorComparison <- function(data, graph_params, country_iso2c, peers_is
                                           labels = c(ifelse(timetony_start==0,x_min[1],x_min[1]+1):x_max[1])) +
     scale_color_manual(values = as.vector(ACRA[c('dark','sec2','green','sec1','sec6')]) ) +
     ggtitle(title) + labs(caption = caption, x="Год", y=NULL) + 
-    geom_dl(aes(label = indicator, colour = variable), method = list(dl.trans(x = x + 0.2), "extreme.grid", cex = 0.8, alpha=0.8))
+    geom_dl(aes(label = indicator, colour = variable), method = list(dl.trans(x = x + 0.3), "extreme.grid", cex = 0.8, alpha=0.8))
   
   eval(parse(text = paste("theplot <- theplot + ", theme, sep="") ))
   
-  theplot <- theplot + theme(plot.title = element_textbox_simple(), plot.margin = margin(r = 100)) +
-    labs(caption = caption, x=NULL, y=NULL) + guides(colour = "none")
+  theplot <- theplot + theme(plot.title = element_textbox_simple(), plot.margin = margin(r = 15)) +
+    labs(caption = caption, x=NULL, y=NULL) + guides(colour = "none") +
+    geom_hline(yintercept = 0, color = "dark grey", size = 1)
   
   if (theme == "theme_ipsum") { theplot <- theplot + theme(text = element_text(family = "Nunito Sans")) }
   return(list(graph = theplot, data = data_all))
@@ -571,7 +586,7 @@ linesCountryComparison <- function(data, graph_params, country_iso2c, peers_iso2
   data_all <- reshape2::melt(data_temp, id.vars=names(data_temp)[1:(dim(data_temp)[2]-length(indicators))],
                              variable.name="variable", value.name="value")
   data_all <- data_all %>% filter(variable %in% indicators, time >= time_start, time <= time_end)
-  if (!is.na(index)) { data_all <- data_all %>% group_by(variable, country_id) %>% mutate(value = value/first(value)) %>% ungroup() }
+  if (!(is.na(index)|index==0)) { data_all <- data_all %>% group_by(variable, country_id) %>% mutate(value = value/first(value)) %>% ungroup() }
   
   if (peers != 0) {data_peers <- data_all %>% filter(country_id %in% peers_iso2c)}
   data_country <- data_all %>% filter(country_id %in% country_iso2c)
@@ -587,14 +602,15 @@ linesCountryComparison <- function(data, graph_params, country_iso2c, peers_iso2
                        labels = c(ifelse(timetony_start==0,x_min[1],x_min[1]+1):x_max[1]))
   
   eval(parse(text = paste("theplot <- theplot + ", theme, sep="") ))
-  if (!is.na(index)) { y_lab <- paste(y_lab, ", index: ", x_min, " = 1", sep = "" ) }
+  if (!(is.na(index)|index==0)) { y_lab <- paste(y_lab, ", index: ", x_min, " = 1", sep = "" ) }
   
   theplot <- theplot + ggtitle(title) + theme(plot.title = element_textbox_simple()) +
     labs(caption = caption, x=NULL, y=y_lab) + guides(fill = "none") +
     geom_dl(data = data_peers, aes(label = country_id), method = list(dl.trans(x = x + 0.2), "last.points", cex = 0.8, colour = ACRA['sec2'], alpha=0.8)) +
     geom_dl(data = data_peers, aes(label = country_id), method = list(dl.trans(x = x - 0.2), "first.points", cex = 0.8, colour = ACRA['sec2'], alpha=0.8)) +
     geom_dl(data = data_country, aes(label = country_id), method = list(dl.trans(x = x + 0.2), "last.points", cex = 0.8, colour = ACRA['dark'], alpha=1)) +
-    geom_dl(data = data_country, aes(label = country_id), method = list(dl.trans(x = x - 0.2), "first.points", cex = 0.8, colour = ACRA['dark'], alpha=1))
+    geom_dl(data = data_country, aes(label = country_id), method = list(dl.trans(x = x - 0.2), "first.points", cex = 0.8, colour = ACRA['dark'], alpha=1)) +
+    geom_hline(yintercept = 0, color = "dark grey", size = 1)
   
   if (theme == "theme_ipsum") { theplot <- theplot + theme(text = element_text(family = "Nunito Sans")) }
   return(list(graph = theplot, data = data_all))
@@ -631,7 +647,8 @@ distributionDynamic <- function(data, graph_params, country_iso2c, peers_iso2c, 
   eval(parse(text = paste("theplot <- theplot + ", theme, sep="") ))
   
   theplot <- theplot + ggtitle(title) + theme(plot.title = element_textbox_simple()) +
-    labs(caption = caption, x=NULL, y=y_lab) + guides(fill = "none")
+    labs(caption = caption, x=NULL, y=y_lab) + guides(fill = "none") +
+    geom_hline(yintercept = 0, color = "dark grey", size = 1)
   
   if (theme == "theme_ipsum") { theplot <- theplot + theme(text = element_text(family = "Nunito Sans")) }
   return(list(graph = theplot, data = data_all))

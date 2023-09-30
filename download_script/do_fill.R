@@ -1,16 +1,16 @@
 ######## Call the sequence of database filling functions
 library(here)
 
-##### Choose filling mode
+##### Choose filling model
 
 ##### Where is the filling schedule saved? What are the data files?
 here::i_am("_country_analysis_scripts/download_script/do_fill.R")
 test <- 0
 
 countries <- c("Armenia", "Brazil", "Bulgaria", "Greece", "China", "India", "Kazakhstan", "Kyrgyz Republic", "Romania",
-               "Russian Federation", "Slovak Republic", "South Africa", "Switzerland", "Ukraine", "United Arab Emirates")
+               "Russian Federation", "Slovak Republic", "South Africa", "Switzerland", "Turkiye", "Ukraine", "United Arab Emirates")
 formula_words <- c("lag", "lead", "rollsum", "rollavg", "rollvol", "mean", "last", "first", "min", "max", "sum", "coalesce", "share", "exp",
-                   "fromto", "1W")
+                   "fromto", "year")
 
 if (test == 0) {param_fname <- "0_database_params.xlsx"; data_fname <- "Imported_DB.xlsx";
 data_d_fname <- "Imported_d_DB.xlsx"; filled_fname <- "Filled_DB.xlsx"; filled_d_fname <- "Filled_d_DB.xlsx"} else {

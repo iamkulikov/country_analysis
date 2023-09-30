@@ -34,9 +34,9 @@ do_plot:
   
   distribution_dynamic: 
   
-  structure_country_comparison: сделать BOP; упорядочение по убыванию первой компоненты не сработает из-за нормализации? - три типа и три упорядочения
+  structure_country_comparison: упорядочение по убыванию первой компоненты не сработает из-за нормализации? - три типа и три упорядочения
   
-  structure_dynamic: сделать BOP и IIP
+  structure_dynamic: 
   
   triangle: сделать по образцу из туториала  Rilostat с данныи Chinn-Ito
 

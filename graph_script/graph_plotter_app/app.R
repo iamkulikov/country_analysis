@@ -27,6 +27,9 @@ library("shinyWidgets")
 library("showtext")
 library("clipr")
 
+# Modes
+mode_online <- 1
+
 # Import all the necessary assets except data
 here::i_am("app.R")
 source(here("plot.R"))
@@ -81,6 +84,8 @@ trend_types <- c("", "lm", "loess")
 graph_themes <- c("ACRA", "ipsum", "economist", "minimal")
 graph_groups <- list(macro = "ec", budget = "budg", external = "ext", institutional = "inst", demography = "demogr", 
                      covid = "covid", model = "model", other = "oth")
+
+sec_y_axis_chosen <- ""
 
 # Parameters
 horizontal_size <- c(1800, 900)
@@ -207,7 +212,8 @@ ui <-   fluidPage(
       fluidRow( 
         column(3, actionButton("plot_button", "Update Plot")),
         column(3, actionButton("fill_button", "Help with defaults")),
-        column(3, actionButton("getPlan", "Import plan"))
+        column(3, actionButton("getPlan", "Import plan")),
+        column(3,textInput("graph_plan", NULL, "Graph plan"))
       ),
       br(),
       plotOutput("graph"),
@@ -230,22 +236,23 @@ ui <-   fluidPage(
           'graph_group', 'Graph group', choices = graph_groups,
           options = list(
             placeholder = '',
-            onInitialize = I('function() { this.setValue("macro"); }')
+            onInitialize = I('function() { this.setValue("ec"); }')
           )
         )),
         column(3,textInput("graph_name", "File name", "goodgraph")),
         column(2, selectInput("orientation", "Orientation", choices = c("horizontal", "vertical")))
       ),
         
-      checkboxInput("show_title", "Show Title"),
-
+      checkboxInput("show_title", "Show Title")
       
-      tableOutput("table"),
-      tableOutput("table2"),
-      textOutput("check"),
-      textOutput("check1"),
-      textOutput("check2"),
-      textOutput("check3")
+      # debugging instruments
+      #,
+      # tableOutput("table"),
+      # tableOutput("table2"),
+      # textOutput("check"),
+      # textOutput("check1"),
+      # textOutput("check2"),
+      # textOutput("check3")
       
     )
   )
@@ -260,14 +267,14 @@ server <- function(input, output, session) {
   ## Listening to the user
   graphplan <- reactive({
                   data.frame(
-                            graph_name = input$graph_name,
+                            graph_name = glue("{graph_group_short()}_{input$graph_name}"),
                             graph_title = input$graph_title,
                             graph_type = input$graph_type,
-                            graph_group = input$graph_group,
+                            graph_group = graph_group(),      # external constructor
                             data_frequency = input$data_frequency,
-                            indicators = indicators(), # external constructor
+                            indicators = indicators(),        # external constructor
                             time_fix = input$time_fix,
-                            peers = peers_string(), # external constructor
+                            peers = peers_string(),           # external constructor
                             all = 1*input$all,
                             x_log = 1*input$x_log,
                             y_log = 1*input$y_log,
@@ -278,7 +285,7 @@ server <- function(input, output, session) {
                             trend_type = input$trend_type,
                             index = 1*input$index,
                             recession = 1*input$recession,
-                            sec_y_axis = sec_y_string(),  # external constructor
+                            sec_y_axis = sec_y_string(),      # external constructor
                             swap_axis = 1*input$swap_axis,
                             long_legend = 1*input$long_legend,
                             vert_lab = 1*input$vert_lab,
@@ -320,6 +327,12 @@ server <- function(input, output, session) {
                                     paste(c(sec_y_string_temp(), input$sec_y_axis_coeff), collapse = ", "), 
                                     sec_y_string_temp()) })
   
+  ## Constructing long and short group names
+  
+  graph_group_short <- reactive({ input$graph_group })
+  graph_group <- reactive({ names(graph_groups)[which(unlist(graph_groups) == graph_group_short())]  })
+  
+  
   ## Updating second axis indicator list based on the chosen indicators
   
   observeEvent( input$indicators,
@@ -329,7 +342,7 @@ server <- function(input, output, session) {
                     indicators_selected <- indicators_selected_temp %>% pull(indicator_code) %>% as.list
                     names(indicators_selected) <- indicators_selected_temp %>% pull(indicator)
                     updateSelectizeInput(session, "sec_y_axis_ind", label = "2nd Y-axis", 
-                                         choices = indicators_selected, selected = "")
+                                         choices = indicators_selected, selected = sec_y_axis_chosen)   # корень проблемы затирания
                   }
                 })
   
@@ -414,8 +427,13 @@ server <- function(input, output, session) {
   ## Import graph plan from excel
     
   observeEvent(input$getPlan, {
+    
+    if (mode_online == 0) { imported <- read_clip_tbl(header = F) } else {
       
-    imported <- read_clip_tbl(header = F)
+        imported <- read.table(text = input$graph_plan, sep="\t", na.strings=c("", "NA"), header = F)
+        
+    }
+    
     output$table2 <- renderTable({ imported })
     
     
@@ -467,10 +485,6 @@ server <- function(input, output, session) {
       }
 
     }
-    # updateSelectizeInput(session, inputId = "peers", label = "Peer group", choices = peers_choice, selected = "BRICS") # сделать
-    # updateTextInput(session, inputId = "peers_formula", label = "Formula", value = "")
-    # updateSelectizeInput(session, inputId = 'peers_custom', label = 'Custom list', 
-    #                      choices = countries_peers, selected = c("BR","TR"))
     
     updateCheckboxInput(session, inputId = "all", label = "Show all countries", value = (imported[1,9] == 1))
     updateCheckboxInput(session, inputId = "x_log", label = "X log", value = (imported[1,10] == 1))
@@ -484,8 +498,9 @@ server <- function(input, output, session) {
     updateCheckboxInput(session, inputId = "recession", label = "Recession", value = (imported[1,18] == 1))
     
     a <- strsplit(ifelse(imported[1,19]!="" & !is.null(imported[1,19]) & !is.na(imported[1,19]),imported[1,19],""), ", |,")[[1]]
-    updateSelectizeInput(session, inputId = "sec_y_axis_ind", label = "2nd Y-axis", choices = indicators_start, 
-                         selected = a[!grepl("^\\d+$", a)])                    # почему пропадают? reactive? да
+    sec_y_axis_chosen <<- a[!grepl("^\\d+$", a)]
+    # updateSelectizeInput(session, inputId = "sec_y_axis_ind", label = "2nd Y-axis", choices = indicators_start, 
+    #                      selected = a[!grepl("^\\d+$", a)])                    
     updateNumericInput(session, inputId = "sec_y_axis_coeff", label = "Axis mult", value = a[grepl("^\\d+$", a)][1])
     
     updateCheckboxInput(session, inputId = "swap_axis", label = "Swap axis", value = (imported[1,20] == 1))
@@ -547,16 +562,21 @@ server <- function(input, output, session) {
             ### Choosing the needed function based on the graph type 
             func_name <- funcNameTransform(graph_type = graph_params$graph_type)
             
-            ### Producing the graph to show in app
+            ### Producing the graph to show in app (нормально ли, что я graph_calculated делаю глобальной?)
             graph_calculated <<- eval(parse(text= paste0( 
               func_name, "(data = data_temp, graph_params = graph_params, country_iso2c = country_info$country_iso2c, peers_iso2c = peers_iso2c, verbose = verbose)"
-            ) ))
+            ) ))    
             output$graph <- renderPlot(graph_calculated$graph)
             
             ### Reproducing the graph for download
             graph_calculated2 <<- eval(parse(text= paste0( 
               func_name, "(data = data_temp, graph_params = graph_params, country_iso2c = country_info$country_iso2c, peers_iso2c = peers_iso2c, verbose = verbose)"
             ) ))
+            
+            ###Print graph plan
+            updateTextInput(session, inputId = "graph_plan", 
+                      value = capture.output(write.table(graphplan() %>% 
+                                  select(-c(source_name)), row.names = F, col.names = F , quote = F, sep = "\t", na="")) )
           
         } else {print("Errors found"); print(error_report)}
         
@@ -565,10 +585,9 @@ server <- function(input, output, session) {
 
   # Table to export to excel plan
   output$table <- renderTable({ graphplan() })
-  #output$table <- renderTable({ indicators_temp() })
   
   # Checks
-  output$check <- renderText({ input$x_min == "" })
+  output$check <- renderText({ sec_y_axis_chosen })
   output$check1 <- renderText({ is.na(input$x_min == "") })
   output$check2 <- renderText({ is.null(input$x_min == "") })
   output$check3 <- renderText({ paste0("non-na" ,!is.na(input$sec_y_axis_ind)) })
@@ -578,7 +597,7 @@ server <- function(input, output, session) {
   
   ### Calculating output parameters
   graph_size <- reactive(ifelse(input$orientation == "horizontal", horizontal_size, vertical_size))
-  output_name <- reactive(glue("{input$graph_group}_{input$graph_name}"))
+  output_name <- reactive(glue("{graph_group_short()}_{input$graph_name}"))
   
   ### Download handlers
   output$downloadJpeg <- downloadHandler(
@@ -618,12 +637,16 @@ server <- function(input, output, session) {
     names(plan_to_copy) <- NULL
     
     if (!is.null(plan_to_copy)) {
-      write_clip(plan_to_copy)
-      showModal(modalDialog(
-        title = "Clipboard Copy",
-        "Data copied to clipboard!",
-        easyClose = TRUE
-      ))
+      
+      if(mode_online == 0) {
+        write_clip(plan_to_copy)
+        showModal(modalDialog(
+          title = "Clipboard Copy",
+          "Data copied to clipboard!",
+          easyClose = TRUE
+        ))
+      } else {}
+      
     }
   })
   

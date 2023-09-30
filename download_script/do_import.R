@@ -5,7 +5,8 @@ library(here)
 test <- 0
 update_mode <- 1    # 0 if all the data and containers should be new, 1 if only update
 n_attempts <- 10    # how many times should we ping API's for needed data
-formula_words <- c("lag", "rollsum", "rollavg", "rollvol", "mean", "last", "first", "min", "max", "sum", "coalesce", "share", "exp")
+formula_words <- c("lag", "lead", "rollsum", "rollavg", "rollvol", "mean", "last", "first", "min", "max", "sum", "coalesce", "share", "exp",
+                   "fromto", "year")
 
 ##### Where is import schedule saved? What are the data files?
 here::i_am("_country_analysis_scripts/download_script/do_import.R")

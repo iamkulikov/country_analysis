@@ -407,7 +407,7 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
       #bis_names <- "policy_rate_eop"
       #bis_fname <- "./_extsources/WS_CBPOL_D_csv_row.csv"
       suppressMessages({
-      EZ_countries <- read_excel(here("_DB","1_peers_params.xlsx"), sheet = "groups", col_names = F, skip=2, n_max=7)[c(2,7),-c(1:3)]
+      EZ_countries <- read_excel(here("_DB","1_peers_params.xlsx"), sheet = "groups", col_names = F, skip=2, n_max=11)[c(2,11),-c(1:3)]
       })
       EZ_countries <- data.frame(t(EZ_countries)) %>% filter(X1 == 1) %>% select(X2) %>% unlist()
       EZ_countries <- countrycode(EZ_countries, origin = 'iso3c', destination = 'iso2c', 
@@ -418,7 +418,7 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
         
         print("BIS-pol-d")
         bis_data <- read.csv(bis_fname, header = TRUE, sep = ",", quote = "\"",
-                             dec = ".", fill = TRUE, comment.char = "", na.strings=c(0,"..","","NA"), skip=8)
+                             dec = ".", fill = TRUE, comment.char = "", na.strings=c("..","","NA"), skip=8)
   
         for (i in EZ_countries) {eval(parse(text = glue("bis_data <- bis_data %>% mutate(D.{i} = D.XM)")))}
         

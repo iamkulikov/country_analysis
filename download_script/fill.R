@@ -81,7 +81,7 @@ checkAvailability <- function(fillplan, impplan) {
     oldfreq <- fillplan$old_frequency[i]
     newfreq <- fillplan$new_frequency[i]
     eval(parse(text = glue("available_now <- available_{oldfreq}") ))
-    needed <- unique(strsplit(fillplan$formula[i],"\\/|\\(|\\)|\\+|\\-|\\*|\\=|\\^|\\,|\\s+")[[1]])
+    needed <- unique(strsplit(fillplan$formula[i],"\\/|\\(|\\)|\\+|\\-|\\*|\\=|\\^|\\,|\\s+|>|<|==|!=")[[1]])
     to_drop <- na.omit(c(formula_words, as.numeric(needed), "", needed[nchar(needed) <= 2]))
     needed <- needed[!(needed %in% to_drop)]
     if (all(needed %in% available_now)) {fillplan$check_availability[i] <- 1} else {

@@ -57,7 +57,8 @@ indicator_groups <- c("", "GDP growth decomposition", "World shares", "BOP (Y)",
                       "Budget revenue definitions (Y)", "Budget revenue structure (Y)",
                       "Budget expenditure definitions (Y)","Budget expense structure (Y)", 
                       "Budget balance definitions (Y)", "Budget debt definitions (Y)",
-                      "WGI components", "Population drivers")
+                      "WGI components", "Population drivers", "Model indicative scores", 
+                      "Macro scores", "Public finance scores", "External scores", "Institutional scores")
 indicator_groups_content <- list("", 
                                  c("cons_role", "govcons_role", "gcfc_role", "netex_role", "other_role"),
                                  c("pop_shr", "gdp_ppp_shr", "ex_gs_shr"),
@@ -75,7 +76,12 @@ indicator_groups_content <- list("",
                                  c("gg_bal_gdp_fm", "gg_bal_gdp_weo", "gg_bal_gdp_gfs"),
                                  c("gg_debt_gdp_fm", "gg_debt_gdp_weo", "gg_debt_gdp_gfs"),
                                  c("wgi_va_rnk", "wgi_ps_rnk", "wgi_cc_rnk", "wgi_rl_rnk", "wgi_rq_rnk", "wgi_ge_rnk"),
-                                 c("birth_rate", "death_rate", "migr_rate"))
+                                 c("birth_rate", "death_rate", "migr_rate"),
+                                 c("ind_rat_r_score", "m_r_score", "p_r_score", "e_r_score", "i_r_score"),
+                                 c("m1r_wealth", "m2r_growth", "m3r_size", "m4r_inflation"),
+                                 c("p1r_gg_bal", "p2r_debt_burden", "p3r_extdebt_gg_gdp"),
+                                 c("e1r_ca_gdp", "e2r_intres_cover", "e3r_niip", "e4r_ex_div", "e5r_cur_vol"),
+                                 c("i1r_polstab", "i2r_ecgov", "i3r_hci"))
 
 peers <- c("default", "neighbours", "EU", "EZ", "EEU", "IT", "OPEC_plus", "BRICS", "BRICS_plus", "EM", "DM", "ACRA")
 peers_choice <- c("none", "default", "custom", "neighbours", "formula", "EU", "EZ", "EEU", "IT", "OPEC_plus", "BRICS", "BRICS_plus", "EM", "DM", "ACRA")

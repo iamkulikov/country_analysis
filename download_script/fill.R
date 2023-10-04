@@ -95,6 +95,7 @@ checkAvailability <- function(fillplan, impplan) {
   
 }
 
+
 ##### Function to save length of data containers (time x countries)
 
 captureDimensions <- function(extdata_y, extdata_q, extdata_m, extdata_d) {

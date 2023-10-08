@@ -925,7 +925,7 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
     if (length(fsdb_names)>0 & all(!is.na(fsdb_names))) {
       
       print("FSDB")
-      fsdb_fname <- here("_DB", "_extsources", fsdb_impplan$file_name[i])
+      fsdb_fname <- here("_DB", "_extsources", fsdb_impplan$file_name[1])
       
       for(i in seq_along(fsdb_names)) {
       
@@ -946,6 +946,39 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
     }
     
   })
+  
+  
+  ##### Import data from the Integrated Macroprudential Policy (iMaPP) Database
+  
+  try({
+    
+    imapp_impplan <- impplan %>% filter(active==1, database_name=="iMaPP", retrieve_type=="file", source_frequency=="m")
+    imapp_names <- imapp_impplan$indicator_code
+    imapp_sheets <- unique(imapp_impplan$sheet_name)
+    
+    
+    if (length(imapp_names)>0 & all(!is.na(imapp_names))) {
+      
+      print("iMaPP")
+      imapp_fname <- here("_DB", "_extsources", imapp_impplan$file_name[1])
+      
+      for(i in seq_along(imapp_sheets)) {
+        
+        old_codes <- imapp_impplan %>% filter(sheet_name == imapp_sheets[i]) %>% pull(retrieve_code)
+        new_codes <- imapp_impplan %>% filter(sheet_name == imapp_sheets[i]) %>% pull(indicator_code)
+        imapp_data <- read_excel(imapp_fname, sheet = imapp_sheets[i], col_names = T, na = "") %>%
+          rename_at(vars(c("iso2", "Year", "Month")), ~c("country_id", "year", "month")) %>%
+          rename_at(vars(old_codes), ~new_codes) %>% select("country_id", "year", "month", all_of(new_codes)) %>%
+          mutate(year = as.numeric(year), month = as.numeric(month))
+        
+        extdata_m <- extdata_m %>% left_join(imapp_data, by = c("country_id" = "country_id", "year"="year", "month"="month"), suffix=c("","_old"))
+        print("+")
+        
+      }
+      
+    }
+    
+  })  
   
     ##### Return imported
     return(list(extdata_y = extdata_y, extdata_q = extdata_q, extdata_m = extdata_m, extdata_d = extdata_d))

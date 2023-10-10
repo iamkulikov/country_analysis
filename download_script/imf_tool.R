@@ -8,7 +8,7 @@ imfTool <- function(code, database, freq, start, end) {
   obs <- downloaded$CompactData$DataSet$Series$Obs
   countries <- downloaded$CompactData$DataSet$Series$`@REF_AREA`
 
-  if (database %in% c("PCPS","FDI","FM","GFSR","GFSCOFOG","GFSE","GFSMAB") | {database == "IFS" & freq != 'A'} ) {
+  if (database %in% c("PCPS","FDI","FM","GFSR","GFSCOFOG","GFSE","GFSMAB","FSI") | {database == "IFS" & freq != 'A'} ) {
     if (database %in% c("PCPS")) {df <- obs[[1]]} else {df <- obs}
     } else {
     df <- sapply(obs, as.data.table, simplify = T) }
@@ -92,6 +92,10 @@ imfTool <- function(code, database, freq, start, end) {
 
 # adres <- "http://dataservices.imf.org/REST/SDMX_JSON.svc/CompactData/GFSR/0.A..S1311B.W0_S1_G11411.XDC.?startPeriod=2019&endPeriod=2022"
 
+#FSI - Financial stability indicators
+
+#adres <- "http://dataservices.imf.org/REST/SDMX_JSON.svc/CompactData/FSI/A..FSANL_PT.?startPeriod=2021&endPeriod=2022"
+# imfTool(code = "FSANL_PT", database = "FSI", freq = "Q", start = "2019", end = "2022")
 
 # Other
 

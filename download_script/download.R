@@ -104,3 +104,12 @@ dest <- here("_DB", datafolder, "UNDP_5yr.zip")
 download.file(url, dest)
 unzip(zipfile = dest, exdir = here("_DB", datafolder))
 file.rename(from=here("_DB", datafolder, 'WPP2022_PopulationByAge5GroupSex_Medium.csv'), to=here("_DB", datafolder, 'UNDP_5yr.csv'))
+
+### Download macroprudential database iMaPP (link should be updated manually!!!!!)
+### https://www.elibrary-areaer.imf.org/Macroprudential/Pages/iMaPPDatabase.aspx
+
+url <- "https://www.elibrary-areaer.imf.org/Macroprudential/Documents/iMaPP_database-2023-04-11.zip"
+dest <- here("_DB", datafolder, "iMaPP_database-2023-04-11.zip")
+download.file(url, dest)
+unzip(zipfile = dest, exdir = here("_DB", datafolder))
+file.rename(from=here("_DB", datafolder, 'iMaPP_database-2023-4-11.xlsx'), to=here("_DB", datafolder, 'iMaPP_database.xlsx'))

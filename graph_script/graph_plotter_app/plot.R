@@ -18,9 +18,14 @@ ACRA <- newpal( col = c(rgb(147, 202, 116, maxColorValue = 255),rgb(153, 38, 115
                         rgb(238, 162, 53, maxColorValue = 255),rgb(55, 165, 188, maxColorValue = 255),
                         rgb(69, 159, 122, maxColorValue = 255),rgb(115, 144, 159, maxColorValue = 255),
                         rgb(115, 83, 116, maxColorValue = 255),rgb(60, 100, 162, maxColorValue = 255),
-                        rgb(63, 133, 165, maxColorValue = 255),rgb(220, 73, 66, maxColorValue = 255) ),
+                        rgb(63, 133, 165, maxColorValue = 255),rgb(220, 73, 66, maxColorValue = 255),
+                        rgb(225, 225, 25, maxColorValue = 255),rgb(145, 30, 180, maxColorValue = 255),
+                        rgb(230, 25, 75, maxColorValue = 255),rgb(70, 240, 240, maxColorValue = 255),
+                        rgb(240, 50, 230, maxColorValue = 255), rgb(0, 0, 0, maxColorValue = 255),
+                        rgb(139, 69, 19, maxColorValue = 255), rgb(255, 0, 0, maxColorValue = 255)),
                 names = c("green", "dark", "red", "grey", "sec1", "sec2", "sec3",
-                          "sec4", "sec5", "sec6", "sec7", "sec8" )
+                          "sec4", "sec5", "sec6", "sec7", "sec8", "add1", "add2", 
+                          "add3", "add4", "add5", "black", "brown", "reddest")
 )
 
 ipsum_theme <- function(base_size = 12, base_family = "Nunito Sans") {
@@ -231,16 +236,16 @@ parseGraphPlan <- function(graphrow, dict, horizontal_size, vertical_size) {
   ## logs calculation 
   if (x_log==1) { x_lab <- paste0("log(", dict[dict$indicator_code==x_ind & dict$source_frequency==data_frequency,1], "), ", time_fix_label); 
   x_ind <- paste0("log(", x_ind, ")") } else {
-      if (!is.na(time_fix_label)) {
-          x_lab <- paste0(dict[dict$indicator_code==x_ind & dict$source_frequency==data_frequency,1], ", ", time_fix_label)
-      } else {x_lab <- dict[dict$indicator_code==x_ind & dict$source_frequency==data_frequency,1]}
-    }
+    if (!is.na(time_fix_label)) {
+      x_lab <- paste0(dict[dict$indicator_code==x_ind & dict$source_frequency==data_frequency,1], ", ", time_fix_label)
+    } else {x_lab <- dict[dict$indicator_code==x_ind & dict$source_frequency==data_frequency,1]}
+  }
   if (y_log==1) { y_lab <- paste0("log(", dict[dict$indicator_code==y_ind & dict$source_frequency==data_frequency,1], "), ", time_fix_label);
   y_ind <- paste0("log(", y_ind, ")") } else {
-      if (!is.na(time_fix_label)) {
-          y_lab <- paste0(dict[dict$indicator_code==y_ind & dict$source_frequency==data_frequency,1], ", ", time_fix_label) 
-      } else {y_lab <- dict[dict$indicator_code==y_ind & dict$source_frequency==data_frequency,1] }
-    }
+    if (!is.na(time_fix_label)) {
+      y_lab <- paste0(dict[dict$indicator_code==y_ind & dict$source_frequency==data_frequency,1], ", ", time_fix_label) 
+    } else {y_lab <- dict[dict$indicator_code==y_ind & dict$source_frequency==data_frequency,1] }
+  }
   
   ## theme and labs calculation
   if (show_title == 1) { title <- graph_title } else {title <- ""} 
@@ -415,7 +420,9 @@ barCountryComparison <- function(data, graph_params, country_iso2c, peers_iso2c,
   if (is.na(sec_y_axis)==T) {theplot <- theplot + scale_y_continuous(limits=c(y_min, y_max))} else {
     theplot <- theplot + scale_y_continuous(limits=c(y_min, y_max), sec.axis = sec_axis(~./coeff))
   }
-  theplot <- theplot + scale_fill_manual(values = as.vector(ACRA[c('green','sec2','dark','sec1','red','sec3','sec6')]), name="", labels=y_lab) +
+  theplot <- theplot + 
+    scale_fill_manual(values = as.vector(ACRA[c('green','sec2','dark','sec1','red','sec3','sec6','black','brown','sec5','sec7', 'sec8',
+                                                'add1', 'add2', 'reddest', 'add4', 'add5')]), name="", labels=y_lab) +
     labs(x=NULL, y = ifelse(length(indicators)==1, y_lab, ""), caption = caption) + ggtitle(title) +
     guides(size="none") + scale_size_manual(values = c(0,1)) +
     theme(plot.title = element_textbox_simple(), legend.position="bottom") + 
@@ -511,7 +518,8 @@ barDynamic <- function(data, graph_params, country_iso2c, peers_iso2c, verbose=T
   eval(parse(text = paste("theplot <- theplot + ", theme, sep="") ))
   
   theplot <- theplot + 
-    scale_fill_manual(values = as.vector(ACRA[c('green','sec2','dark','sec1','red','sec3','sec6')]), name="", labels=y_lab) +
+    scale_fill_manual(values = as.vector(ACRA[c('green','sec2','dark','sec1','red','sec3','sec6','black','brown','sec5','sec7', 'sec8',
+                                                'add1', 'add2', 'reddest', 'add4', 'add5')]), name="", labels=y_lab) +
     ggtitle(title) + labs(caption = caption, x=NULL, y=NULL) +
     geom_hline(yintercept = 0, color = "dark grey", size = 1)
   

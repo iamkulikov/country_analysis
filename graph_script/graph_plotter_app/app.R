@@ -58,7 +58,10 @@ indicator_groups <- c("", "GDP growth decomposition", "World shares", "BOP (Y)",
                       "Budget expenditure definitions (Y)","Budget expense structure (Y)", 
                       "Budget balance definitions (Y)", "Budget debt definitions (Y)",
                       "WGI components", "Population drivers", "Model indicative scores", 
-                      "Macro scores", "Public finance scores", "External scores", "Institutional scores")
+                      "Macro scores", "Public finance scores", "External scores", "Institutional scores",
+                      "Macroprudential measures (Y)", "Banks: capital (Q/Y)", "Banks: asset quality (Q/Y)", 
+                      "Banks: earnings (Q/Y)", "Banks: liquidity (Q/Y)", "Banks: FC (Q/Y)",
+                      "Global prices")
 indicator_groups_content <- list("", 
                                  c("cons_role", "govcons_role", "gcfc_role", "netex_role", "other_role"),
                                  c("pop_shr", "gdp_ppp_shr", "ex_gs_shr"),
@@ -81,7 +84,15 @@ indicator_groups_content <- list("",
                                  c("m1r_wealth", "m2r_growth", "m3r_size", "m4r_inflation"),
                                  c("p1r_gg_bal", "p2r_debt_burden", "p3r_extdebt_gg_gdp"),
                                  c("e1r_ca_gdp", "e2r_intres_cover", "e3r_niip", "e4r_ex_div", "e5r_cur_vol"),
-                                 c("i1r_polstab", "i2r_ecgov", "i3r_hci"))
+                                 c("i1r_polstab", "i2r_ecgov", "i3r_hci"),
+                                 c("ccb", "consb", "cap", "lvr", "llp", "lcg", "loanr", "lfc", "ltv", "dsti", "tax", "liq", "ltd", "lfx", "rr", "sifi", "ot"),
+                                 c("regcap_to_rwa", "t_one_cap_to_rwa", "cet_one_to_rwa", "t_one_cap_to_ass"),
+                                 c("npl_to_loans", "top_thr_sect_to_loans", "net_npl_to_cap", "prov_to_npl", "bank_conc_loans"),
+                                 c("bank_roa", "bank_roe", "nim_to_income", "nonint_exns_to_income"),
+                                 c("liquid_to_assets", "liquid_to_sr_liab", "lcr", "nsfr"),
+                                 c("bank_open_position", "bank_dom_loans", "fc_loans_role", "fc_liab_role"),
+                                 c("p_com", "p_oil", "p_metals", "p_agro"))
+
 
 peers <- c("default", "neighbours", "EU", "EZ", "EEU", "IT", "OPEC_plus", "BRICS", "BRICS_plus", "EM", "DM", "ACRA")
 peers_choice <- c("none", "default", "custom", "neighbours", "formula", "EU", "EZ", "EEU", "IT", "OPEC_plus", "BRICS", "BRICS_plus", "EM", "DM", "ACRA")

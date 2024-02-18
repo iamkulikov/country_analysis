@@ -109,4 +109,4 @@ imfTool <- function(code, database, freq, start, end) {
 # Structure
 
 # http://dataservices.imf.org/REST/SDMX_JSON.svc/DataStructure/GFSR
-# http://dataservices.imf.org/REST/SDMX_JSON.svc/CodeList/CL_INDICATOR_PCPS
+# http://dataservices.imf.org/REST/SDMX_JSON.svc/CodeList/CL_INDICATOR_IFS

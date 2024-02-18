@@ -14,7 +14,7 @@ source(here("_country_analysis_scripts","download_script","imf_tool.R"))
 
 ##### Set parameters
 d_container_start <- "2019-01-01"
-d_container_end <- "2023-12-31"
+d_container_end <- "2024-12-31"
 
 ##### Function to set import/update schedule
 

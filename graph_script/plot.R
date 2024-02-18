@@ -1,6 +1,8 @@
 ###### Load libraries and fonts
 library_names <- c("dplyr","reshape2","ggplot2","ggthemes","countrycode","readxl","tidyr","data.table","writexl","unikn",
-                   "ggtext","svglite","stringr","directlabels","fanplot","ggfan","hrbrthemes","glue","readr", "showtext")
+                   "ggtext","svglite","stringr","directlabels","fanplot",
+                   #"ggfan",
+                   "hrbrthemes","glue","readr", "showtext")
 
 for (library_name in library_names) {
   library(library_name, character.only = TRUE)
@@ -22,10 +24,11 @@ ACRA <- newpal( col = c(rgb(147, 202, 116, maxColorValue = 255),rgb(153, 38, 115
                         rgb(225, 225, 25, maxColorValue = 255),rgb(145, 30, 180, maxColorValue = 255),
                         rgb(230, 25, 75, maxColorValue = 255),rgb(70, 240, 240, maxColorValue = 255),
                         rgb(240, 50, 230, maxColorValue = 255), rgb(0, 0, 0, maxColorValue = 255),
-                        rgb(139, 69, 19, maxColorValue = 255), rgb(255, 0, 0, maxColorValue = 255)),
+                        rgb(139, 69, 19, maxColorValue = 255), rgb(255, 0, 0, maxColorValue = 255),
+                        rgb(240, 179, 35, maxColorValue = 255)),
                 names = c("green", "dark", "red", "grey", "sec1", "sec2", "sec3",
                           "sec4", "sec5", "sec6", "sec7", "sec8", "add1", "add2", 
-                          "add3", "add4", "add5", "black", "brown", "reddest")
+                          "add3", "add4", "add5", "black", "brown", "reddest", "orange")
 )
 
 ipsum_theme <- function(base_size = 12, base_family = "Nunito Sans") {

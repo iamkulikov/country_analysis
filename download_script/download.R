@@ -7,7 +7,7 @@ here::i_am("_country_analysis_scripts/download_script/download.R")
 datafolder <- "_extsources"
 
 ### Download WGIs
-url <- "http://info.worldbank.org/governance/wgi/Home/downLoadFile?fileName=wgidataset.xlsx"
+url <- "https://www.worldbank.org/content/dam/sites/govindicators/doc/wgidataset.xlsx"
 dest <- here("_DB", datafolder, "wgidataset.xlsx")
 download.file(url, dest, mode="wb")
 
@@ -42,7 +42,8 @@ download.file(url, dest)
 unzip(zipfile = dest, exdir = here("_DB", datafolder))
 
 ### Download UNCTAD diversification index
-url <- "http://unctadstat.unctad.org/7zip/US_ConcentDiversIndices.csv.7z"
+url <- "https://unctadstat-api.unctad.org/bulkdownload/US.ConcentDiversIndices/US_ConcentDiversIndices"
+#url <- "http://unctadstat.unctad.org/7zip/US_ConcentDiversIndices.csv.7z"
 dest <- here("_DB", datafolder, "US_ConcentDiversIndices.csv.7z")
 download.file(url, dest, mode = "wb")
 a <- read.csv(archive_read(archive = dest, format = "7zip"))

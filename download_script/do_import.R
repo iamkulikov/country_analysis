@@ -4,7 +4,7 @@ library(here)
 ##### Choose import mode
 test <- 0
 update_mode <- 1    # 0 if all the data and containers should be new, 1 if only update
-n_attempts <- 10    # how many times should we ping API's for needed data
+n_attempts <- 15    # how many times should we ping API's for needed data
 formula_words <- c("lag", "lead", "rollsum", "rollavg", "rollvol", "mean", "last", "first", "min", "pmin", "max", "pmax", "sum", "coalesce", "share", "exp",
                    "fromto", "year")
 

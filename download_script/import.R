@@ -157,13 +157,17 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
       
       if (length(wdiy_names)>0 & all(!is.na(wdiy_names))) {
       
-        print("WDI")
-        wdiy_data <- WDI(indicator = wdiy_codes, start = year_first, end = year_final, extra=F) %>% select(-c(country)) %>%
-          rename_at(vars(any_of(wdiy_codes)), ~wdiy_names)
-        
-        extdata_y <- extdata_y %>% left_join(wdiy_data, by = c("country_id"="iso2c", "year"="year"), suffix=c("","_old"))
+        print("WDI-y")
+        #### !!!! разобраться с объемом пакета, в следующей строчке - костыль, снижающий его искуственно, 
+        #### !!!!  не забывать двигать год !!!!
+        for (i in seq_along(wdiy_names)) {
+          wdiy_data <- WDI(indicator = wdiy_codes[i], start = max(year_first, 1996), end = min(year_final, 2024), extra=F) %>% select(-c(country)) %>%
+            rename_at(vars(any_of(wdiy_codes[i])), ~wdiy_names[i])
+          
+          extdata_y <- extdata_y %>% left_join(wdiy_data, by = c("country_id"="iso2c", "year"="year"), suffix=c("","_old"))
+          print(wdiy_names[i])
+        }
         print("+")
-        
         }
     
     })
@@ -177,17 +181,22 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
       
       if (length(wdiq_names)>0 & all(!is.na(wdiq_names))) {
         
-        print("WDI")
-        wdiq_data <- WDI(indicator = wdiq_codes, start = year_first, end = year_final, extra=F) %>% select(-c(country, iso3c)) %>%
-          mutate(quarter = as.numeric(substr(year, 6, 6)), year = as.numeric(substr(year, 1, 4))) %>%
-          mutate(iso2c = countrycode(iso2c, origin = 'iso3c', destination = 'iso2c', 
-                                     custom_match = c('ROM' = 'RO','ADO' = 'AD','ANT' = 'AN',
-                                                      'KSV' = 'XK','TMP' = 'TL','WBG' = 'PS','ZAR' = 'CD'), warn = F)) %>%
-          rename_at(vars(any_of(wdiq_codes)), ~wdiq_names)
-        
-        extdata_q <- extdata_q %>% left_join(wdiq_data, by = c("country_id"="iso2c", "year"="year", "quarter"="quarter"), suffix=c("","_old"))
+        print("WDI-q")
+        #### !!!! разобраться с объемом пакета, в следующей строчке - костыль, снижающий его искуственно, 
+        #### !!!!  не забывать двигать год !!!!
+        for (i in seq_along(wdiq_names)) {
+          
+          wdiq_data <- WDI(indicator = wdiq_codes[i], start = max(year_first, 2007), end = min(year_final, 2024), extra=F) %>% select(-c(country, iso3c)) %>%
+            mutate(quarter = as.numeric(substr(year, 6, 6)), year = as.numeric(substr(year, 1, 4))) %>%
+            mutate(iso2c = countrycode(iso2c, origin = 'iso3c', destination = 'iso2c', 
+                                       custom_match = c('ROM' = 'RO','ADO' = 'AD','ANT' = 'AN',
+                                                        'KSV' = 'XK','TMP' = 'TL','WBG' = 'PS','ZAR' = 'CD'), warn = F)) %>%
+            rename_at(vars(any_of(wdiq_codes[i])), ~wdiq_names[i])
+          
+          extdata_q <- extdata_q %>% left_join(wdiq_data, by = c("country_id"="iso2c", "year"="year", "quarter"="quarter"), suffix=c("","_old"))
+          print(wdiq_names[i])
+        }
         print("+")
-        
       }
       
     })

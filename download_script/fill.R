@@ -111,7 +111,7 @@ fill <- function(fillplan, extdata_y, extdata_q, extdata_m, extdata_d) {
 
     for (i in 1:dim(fillplan)[1]) {
       
-      #i = 4
+      #i = 435
       oldfreq <- fillplan$old_frequency[i]
       oldfreq_long <- case_when(oldfreq == "y" ~ "year", oldfreq == "q" ~ "quarter", oldfreq == "m" ~ "month", oldfreq == "d" ~ "date")
       newfreq <- fillplan$new_frequency[i]
@@ -186,7 +186,9 @@ fill <- function(fillplan, extdata_y, extdata_q, extdata_m, extdata_d) {
         countries_to <- substr(formula, str_locate(formula, "c[(]")[1,1]+2, str_locate(formula, '[)]')[1,1]-1 ) %>% 
             str_split(", ") %>% '[['(1)
         if (all(is.na(countries_to))) {countries_to <- extdata_y %>% pull(country_id) %>% unique()}
-        
+ 
+        #FD <- createDateColumns(extdata_y = FD$extdata_y, extdata_q = FD$extdata_q, extdata_m = FD$extdata_m, extdata_d = FD$extdata_d)
+               
         a <- glue("from <- extdata_{oldfreq} %>% select(date, country_id, {oldcode}) %>% \\
                     filter(country_id == '{country_from}') %>% select(-c(country_id)) ") 
         eval(parse(text = a)); print(a)
@@ -194,7 +196,7 @@ fill <- function(fillplan, extdata_y, extdata_q, extdata_m, extdata_d) {
         from <- from %>% slice(rep(1:n(), each = length(countries_to))) %>% mutate(country_id = NA)
         from$country_id <- rep(countries_to, dim(from)[1]/length(countries_to))
         
-        a <- glue("extdata_{newfreq} <- extdata_{newfreq} %>% left_join(from, 'date' = 'date', 'country_id' = 'country_id')")
+        a <- glue("extdata_{newfreq} <- extdata_{newfreq} %>% left_join(from, join_by('date', 'country_id'))")
         eval(parse(text = a)); print(a)
         
       } else {};

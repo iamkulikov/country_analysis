@@ -12,7 +12,6 @@ FiscalMonitor привязать к dropbox?
 дублировать xlsx в csv для быстродействия
 
 Данные:
-Данные FSB о структуре финсистем. Или качать с FSI?
 Добавить долю в резервах: https://data.imf.org/regular.aspx?key=41175
 Углубить историю FM (2011-2012)
 Доштудировать IMF базы: структура госдолга
@@ -26,7 +25,7 @@ FiscalMonitor привязать к dropbox?
 Добавить дефолты (расчетные) и из базы BOC-BOE (или нашей?)
 Убрать со строки 410 зависимость от фиксированного количества групп пиров (сейчас 11) при определении состава Еврозоны
 Сделать заполнение Еврозоны в месячных policy rate с учетом того, что входили страны в разное время, а в дневных у меня с 2019 года состав EZ текущий
-Добавить структуру финансовых систем их FSB: https://www.fsb.org/2023/12/global-monitoring-report-on-non-bank-financial-intermediation-2023/
+Добавить структуру финансовых систем их FSB: https://www.fsb.org/2023/12/global-monitoring-report-on-non-bank-financial-intermediation-2023/  Или качать с FSI?
 Добавить NIIP и структуру внешних активов/пассивов: https://www.brookings.edu/articles/the-external-wealth-of-nations-database/
 
 3) fill:

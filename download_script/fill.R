@@ -309,7 +309,7 @@ writeCountryModelFile <- function(countries, extdata_y, saveplan) {
                     'cpi_av', 'deflator', 'rnd', 'gcfc_gdp', 'open',
                     'gg_debt_weo', 'gg_rev_weo', 'gg_debttorev', 'gg_exns_int', 'gg_inttorev', 'gg_debt_conc_usd',
                     'extdebt_conc_gdp', 'gg_bal_weo', 'gg_bal_gdp_weo', 'extdebt_gg_usd', 'extdebt_gg_gdp', 
-                    'gg_debt_gdp_weo', 'gg_debt_fc_role', 'gg_debt_held_global_usd', 'gg_debt_held_global_role',
+                    'gg_debt_gdp_weo', 'gg_debt_fc_role_fsdb', 'gg_debt_held_global_usd', 'gg_debt_held_global_role',
                     'gg_debt_maturity', 'dpension2030', 
                     'ca_usd', 'ca_gdp', 'imp_gs_usd', 'intres_usd', 'intrestoimp', 'niip_ex_ggcb_usd', 'niip_ex_ggcb_gdp', 
                     'ex_div', 'neer_av', 'usdlc_eop', 'usdlc_av', 'remit_usd_wb', 'remit_gdp_wb', 'extdebt_usd', 'intrestoextdebt',
@@ -322,7 +322,7 @@ writeCountryModelFile <- function(countries, extdata_y, saveplan) {
     data_export <- data.frame(t(t_data_export))
     names(data_export) <- unlist(years)
     data_export <- cbind("indicator_code" = names(t_data_export), data_export)
-    data_export <- data_export %>% left_join(dict_y, "indicator_code"="indicator_code") %>% 
+    data_export <- data_export %>% left_join(dict_y, by=c("indicator_code"="indicator_code")) %>% 
       select(indicator, indicator_code, theme, source_name, everything()) %>% select(-c(keep, source_frequency))
     
     data_export <- list(data_export)

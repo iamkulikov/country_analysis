@@ -65,12 +65,12 @@ unzip(zipfile = dest, exdir = here("_DB", datafolder))
 ### and insert it to the FiscalMonitor.xlsx file manually!!!
 ### https://www.imf.org/en/Publications/FM
 
-### Download fresh WEO database in tab-delimited form - rename as WEO. 
-### Check that all rows contain smth, at least n/a
+### Download fresh WEO database in tab-delimited form - rename as WEO.xlsx
+### Check that all rows contain smth, at least n/a (delete footnotes)
 ### https://www.imf.org/en/Publications/SPROLLs/world-economic-outlook-databases#sort=%40imfdate%20descending
 
-### Download fresh WEO database for aggregates in tab-delimited form, choose only GDP growth - rename as WEO_aggr.
-### Check that all rows contain smth, at least n/a
+### Download fresh WEO database for aggregates in tab-delimited form, choose only GDP growth - rename as WEO_aggr.xlsx
+### Check that all rows contain smth, at least n/a (delete footnotes)
 ### https://www.imf.org/en/Publications/SPROLLs/world-economic-outlook-databases#sort=%40imfdate%20descending
 
 ### Download fiscal space database and check that it is called Fiscal-space-data.xlsx
@@ -114,3 +114,11 @@ dest <- here("_DB", datafolder, "iMaPP_database-2023-04-11.zip")
 download.file(url, dest)
 unzip(zipfile = dest, exdir = here("_DB", datafolder))
 file.rename(from=here("_DB", datafolder, 'iMaPP_database-2023-4-11.xlsx'), to=here("_DB", datafolder, 'iMaPP_database.xlsx'))
+
+### Download NBFI markey data from Financial Stability Board (link should be updated manually!!!!!)
+### https://www.fsb.org/2023/12/global-monitoring-report-on-non-bank-financial-intermediation-2023/
+
+url <- "https://www.fsb.org/wp-content/uploads/Monitoring-Dataset-2023.xlsx"
+dest <- here("_DB", datafolder, "NBFI_FSB.xlsx")
+download.file(url, dest, mode="wb")
+

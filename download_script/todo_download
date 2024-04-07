@@ -8,6 +8,7 @@ FiscalMonitor привязать к dropbox?
 добавить last_update в dict
 для imf_tool дописать, чтобы последняя дата была существующей вне зависимости от запроса (запрашивать у базы)
 дублировать xlsx в csv для быстродействия
+починить as_tibble в 102 строчке, видимо добавить .name_repair
 
 Данные:
 Медианный и средний доход из Люксембургской базы: https://ourworldindata.org/grapher/median-and-mean-income-after-tax-lis?tab=table&country=~BEL

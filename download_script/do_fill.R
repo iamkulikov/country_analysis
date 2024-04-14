@@ -8,7 +8,8 @@ here::i_am("_country_analysis_scripts/download_script/do_fill.R")
 test <- 0
 
 countries <- c("Armenia", "Brazil", "Bulgaria", "Greece", "China", "India", "Kazakhstan", "Kyrgyz Republic", "Romania",
-               "Russian Federation", "Slovak Republic", "South Africa", "Switzerland", "Turkiye", "Ukraine", "United Arab Emirates", "Ethiopia")
+               "Russian Federation", "Slovak Republic", "South Africa", "Switzerland", "Turkiye", "Ukraine", "Uzbekistan",
+               "United Arab Emirates", "Ethiopia")
 # "Iran, Islamic Rep." - что делать с этой точкой на конце? так папка называться не может, но название 
 # в базе именно такое (дропнуть изначально при кодировке базы все точки на концах?)
 formula_words <- c("lag", "lead", "rollsum", "rollavg", "rollvol", "mean", "last", "first", "min", "pmin", "max", "pmax", "sum", "coalesce", "share", "exp",

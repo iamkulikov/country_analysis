@@ -82,7 +82,7 @@ unzip(zipfile = dest, exdir = here("_DB", datafolder))
 
 ### Download UN HDR data (links should be updated manually!!!!!)
 ### https://hdr.undp.org/data-center/documentation-and-downloads
-url <- "https://hdr.undp.org/sites/default/files/2021-22_HDR/HDR21-22_Composite_indices_complete_time_series.csv"
+url <- "https://hdr.undp.org/sites/default/files/2023-24_HDR/HDR23-24_Composite_indices_complete_time_series.csv"
 dest <- here("_DB", datafolder, "HDR.csv")
 download.file(url, dest)
 

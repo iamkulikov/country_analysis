@@ -5,7 +5,7 @@ library(here)
 here::i_am("_country_analysis_scripts/graph_script/do_plot.R")
 
 ##### Parameters and source names
-country_name <- "China"
+country_name <- "Uzbekistan"
 file_output <- "jpeg"
 horizontal_size <- c(1800, 900)
 vertical_size <- c(900, 900)
@@ -40,8 +40,10 @@ graphplan <- graphplan %>% filter(active == 1) %>%
             checkAvailability(dict = D$dict) %>% 
             mutate(checks = check_types*check_unique*check_peers*check_availability)
 error_report <- graphplan %>% filter(checks == 0)
+#error_text <- explainErrors(error_report = error_report)
 
-
+source(here("_country_analysis_scripts","graph_script","plot.R"))
+##### Plotting sequence
 if (is.null(dim(error_report)[1]) | is.na(dim(error_report)[1]) | (dim(error_report)[1] == 0)) {
   
   print("Checks passed")
@@ -49,14 +51,17 @@ if (is.null(dim(error_report)[1]) | is.na(dim(error_report)[1]) | (dim(error_rep
     ##### Plotting cycle for each row of the plan
     for(i in seq_along(graphplan$graph_name)) {    
   
-      ### Parsing single graph parameters  
+      ### Parsing single graph parameters (and filling with defaults)
       graph_params <- parseGraphPlan(graphrow = graphplan[i,], dict = D$dict, horizontal_size = horizontal_size, vertical_size = vertical_size)
       
       ### Fixing peers
       peers_iso2c <- fixPeers(country_info = country_info, peers = graph_params$peers, data = D)
       
+      ### Fill empty graph parameters with defaults and calculate dependent labels
+      graph_params <- fillGraphPlan(parsedrow = graph_params, data = D, country_code = country_info$country_iso2c, peers_code = peers_iso2c)
+      
       ### Filtering data to include only needed for the graph
-      data_temp <- subsetData(data = D, graph_params = graph_params, country = country_info$country_iso2c, peers = peers_iso2c)
+      data_temp <- subsetData(data = D, graph_params = graph_params, country_code = country_info$country_iso2c, peers_code = peers_iso2c)
       
       ### Choosing the needed function based on the graph type 
       func_name <- funcNameTransform(graph_type = graph_params$graph_type)
@@ -66,7 +71,7 @@ if (is.null(dim(error_report)[1]) | is.na(dim(error_report)[1]) | (dim(error_rep
       "theplot <- ", func_name, "(data = data_temp, graph_params = graph_params, country_iso2c = country_info$country_iso2c, peers_iso2c = peers_iso2c, verbose = verbose)"
         ) ))
       
-      ### Saving file
+      ### Saving graph file
       filename <- paste(graph_params$graph_name, file_output, sep=".")
       ggsave(path = here(country_name, "Auto_report"), filename = filename,  plot = theplot$graph, device = file_output,
              width = graph_params$width, height = graph_params$height, units = "px", dpi = 150)

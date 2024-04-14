@@ -189,7 +189,7 @@ checkAvailability <- function(graphplan, dict) {
   
 }
 
-####### Function to generate all graph parameters
+####### Function to generate data-independent graph parameters
 
 parseGraphPlan <- function(graphrow, dict, horizontal_size, vertical_size) {
   
@@ -197,26 +197,12 @@ parseGraphPlan <- function(graphrow, dict, horizontal_size, vertical_size) {
   for (j in seq_along(graphrow)) { eval(parse(text = paste0(names(graphrow)[j], " <- graphrow$", names(graphrow)[j]) )) }
   #    show_title <- 0   
   
-  ## indicators and limits fixation
+  ## fix indicators
   indicators <- unlist(strsplit(indicators, ", "))
   x_ind <- indicators[1]
   y_ind <- indicators[2]
-  
-  x_min <- as.numeric(unlist(strsplit(x_min, "q|m|d" )))
-  x_max <- as.numeric(unlist(strsplit(x_max, "q|m|d" )))
-  
-  if (graph_type %in% c("bar_dynamic", "lines_country_comparison", "lines_indicator_comparison", "distribution_dynamic",
-                        "structure_dynamic", "structure_dynamic_norm")) {
-    if (data_frequency=="y") { time_start <- x_min[1]-1987 ; time_end <- x_max[1]-1987; 
-    labfreq <- 1; timetony_start <- 0; timetony_end <- 1}
-    if (data_frequency=="q") { time_start <- (x_min[1]-1987)*4+x_min[2]; time_end <- (x_max[1]-1987)*4+x_max[2];
-    labfreq <- 4; timetony_start <- (5-x_min[2])%%4; timetony_end <- x_min[2] }
-    if (data_frequency=="m") { time_start <- (x_min[1]-1987)*12+x_min[2] ; time_end <- (x_max[1]-1987)*12+x_max[2];
-    labfreq <- 12; timetony_start <- (13-x_min[2])%%12; timetony_end <- x_min[2] }
-    #if (data_frequency=="d") { time_start <- (x_min[1]-1987)*365+x_min[2] ; time_end <- (x_max[1]-1987)*365+x_max[2];
-    #labfreq <- 30; timetony_start <- (13-x_min[2])%%12; timetony_end <- x_min[2] }   
-  } else {time_start <- NA; time_end <- NA; timetony_start <- NA; timetony_end <- NA; labfreq <- NA}
-  
+ 
+  ## fix y limits
   y_min <- as.numeric(y_min)
   y_max <- as.numeric(y_max)
   if (is.na(sec_y_axis) == F) {
@@ -225,31 +211,6 @@ parseGraphPlan <- function(graphrow, dict, horizontal_size, vertical_size) {
     indicators_sec <- head(indicators_sec, -1)
   } else {indicators_sec <- NA; coeff <- NA}
   
-  time_fix_label <- time_fix
-  time_fix <- unlist(strsplit(time_fix, ", "))
-  if (graph_type =="bar_year_comparison") { time_fix <- as.numeric(time_fix)} else 
-  {time_fix <- as.numeric(unlist(strsplit(time_fix, "q|m|d" )))}
-  if (graph_type %in% c("scatter_country_comparison", "bar_country_comparison", "structure_country_comparison",
-                        "structure_country_comparison_norm")) {
-    if (data_frequency=="y") { time_fix <- time_fix[1]-1987 }
-    if (data_frequency=="q") { time_fix <- (time_fix[1]-1987)*4+time_fix[2] }
-    if (data_frequency=="m") { time_fix <- (time_fix[1]-1987)*12+time_fix[2] }   
-  }
-  
-  ## logs calculation 
-  if (x_log==1) { x_lab <- paste0("log(", dict[dict$indicator_code==x_ind & dict$source_frequency==data_frequency,1], "), ", time_fix_label); 
-  x_ind <- paste0("log(", x_ind, ")") } else {
-    if (!is.na(time_fix_label)) {
-      x_lab <- paste0(dict[dict$indicator_code==x_ind & dict$source_frequency==data_frequency,1], ", ", time_fix_label)
-    } else {x_lab <- dict[dict$indicator_code==x_ind & dict$source_frequency==data_frequency,1]}
-  }
-  if (y_log==1) { y_lab <- paste0("log(", dict[dict$indicator_code==y_ind & dict$source_frequency==data_frequency,1], "), ", time_fix_label);
-  y_ind <- paste0("log(", y_ind, ")") } else {
-    if (!is.na(time_fix_label)) {
-      y_lab <- paste0(dict[dict$indicator_code==y_ind & dict$source_frequency==data_frequency,1], ", ", time_fix_label) 
-    } else {y_lab <- dict[dict$indicator_code==y_ind & dict$source_frequency==data_frequency,1] }
-  }
-  
   ## theme and labs calculation
   if (show_title == 1) { title <- graph_title } else {title <- ""} 
   caption <- paste("Источники:", source_name)
@@ -257,15 +218,13 @@ parseGraphPlan <- function(graphrow, dict, horizontal_size, vertical_size) {
   if (orientation=="vertical") {width = vertical_size[1]; height = vertical_size[2]} else {
     width = horizontal_size[1]; height = horizontal_size[2]}
   
-  return(list(indicators = indicators, graph_type = graph_type, x_ind = x_ind, y_ind = y_ind, x_min = x_min, y_min = y_min, 
-              x_max = x_max, y_max = y_max, data_frequency = data_frequency, time_start = time_start, labfreq = labfreq,
-              time_end = time_end, timetony_start = timetony_start, trend_type = trend_type, graph_name = graph_name,
-              timetony_end = timetony_end, time_fix = time_fix, time_fix_label = time_fix_label, indicators_sec = indicators_sec, 
-              peers = peers, x_lab = x_lab, y_lab = y_lab, caption = caption, title = title, theme = theme, all = all,
+  return(list(indicators = indicators, graph_type = graph_type, x_ind = x_ind, y_ind = y_ind, x_min = x_min, 
+              y_min = y_min, x_max = x_max, y_max = y_max, data_frequency = data_frequency,
+              trend_type = trend_type, graph_name = graph_name, time_fix = time_fix, indicators_sec = indicators_sec, 
+              peers = peers, caption = caption, title = title, theme = theme, all = all, x_log = x_log, y_log = y_log,
               width = width, height = height, sec_y_axis = sec_y_axis, coeff = coeff, index = index))
   
 }
-
 
 ####### Function to fix peers for the particular graph
 
@@ -306,10 +265,160 @@ fixPeers <- function(country_info, peers, data) {
   
 }
 
+####### Function to fill data-dependent graph parameters
+
+fillGraphPlan <- function(parsedrow, data, country_code, peers_code){
+  
+  for (j in seq_along(parsedrow)) { eval(parse(text = paste0(names(parsedrow)[j], " <- parsedrow$", names(parsedrow)[j]) )) }
+  
+  ## subset data
+  eval(parse(text = paste("data_temp <- data$extdata_", data_frequency, sep="") ))
+  data_temp <- data_temp %>% select(any_of(c("year", "quarter", "month", "country", "country_id")), all_of(indicators))
+  dict <- data$dict
+  countries_needed <- c(country_code, peers_code)
+  
+  ## fix time limits for dynamic graphs (needs to leave unchanged simple x limits in case of non-dynamic)
+  
+  if (graph_type %in% c("bar_dynamic", "lines_country_comparison", "lines_indicator_comparison", "distribution_dynamic",
+                        "structure_dynamic", "structure_dynamic_norm", "scatter_dynamic")) {
+  
+        if (!is.na(x_min)) {
+          x_min <- unlist(strsplit(x_min, "q|m|d" ))
+          x_min <- as.numeric(x_min[order(-nchar(x_min))])
+        } else {
+          if (graph_type %in% c("bar_dynamic", "lines_indicator_comparison", "structure_dynamic", "structure_dynamic_norm", "scatter_dynamic")) {    # at least one indicator (all - for structure)
+            data_min <- data_temp %>% filter(country_id == country_code) %>% 
+              filter(rowSums(!is.na(.[indicators])) >= ifelse(graph_type %in% c("structure_dynamic", "scatter_dynamic"), length(indicators), 1)) %>% slice(1) }
+          
+          if (graph_type %in% c("lines_country_comparison", "distribution_dynamic")) {                  # at least one country (20 - for distrib)
+            data_min <- data_temp %>% select(any_of(c("year", "quarter", "month", "country_id")), all_of(indicators[1])) %>% 
+                filter(country_id %in% countries_needed) %>% 
+                pivot_wider(names_from = country_id, values_from = all_of(indicators[1])) %>% 
+                filter(rowSums(!is.na(.[countries_needed])) >= ifelse(graph_type == "lines_country_comparison", 1, 20)) %>% 
+                slice(1) }
+          
+          if (dim(data_min)[1]==0) {x_min <- c(2030, 1)} else { 
+            if (data_frequency=="y") {x_min <- data_min %>% pull(year) }
+            if (data_frequency=="q") {x_min <- data_min %>% select(year, quarter) %>% unlist() }
+            if (data_frequency=="m") {x_min <- data_min %>% select(year, month) %>% unlist()}
+            #if (data_frequency=="d") {x_min <- data_min %>% select(year, day) %>% unlist()}
+          }
+          
+        }
+        
+        if (!is.na(x_max)) {
+          x_max <- unlist(strsplit(x_max, "q|m|d" ))
+          x_max <- as.numeric(x_max[order(-nchar(x_max))])
+        } else {
+          if (graph_type %in% c("bar_dynamic", "lines_indicator_comparison", "structure_dynamic", "structure_dynamic_norm", "scatter_dynamic")) {    # at least one indicator (all - for structure)
+            data_max <- data_temp %>% filter(country_id == country_code) %>% 
+              filter(rowSums(!is.na(.[indicators])) >= ifelse(graph_type %in% c("structure_dynamic", "scatter_dynamic"), length(indicators), 1)) %>% 
+              slice(n()) }
+          
+          if (graph_type %in% c("lines_country_comparison", "distribution_dynamic")) {                  # at least one country (20 - for distrib)
+            data_max <- data_temp %>% select(any_of(c("year", "quarter", "month", "country_id")), all_of(indicators[1])) %>% 
+              filter(country_id %in% countries_needed) %>% 
+              pivot_wider(names_from = country_id, values_from = all_of(indicators[1])) %>% 
+              filter(rowSums(!is.na(.[countries_needed])) >= ifelse(graph_type == "lines_country_comparison", 1, 20)) %>% 
+              slice(n()) }
+      
+      if (dim(data_max)[1]==0) {x_max <- c(2030, 4)} else { 
+        if (data_frequency=="y") {x_max <- data_max %>% pull(year) }
+        if (data_frequency=="q") {x_max <- data_max %>% select(year, quarter) %>% unlist() }
+        if (data_frequency=="m") {x_max <- data_max %>% select(year, month) %>% unlist()}
+        #if (data_frequency=="d") {x_max <- data_max %>% select(year, day) %>% unlist()}
+      }
+  
+    }
+
+    if (data_frequency=="y") { time_start <- x_min[1]-1987 ; time_end <- x_max[1]-1987; 
+    labfreq <- 1; timetony_start <- 0; timetony_end <- 1}
+    if (data_frequency=="q") { time_start <- (x_min[1]-1987)*4+x_min[2]; time_end <- (x_max[1]-1987)*4+x_max[2];
+    labfreq <- 4; timetony_start <- (5-x_min[2])%%4; timetony_end <- x_max[2] }
+    if (data_frequency=="m") { time_start <- (x_min[1]-1987)*12+x_min[2] ; time_end <- (x_max[1]-1987)*12+x_max[2];
+    labfreq <- 12; timetony_start <- (13-x_min[2])%%12; timetony_end <- x_max[2] }
+    #if (data_frequency=="d") { time_start <- (x_min[1]-1987)*365+x_min[2] ; time_end <- (x_max[1]-1987)*365+x_max[2];
+    #labfreq <- 30; timetony_start <- (13-x_min[2])%%12; timetony_end <- x_min[2] }
+    
+  } else {time_start <- NA; time_end <- NA; timetony_start <- NA; timetony_end <- NA; labfreq <- NA}
+  
+  
+  ## fix the time point for cross-section graphs
+  
+  if (graph_type %in% c("bar_year_comparison", "distribution_year_comparison", "scatter_country_comparison", "bar_country_comparison", 
+                        "structure_country_comparison", "structure_country_comparison_norm", "triangle")) {
+  
+        time_fix_label <- time_fix
+        
+        if (!is.na(time_fix)) { 
+            
+          if  (graph_type %in% c("bar_year_comparison", "distribution_year_comparison")) {
+            time_fix <- as.numeric(time_fix)  # дописать для других частот 
+            }
+          
+          if (graph_type %in% c("scatter_country_comparison", "bar_country_comparison", "structure_country_comparison",
+                                "structure_country_comparison_norm", "triangle")) {
+            time_fix <- unlist(strsplit(time_fix, "q|m|d" ))
+            time_fix <- as.numeric(time_fix[order(-nchar(time_fix))])
+          }
+        
+        } else {
+          
+          if  (graph_type %in% c("bar_year_comparison", "distribution_year_comparison")) {
+            
+            
+          } # дописать для других частот 
+          
+          if (graph_type %in% c("scatter_country_comparison", "bar_country_comparison", "structure_country_comparison",
+                                "structure_country_comparison_norm", "triangle")) {           # all indicators for the main country
+            
+              data_fix <- data_temp %>% select(any_of(c("year", "quarter", "month", "country_id")), all_of(indicators)) %>% 
+                filter(country_id %in% country_code) %>% 
+                filter(rowSums(!is.na(.[indicators])) == length(indicators) ) %>% 
+                slice(n())
+              
+              if (dim(data_fix)[1]==0) {time_fix <- c(2030, 4)} else { 
+                if (data_frequency=="y") {time_fix <- data_fix %>% pull(year) }
+                if (data_frequency=="q") {time_fix <- data_fix %>% select(year, quarter) %>% unlist() }
+                if (data_frequency=="m") {time_fix <- data_fix %>% select(year, month) %>% unlist()}
+                #if (data_frequency=="d") {time_fix<- data_fix %>% select(year, day) %>% unlist()}
+              }
+          }
+        }
+        
+        if (data_frequency=="y") { time_fix <- time_fix[1]-1987 }
+        if (data_frequency=="q") { time_fix <- (time_fix[1]-1987)*4+time_fix[2] }
+        if (data_frequency=="m") { time_fix <- (time_fix[1]-1987)*12+time_fix[2] }
+  
+  } else {time_fix_label <- NA; time_fix <- NA}
+  
+  ## logs calculation 
+  if (x_log==1) { x_lab <- paste0("log(", dict[dict$indicator_code==x_ind & dict$source_frequency==data_frequency,1], "), ", time_fix_label); 
+  x_ind <- paste0("log(", x_ind, ")") } else {
+    if (!is.na(time_fix_label)) {
+      x_lab <- paste0(dict[dict$indicator_code==x_ind & dict$source_frequency==data_frequency,1], ", ", time_fix_label)
+    } else {x_lab <- dict[dict$indicator_code==x_ind & dict$source_frequency==data_frequency,1]}
+  }
+  if (y_log==1) { y_lab <- paste0("log(", dict[dict$indicator_code==y_ind & dict$source_frequency==data_frequency,1], "), ", time_fix_label);
+  y_ind <- paste0("log(", y_ind, ")") } else {
+    if (!is.na(time_fix_label)) {
+      y_lab <- paste0(dict[dict$indicator_code==y_ind & dict$source_frequency==data_frequency,1], ", ", time_fix_label) 
+    } else {y_lab <- dict[dict$indicator_code==y_ind & dict$source_frequency==data_frequency,1] }
+  }
+  
+  return(list(indicators = indicators, graph_type = graph_type, x_ind = x_ind, y_ind = y_ind, x_min = x_min, y_min = y_min, 
+              x_max = x_max, y_max = y_max, data_frequency = data_frequency, time_start = time_start, labfreq = labfreq,
+              time_end = time_end, timetony_start = timetony_start, trend_type = trend_type, graph_name = graph_name,
+              timetony_end = timetony_end, time_fix = time_fix, time_fix_label = time_fix_label, indicators_sec = indicators_sec, 
+              peers = peers, x_lab = x_lab, y_lab = y_lab, caption = caption, title = title, theme = theme, all = all,
+              width = width, height = height, sec_y_axis = sec_y_axis, coeff = coeff, index = index))
+  
+}
+
 
 ####### Function to subset data for the particular graph
 
-subsetData <- function(data, graph_params, country, peers) {
+subsetData <- function(data, graph_params, country_code, peers_code) {
   
   eval(parse(text= paste("data_temp <- data$extdata_", graph_params$data_frequency, sep="") ))
   return(list(extdata = data_temp, dict = data$dict))

@@ -5,7 +5,7 @@ library(here)
 here::i_am("_country_analysis_scripts/graph_script/do_plot.R")
 
 ##### Parameters and source names
-country_name <- "Uzbekistan"
+country_name <- "China"
 file_output <- "jpeg"
 horizontal_size <- c(1800, 900)
 vertical_size <- c(900, 900)
@@ -39,10 +39,11 @@ graphplan <- graphplan %>% filter(active == 1) %>%
             checkPeers(peer_groups = country_info$regions) %>%
             checkAvailability(dict = D$dict) %>% 
             mutate(checks = check_types*check_unique*check_peers*check_availability)
-error_report <- graphplan %>% filter(checks == 0)
+error_report <- graphplan %>% filter(checks == 0) %>% 
+  select(graph_name, indicators, data_frequency, starts_with("check_"))
 #error_text <- explainErrors(error_report = error_report)
 
-source(here("_country_analysis_scripts","graph_script","plot.R"))
+#source(here("_country_analysis_scripts","graph_script","plot.R"))
 ##### Plotting sequence
 if (is.null(dim(error_report)[1]) | is.na(dim(error_report)[1]) | (dim(error_report)[1] == 0)) {
   
@@ -63,7 +64,7 @@ if (is.null(dim(error_report)[1]) | is.na(dim(error_report)[1]) | (dim(error_rep
       ### Filtering data to include only needed for the graph
       data_temp <- subsetData(data = D, graph_params = graph_params, country_code = country_info$country_iso2c, peers_code = peers_iso2c)
       
-      ### Choosing the needed function based on the graph type 
+      ### Choosing the needed function based on the planned graph type 
       func_name <- funcNameTransform(graph_type = graph_params$graph_type)
       
       ### Producing the graph
@@ -74,7 +75,7 @@ if (is.null(dim(error_report)[1]) | is.na(dim(error_report)[1]) | (dim(error_rep
       ### Saving graph file
       filename <- paste(graph_params$graph_name, file_output, sep=".")
       ggsave(path = here(country_name, "Auto_report"), filename = filename,  plot = theplot$graph, device = file_output,
-             width = graph_params$width, height = graph_params$height, units = "px", dpi = 150)
+            width = graph_params$width, height = graph_params$height, units = "px", dpi = 150)
       #theplot
       
     }

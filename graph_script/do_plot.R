@@ -15,7 +15,11 @@ peers_fname <- here("_DB", "1_peers_params.xlsx")
 plotparam_fname <- here(country_name, "Auto_report", "2_graphlib.xlsx")
 graph_types <- c("scatter_dynamic", "scatter_country_comparison", "structure_dynamic", "structure_country_comparison",
                  "structure_country_comparison_norm", "bar_dynamic", "bar_country_comparison", "bar_country_comparison_norm", 
-                 "bar_year_comparison", "lines_country_comparison", "lines_indicator_comparison", "distribution_dynamic")
+                 "bar_year_comparison", "lines_country_comparison", "lines_indicator_comparison", "distribution_dynamic",
+                 "distribution_year_comparison")
+trend_types <- c("lm" ,"loess")
+orient_types <- c("horizontal", "vertical")
+theme_types <- c("ipsum", "ACRA", "economist", "minimal")
 verbose <- T
 
 ##### Import function definitions
@@ -34,16 +38,17 @@ graphplan <- getPlotSchedule(plotparam_fname = plotparam_fname, dict = D$dict)
 
 ##### Check integrity of the plans
 graphplan <- graphplan %>% filter(active == 1) %>%
-            checkGraphTypes(graph_types = graph_types) %>% 
-            checkUnique %>%
-            checkPeers(peer_groups = country_info$regions) %>%
-            checkAvailability(dict = D$dict) %>% 
-            mutate(checks = check_types*check_unique*check_peers*check_availability)
-error_report <- graphplan %>% filter(checks == 0) %>% 
-  select(graph_name, indicators, data_frequency, starts_with("check_"))
-#error_text <- explainErrors(error_report = error_report)
+            checkGraphTypes(graph_types = graph_types) %>% checkFreq %>%
+            checkUnique %>% checkAvailability(dict = D$dict) %>% 
+            checkPeers(peer_groups = country_info$regions, dict = D$dict) %>% checkTimes %>%
+            checkBinaryParams %>% checkNumericParams %>% checkTrend(trend_types = trend_types) %>% 
+            checkTheme(theme_types = theme_types) %>% checkOrientation(orient_types = orient_types) %>% 
+            mutate(checks = check_types*check_freq*check_unique*check_availability*check_peers*check_times*check_binary*
+                     check_num*check_trend*check_theme*check_orient)
+error_report <- graphplan %>% filter(checks == 0) %>% select(graph_name, indicators, data_frequency, starts_with("check_"))
 
-#source(here("_country_analysis_scripts","graph_script","plot.R"))
+
+source(here("_country_analysis_scripts","graph_script","plot.R"))
 ##### Plotting sequence
 if (is.null(dim(error_report)[1]) | is.na(dim(error_report)[1]) | (dim(error_report)[1] == 0)) {
   
@@ -80,4 +85,4 @@ if (is.null(dim(error_report)[1]) | is.na(dim(error_report)[1]) | (dim(error_rep
       
     }
   
-} else {print("Errors found"); print(error_report)}
+} else {explainErrors(error_report = error_report)}

@@ -145,48 +145,168 @@ getPlotSchedule <- function(plotparam_fname, dict) {
   
 }
 
+
 ####### Functions to check the plot schedule
+
 checkGraphTypes <- function(graphplan, graph_types) {
-  
-  graphplan <- graphplan %>% mutate(check_types = 1)
-  for (i in 1:dim(graphplan)[1]) {
-    
-    if(graphplan$graph_type[i] %in% graph_types) {} else {graphplan$check_types[i] = 0}
-    
-  }
-  
+  graphplan <- graphplan %>% mutate(check_types = 1*(graph_type %in% graph_types))
   return(graphplan)
-  
 }
 
+checkFreq <- function(graphplan) {
+  graphplan <- graphplan %>% mutate(check_freq = 1*(data_frequency %in% c("y", "q", "m", "d") | is.na(data_frequency)))
+  return(graphplan)
+}
 
 checkUnique <- function(graphplan) {
-  
   graphplan <- graphplan %>% mutate(check_unique = 1)
-  
+  n_graphs <- graphplan %>% count(graph_name)
+  graphplan <- graphplan %>% left_join(n_graphs, by=c("graph_name"="graph_name")) %>% 
+    mutate(check_unique = (n > 1)*0 + (n==1)*1) %>% select(-c(n))
+  return(graphplan)
 }
-
-
-checkPeers <- function(graphplan, peer_groups) {
-  
-  graphplan <- graphplan %>% mutate(check_peers = 1)
-  
-}
-
 
 checkAvailability <- function(graphplan, dict) {
-  
   graphplan <- graphplan %>% mutate(check_availability = 0)
   for (i in 1:dim(graphplan)[1]) {
-    
     needed <- graphplan$indicators[i] %>% str_split(", ") %>% '[['(1)
     available <- dict %>% filter(source_frequency == graphplan$data_frequency[i]) %>% pull(indicator_code)
     if(all(needed %in% available)) {graphplan$check_availability[i] = 1}
-    
+  }
+  return(graphplan)
+}
+
+checkPeers <- function(graphplan, peer_groups, dict) {
+  graphplan <- graphplan %>% mutate(check_peers = ifelse(is.na(peers) |
+                    peers %in% head(names(peer_groups), -2) |
+                    peers %in% c("0", "default", "neighbours") |
+                    peers %in% c("0", "default", "neighbours")
+                                      ,1,0))
+  
+  for (i in seq_along(graphplan$graph_name)) {
+    available <- dict %>% filter(source_frequency == graphplan$data_frequency[i]) %>% pull(indicator_code)
+    if (str_count(graphplan$peers[i], ":") == 1 & str_count(graphplan$peers[i], ",") >= 2 ) {
+      peers_type <- unlist(strsplit(graphplan$peers[i], ": |:"))
+      peers_def <- unlist(strsplit(peers_type[2], ", |,"))
+      if ( (peers_type[1] == "custom" & all(peers_def %in% peer_groups$country_iso2c)) |
+        (peers_type[1] == "similar" & peers_def[1] %in% available & is_numeric(peers_def[2]) & peers_def[2] <=1 &
+           peers_def[2] > 0 & is_numeric(peers_def[3]) & peers_def[3] >= 1980 & peers_def[3] < 2100 ) |
+        (peers_type[1] %in% c("low", "top") & peers_def[1] %in% available & is_numeric(peers_def[2]) &
+           peers_def[2] > 0 & is_numeric(peers_def[3]) & peers_def[3] >= 1980 & peers_def[3] < 2100 ) ) {
+        graphplan$check_peers[i] <- 1
+      }
+    }
   }
   
   return(graphplan)
-  
+}
+
+checkTimes <- function(graphplan) {
+  graphplan <- graphplan %>% mutate(check_times = 0)
+  for (i in 1:dim(graphplan)[1]) {
+    if (graphplan$graph_type[i] %in% c("structure_dynamic", "bar_dynamic", "lines_country_comparison", "lines_indicator_comparison", 
+                                       "distribution_dynamic")) {
+      if (isTime(graphplan$x_min[i]) & isTime(graphplan$x_max[i])) graphplan$check_times[i] <- 1
+    }
+    
+    if (graphplan$graph_type[i] %in% c("scatter_country_comparison", "structure_country_comparison", "structure_country_comparison_norm", 
+                                       "bar_country_comparison", "bar_country_comparison_norm","bar_year_comparison",
+                                       "bar_year_comparison", "scatter_dynamic")) {
+      if ((is.na(graphplan$x_min[i]) | is_numeric(graphplan$x_min[i])) & (is.na(graphplan$x_max[i]) | is_numeric(graphplan$x_max[i])) & isTime(graphplan$time_fix[i])) graphplan$check_times[i] <- 1
+    }
+  }
+  return(graphplan)
+}
+
+is_numeric <- function(text_number) {suppressWarnings(!is.na(as.numeric(text_number)))}
+
+isTime <- function(text_date) {
+  if (is.na(text_date)) return(T)
+  text_split <- unlist(strsplit(text_date, ", |,"))
+  check <- rep(0, length(text_split))
+  for (i in seq_along(text_split)) {
+    if (grepl(pattern = "[\\.]", x = text_split[i])) {check[i] <- !is.na(as.Date(text_split[i], "%d.%m.%Y")) } else {
+      text_split2 <- unlist(strsplit(text_split[i], "q|m"))
+      text_split2 <- text_split2[order(-nchar(text_split2))]
+      text_extract <- str_remove_all(text_split[i], "[:digit:]")
+      check[i] <- (str_count(text_extract, "q|m|Q|M") <= 1)&(!str_detect(text_extract, "[^mqMQ]"))&(length(text_split2)<=2)&
+        (str_detect(text_split2[[1]][1], "^(19|20)\\d{2}$"))
+    }
+  }
+  return(all(check==1))
+}
+
+checkBinaryParams <- function(graphplan) {
+  for (i in c("all",	"x_log",	"y_log", "index",	"recession", "swap_axis",	"long_legend",	"vert_lab",	"short_names", "show_title",	"active")) {
+      eval(parse(text = glue("graphplan <- graphplan %>% mutate(bin_{i} <- 1*({i} == 0 | {i} == 1 | is.na({i})))") ))
+    }
+  graphplan <- graphplan %>% rowwise() %>% mutate(check_binary = prod(c_across(starts_with("bin_")))) %>% select(-starts_with("bin_"))
+  return(graphplan)
+}
+
+checkNumericParams <- function(graphplan) {
+  graphplan <- graphplan %>% mutate(check_num = 1*(!is.na(as.numeric(y_min)) | is.na(y_min))*(!is.na(as.numeric(y_max)) | is.na(y_max)) )
+  return(graphplan)
+}
+
+checkTrend <- function(graphplan, trend_types) {
+  graphplan <- graphplan %>% mutate(check_trend = 1*(trend_type %in% trend_types | is.na(trend_type)))
+  return(graphplan)
+}
+
+checkTheme <- function(graphplan, theme_types) {
+  graphplan <- graphplan %>% mutate(check_theme = 1*(theme %in% theme_types | is.na(theme)))
+  return(graphplan)
+}
+
+checkOrientation <- function(graphplan, orient_types) {
+  graphplan <- graphplan %>% mutate(check_orient = 1*(orientation %in% orient_types | is.na(orientation)))
+  return(graphplan)
+}
+
+
+####### Function to generate text from the error report table
+
+explainErrors <- function(error_report) {
+  if (dim(error_report)[1] == 0) {print("No errors")} else {
+    
+    print("The plan cannot be executed. Please check following issues.")
+    counter <- 0
+    
+    if (dim({error_report %>% filter(check_types == 0)})[1] > 0) {
+      print(glue("{counter <- counter + 1; counter}. Unknown graph types in:   {error_report %>% filter(check_types == 0) %>% pull(graph_name) %>% paste(., collapse = ', ')}")) }
+    
+    if (dim({error_report %>% filter(check_freq == 0)})[1] > 0) {
+      print(glue("{counter <- counter + 1; counter}. Unknown data frequency in:   {error_report %>% filter(check_freq == 0) %>% pull(graph_name) %>% paste(., collapse = ', ')}")) }
+    
+    if (dim({error_report %>% filter(check_unique == 0)})[1] > 0) {
+      print(glue("{counter <- counter + 1; counter}. Duplicating graph names:   {error_report %>% filter(check_unique == 0) %>% pull(graph_name) %>% paste(., collapse = ', ')}")) }
+    
+    if (dim({error_report %>% filter(check_availability == 0)})[1] > 0) {
+      print(glue("{counter <- counter + 1; counter}. Some indicators are not available in the database. Check their codenames in:   {error_report %>% filter(check_availability == 0) %>% pull(graph_name) %>% paste(., collapse = ', ')}")) }
+ 
+    if (dim({error_report %>% filter(check_peers == 0)})[1] > 0) {
+      print(glue("{counter <- counter + 1; counter}. Unknown peers in:   {error_report %>% filter(check_peers == 0) %>% pull(graph_name) %>% paste(., collapse = ', ')}")) }
+    
+    if (dim({error_report %>% filter(check_times == 0)})[1] > 0) {
+      print(glue("{counter <- counter + 1; counter}. Unknown bounds or time formats. Check x_min, x_max or time_fix in:   {error_report %>% filter(check_times == 0) %>% pull(graph_name) %>% paste(., collapse = ', ')}")) }
+    
+    if (dim({error_report %>% filter(check_binary == 0)})[1] > 0) {
+      print(glue("{counter <- counter + 1; counter}. Non-binary parameters. Check all, x_log, y_log, index, recession, swap_axis, long_legend, vert_lab, short_names, show_title and active in:   {error_report %>% filter(check_binary == 0) %>% pull(graph_name) %>% paste(., collapse = ', ')}")) }   
+    
+    if (dim({error_report %>% filter(check_num == 0)})[1] > 0) {
+      print(glue("{counter <- counter + 1; counter}. Non-numeric parameters. Check y_min and y_max in:   {error_report %>% filter(check_num == 0) %>% pull(graph_name) %>% paste(., collapse = ', ')}")) }   
+    
+    if (dim({error_report %>% filter(check_trend == 0)})[1] > 0) {
+      print(glue("{counter <- counter + 1; counter}. Unknown trend types in:   {error_report %>% filter(check_trend == 0) %>% pull(graph_name) %>% paste(., collapse = ', ')}")) }   
+    
+    if (dim({error_report %>% filter(check_theme == 0)})[1] > 0) {
+      print(glue("Unknown theme types in:   {error_report %>% filter(check_theme == 0) %>% pull(graph_name) %>% paste(., collapse = ', ')}")) }   
+    
+    if (dim({error_report %>% filter(check_orient == 0)})[1] > 0) {
+      print(glue("{counter <- counter + 1; counter}. Unknown orientation in:   {error_report %>% filter(check_orient == 0) %>% pull(graph_name) %>% paste(., collapse = ', ')}")) }   
+
+  }
 }
 
 ####### Function to generate data-independent graph parameters
@@ -196,6 +316,26 @@ parseGraphPlan <- function(graphrow, dict, horizontal_size, vertical_size) {
   ###### Fix graph parameters
   for (j in seq_along(graphrow)) { eval(parse(text = paste0(names(graphrow)[j], " <- graphrow$", names(graphrow)[j]) )) }
   #    show_title <- 0   
+  
+  ## fill NAs with defaults if needed
+  if (is.na(graph_group)) {graph_group <- "other"}
+  if (is.na(data_frequency)) {data_frequency <- "y"}
+  if (is.na(peers)) {peers <- "default"}
+  if (is.na(theme)) {theme <- "ipsum"}
+  if (is.na(orientation)) {orientation <- "horizontal"}
+  for (i in c("all",	"x_log",	"y_log", "index",	"recession", "swap_axis",	"long_legend",	"vert_lab",	"short_names", "show_title",	"active")) {
+    eval(parse(text = glue("if (is.na({i})) {i}<-0") ))
+  }
+  
+  ## convert dates so that they correspond to the graph's intended frequency
+  if (graph_type %in% c("scatter_country_comparison", "structure_country_comparison", "structure_country_comparison_norm", 
+                        "bar_country_comparison", "bar_country_comparison_norm","bar_year_comparison",
+                        "bar_year_comparison", "scatter_dynamic") & !is.na(time_fix)) {time_fix <- prepareDates(time_fix, freq = data_frequency, end = 1)}
+  if (graph_type %in% c("structure_dynamic", "bar_dynamic", "lines_country_comparison", "lines_indicator_comparison", 
+                        "distribution_dynamic")) {
+        if (!is.na(x_min)) x_min <- prepareDates(x_min, freq = data_frequency, end = 0)
+        if (!is.na(x_max)) x_max <- prepareDates(x_max, freq = data_frequency, end = 1)
+  }
   
   ## fix indicators
   indicators <- unlist(strsplit(indicators, ", "))
@@ -225,6 +365,72 @@ parseGraphPlan <- function(graphrow, dict, horizontal_size, vertical_size) {
               width = width, height = height, sec_y_axis = sec_y_axis, coeff = coeff, index = index))
   
 }
+
+####### Functions to recode dates based on the graph intended frequency
+
+numberOfDays <- function(date) {
+  m <- format(date, format="%m")
+  
+  while (format(date, format="%m") == m) {
+    date <- date + 1
+  }
+  
+  return(as.integer(format(date - 1, format="%d")))
+}
+
+
+prepareDates <- function(datetext, freq, end) {
+  
+  dates <- unlist(strsplit(datetext, ", "))
+  converted_date <- rep(0, length(dates))
+  oldfreq <- rep("a", length(dates))
+  
+  for (i in seq_along(dates)) {
+    
+    datevec <- unlist(strsplit(dates[i], "d|m|q|y|\\."))
+    datevec_sorted <- datevec[order(-nchar(datevec))]
+    oldfreq[i] <- gsub(pattern = "[^a-zA-Z]", replacement = "", x = dates[i])
+    if (oldfreq[i] == "") {oldfreq[i] <- "y"}
+    if (grepl(pattern = "[\\.]", x = dates[i])) {oldfreq[i] <- "d"}
+    #print(oldfreq[i] == "")
+    if (oldfreq[i] == freq) {converted_date[i] <- ifelse(oldfreq[i] != "d", paste0(datevec_sorted, collapse = freq), dates[i])}
+    
+    if (oldfreq[i] != freq) {
+        if (freq == "y") {converted_date[i] <- datevec_sorted[1]}
+        if (oldfreq[i] == "y") {
+          if (freq == "q") converted_date[i] <- glue("{datevec_sorted[1]}{freq}{ifelse(end==0,1,4)}")
+          if (freq == "m") converted_date[i] <- glue("{datevec_sorted[1]}{freq}{ifelse(end==0,1,12)}")
+          if (freq == "d") converted_date[i] <- glue("{ifelse(end==0,'01','31')}.{ifelse(end==0,'01','12')}.{datevec_sorted[1]}")
+          }
+        if (freq < oldfreq[i] & oldfreq[i] != "y" & freq != "y") {
+          if (oldfreq[i] == "q") month_calc <- (as.numeric(datevec_sorted[2])-1)*3+ifelse(end == 0, 1, 3) 
+          if (freq == "m") { converted_date[i] <- glue("{datevec_sorted[1]}{freq}{month_calc}") } else {
+            if (oldfreq[i] == "q") {
+              max_day <- numberOfDays(as.Date(glue("01.{month_calc}.{datevec_sorted[1]}"), "%d.%m.%Y"))
+              converted_date[i] <- glue("{ifelse(end==0,'01',max_day)}.{month_calc}.{datevec_sorted[1]}")
+              }
+            if (oldfreq[i] == "m") {
+              max_day <- numberOfDays(as.Date(glue("01.{datevec_sorted[2]}.{datevec_sorted[1]}"), "%d.%m.%Y"))
+              converted_date[i] <- glue("{ifelse(end==0,'01',max_day)}.{datevec_sorted[2]}.{datevec_sorted[1]}")
+              }
+          }
+          
+        }
+        if (freq > oldfreq[i] & oldfreq[i] != "y" & freq != "y") {
+          if (freq == "q") converted_date[i] <- 
+              glue("{datevec_sorted[1]}{freq}{(as.numeric(ifelse(oldfreq[i] == 'm', datevec_sorted[2], datevec_sorted[3]))-1)%/%3+1}")
+          if (freq == "m") converted_date[i] <- glue("{datevec_sorted[1]}{freq}{datevec_sorted[3]}")
+        }
+    }
+      
+  }
+  
+  return(paste0(converted_date, collapse = ", "))
+  
+}
+
+#prepareDates(datetext = "2011", freq = "d", end = 1)
+
 
 ####### Function to fix peers for the particular graph
 

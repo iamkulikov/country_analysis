@@ -1,12 +1,14 @@
 ###### Load libraries and fonts
 library_names <- c("dplyr","reshape2","ggplot2","ggthemes","countrycode","readxl","tidyr","data.table","writexl","unikn",
-                   "ggtext","svglite","stringr","directlabels","fanplot",
-                   #"ggfan",
+                   "ggtext","svglite","stringr","directlabels","fanplot", "forcats",
+                   #"ggfan", вернуть когда он вернется на CRAN
                    "hrbrthemes","glue","readr", "showtext")
 
 for (library_name in library_names) {
   library(library_name, character.only = TRUE)
 }
+
+devtools::install_github("jasonhilton/ggfan")
 
 font_add_google("Nunito Sans", regular.wt = 400, bold.wt = 700)
 showtext_opts(dpi = 150)
@@ -221,8 +223,8 @@ checkTimes <- function(graphplan) {
 is_numeric <- function(text_number) {suppressWarnings(!is.na(as.numeric(text_number)))}
 
 isTime <- function(text_date) {
-  if (is.na(text_date)) return(T)
-  text_split <- unlist(strsplit(text_date, ", |,"))
+  if (is.na(as.character(text_date))) return(T)
+  text_split <- unlist(strsplit(as.character(text_date), ", |,"))
   check <- rep(0, length(text_split))
   for (i in seq_along(text_split)) {
     if (grepl(pattern = "[\\.]", x = text_split[i])) {check[i] <- !is.na(as.Date(text_split[i], "%d.%m.%Y")) } else {
@@ -238,8 +240,8 @@ isTime <- function(text_date) {
 
 checkBinaryParams <- function(graphplan) {
   for (i in c("all",	"x_log",	"y_log", "index",	"recession", "swap_axis",	"long_legend",	"vert_lab",	"short_names", "show_title",	"active")) {
-      eval(parse(text = glue("graphplan <- graphplan %>% mutate(bin_{i} <- 1*({i} == 0 | {i} == 1 | is.na({i})))") ))
-    }
+      eval(parse(text = glue("graphplan <- graphplan %>% mutate(bin_{i} = 1*({i} == 0 | {i} == 1 | is.na({i})))") ))
+  }
   graphplan <- graphplan %>% rowwise() %>% mutate(check_binary = prod(c_across(starts_with("bin_")))) %>% select(-starts_with("bin_"))
   return(graphplan)
 }
@@ -381,7 +383,7 @@ numberOfDays <- function(date) {
 
 prepareDates <- function(datetext, freq, end) {
   
-  dates <- unlist(strsplit(datetext, ", "))
+  dates <- unlist(strsplit(as.character(datetext), ", "))
   converted_date <- rep(0, length(dates))
   oldfreq <- rep("a", length(dates))
   
@@ -429,7 +431,7 @@ prepareDates <- function(datetext, freq, end) {
   
 }
 
-#prepareDates(datetext = "2011", freq = "d", end = 1)
+#prepareDates(datetext = "2032, 2012m1", freq = "m", end = 1)
 
 
 ####### Function to fix peers for the particular graph
@@ -558,8 +560,6 @@ fillGraphPlan <- function(parsedrow, data, country_code, peers_code){
   if (graph_type %in% c("bar_year_comparison", "distribution_year_comparison", "scatter_country_comparison", "bar_country_comparison", 
                         "structure_country_comparison", "structure_country_comparison_norm", "triangle")) {
         
-        time_fix_label <- time_fix
-        
         if (!is.na(time_fix)) { 
           
           if  (graph_type %in% c("bar_year_comparison", "distribution_year_comparison")) {
@@ -598,23 +598,25 @@ fillGraphPlan <- function(parsedrow, data, country_code, peers_code){
           }
         }
         
+        time_fix_label <- paste(time_fix, collapse = data_frequency)
+    
         if  (!(graph_type %in% c("bar_year_comparison", "distribution_year_comparison"))) {
           if (data_frequency=="y") { time_fix <- time_fix[1]-1987 }
           if (data_frequency=="q") { time_fix <- (time_fix[1]-1987)*4+time_fix[2] }
           if (data_frequency=="m") { time_fix <- (time_fix[1]-1987)*12+time_fix[2] }
         }
-          
+    
   } else {time_fix_label <- NA; time_fix <- NA}
   
   ## logs calculation 
   if (x_log==1) { x_lab <- paste0("log(", dict[dict$indicator_code==x_ind & dict$source_frequency==data_frequency,1], "), ", time_fix_label); 
-  x_ind <- paste0("log(", x_ind, ")") } else {
+  x_ind <- paste0("log10(", x_ind, ")") } else {
     if (!is.na(time_fix_label)) {
       x_lab <- paste0(dict[dict$indicator_code==x_ind & dict$source_frequency==data_frequency,1], ", ", time_fix_label)
     } else {x_lab <- dict[dict$indicator_code==x_ind & dict$source_frequency==data_frequency,1]}
   }
   if (y_log==1) { y_lab <- paste0("log(", dict[dict$indicator_code==y_ind & dict$source_frequency==data_frequency,1], "), ", time_fix_label);
-  y_ind <- paste0("log(", y_ind, ")") } else {
+  y_ind <- paste0("log10(", y_ind, ")") } else {
     if (!is.na(time_fix_label)) {
       y_lab <- paste0(dict[dict$indicator_code==y_ind & dict$source_frequency==data_frequency,1], ", ", time_fix_label) 
     } else {y_lab <- dict[dict$indicator_code==y_ind & dict$source_frequency==data_frequency,1] }
@@ -679,7 +681,7 @@ scatterCountryComparison <- function(data, graph_params, country_iso2c, peers_is
   eval(parse(text = paste("theplot <- ggplot(data = data_all, aes(", x_ind, ",", y_ind, "))", sep="") ))
   theplot <- theplot + geom_point(alpha=ifelse(all==1, 1, 0), fill="#619cff", color=ACRA['green'])
   theplot <- theplot + scale_x_continuous(limits=c(x_min, x_max)) + scale_y_continuous(limits=c(y_min, y_max)) +
-    geom_smooth(method = trend_type) + ggtitle(title) + labs(x = x_lab, y = y_lab, caption = caption)
+    geom_smooth(formula = y ~ x, method = trend_type) + ggtitle(title) + labs(x = x_lab, y = y_lab, caption = caption)
   
   eval(parse(text = paste("theplot <- theplot + geom_point(data=data_peers, aes(", x_ind, ", ", y_ind, "), color=ACRA['sec2'], alpha=1, size=3)", sep="") ))
   eval(parse(text = paste("theplot <- theplot + geom_point(data=data_highlight, aes(", x_ind, ", ", y_ind, "), color=ACRA['dark'], alpha=1, size=3)", sep="") ))
@@ -698,7 +700,6 @@ scatterCountryComparison <- function(data, graph_params, country_iso2c, peers_is
   if (theme == "theme_ipsum") { theplot <- theplot + theme(text = element_text(family = "Nunito Sans")) }
   
   return(list(graph = theplot, data = data_all)) 
-  #return(data_all)
 }
 
 
@@ -743,6 +744,9 @@ barCountryComparison <- function(data, graph_params, country_iso2c, peers_iso2c,
                                 position=case_when(graph_type=="bar_country_comparison" ~ "dodge", 
                                                    graph_type=="structure_country_comparison" ~ "stack",
                                                    graph_type=="structure_country_comparison_norm" ~ "fill"))
+  
+  theplot <- theplot + annotate(geom = 'text', label = time_fix_label, x = Inf, y = Inf, hjust = 1.5, vjust = 1.5)
+    
   if (is.na(sec_y_axis)==T) {theplot <- theplot + scale_y_continuous(limits=c(y_min, y_max))} else {
     theplot <- theplot + scale_y_continuous(limits=c(y_min, y_max), sec.axis = sec_axis(~./coeff))
   }
@@ -780,8 +784,8 @@ barYearComparison <- function(data, graph_params, country_iso2c, peers_iso2c, ve
   
   data_all <- reshape2::melt(data$extdata, id.vars=c("country", "country_id", "year"), variable.name="variable", value.name="value")
   data_all <- data_all %>% filter(variable %in% indicators, year %in% time_fix, country_id == country_iso2c, !is.na(value)) %>% 
-    arrange(desc(variable), desc(value))
-  #x_lab <- unname(unlist(dict[dict$indicator_code %in% indicators & dict$source_frequency==data_frequency,1]))
+    mutate(variable = fct_relevel(variable, indicators))
+
   dict_temp <- data$dict %>% filter(indicator_code %in% indicators, source_frequency == data_frequency) %>% 
     arrange(factor(indicator_code, levels = indicators)) %>% select(indicator)
   x_lab <- unname(unlist(dict_temp))

@@ -5,7 +5,7 @@ library(here)
 here::i_am("_country_analysis_scripts/graph_script/do_plot.R")
 
 ##### Parameters and source names
-country_name <- "China"
+country_name <- "Russian Federation"
 file_output <- "jpeg"
 horizontal_size <- c(1800, 900)
 vertical_size <- c(900, 900)
@@ -56,7 +56,7 @@ if (is.null(dim(error_report)[1]) | is.na(dim(error_report)[1]) | (dim(error_rep
 
     ##### Plotting cycle for each row of the plan
     for(i in seq_along(graphplan$graph_name)) {    
-  
+      
       ### Parsing single graph parameters (and filling with defaults)
       graph_params <- parseGraphPlan(graphrow = graphplan[i,], dict = D$dict, horizontal_size = horizontal_size, vertical_size = vertical_size)
       
@@ -65,7 +65,7 @@ if (is.null(dim(error_report)[1]) | is.na(dim(error_report)[1]) | (dim(error_rep
       
       ### Fill empty graph parameters with defaults and calculate dependent labels
       graph_params <- fillGraphPlan(parsedrow = graph_params, data = D, country_code = country_info$country_iso2c, peers_code = peers_iso2c)
-      
+
       ### Filtering data to include only needed for the graph
       data_temp <- subsetData(data = D, graph_params = graph_params, country_code = country_info$country_iso2c, peers_code = peers_iso2c)
       
@@ -76,6 +76,7 @@ if (is.null(dim(error_report)[1]) | is.na(dim(error_report)[1]) | (dim(error_rep
       eval(parse(text= paste0( 
       "theplot <- ", func_name, "(data = data_temp, graph_params = graph_params, country_iso2c = country_info$country_iso2c, peers_iso2c = peers_iso2c, verbose = verbose)"
         ) ))
+      #theplot$data
       
       ### Saving graph file
       filename <- paste(graph_params$graph_name, file_output, sep=".")

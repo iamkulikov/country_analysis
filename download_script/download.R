@@ -11,35 +11,38 @@ url <- "https://www.worldbank.org/content/dam/sites/govindicators/doc/wgidataset
 dest <- here("_DB", datafolder, "wgidataset.xlsx")
 download.file(url, dest, mode="wb")
 
-### Download BIS daily data on nominal exchange rates
-url <- "https://www.bis.org/statistics/full_xru_d_csv_row.zip"
-dest <- here("_DB", datafolder, "full_xru_d_csv_row.zip")
+### Download BIS daily and monthly data on nominal exchange rates
+#url <- "https://www.bis.org/statistics/full_xru_d_csv_row.zip"
+url <- "https://data.bis.org/static/bulk/WS_XRU_csv_flat.zip"
+dest <- here("_DB", datafolder, "WS_XRU_csv_flat.zip")
 download.file(url, dest)
 unzip(zipfile = dest, exdir = here("_DB", datafolder))
 
-### Download BIS daily data on policy rates
-url <- "https://www.bis.org/statistics/full_cbpol_d_csv_row.zip"
-dest <- here("_DB", datafolder, "full_cbpol_d_csv_row.zip")
-download.file(url, dest)
-unzip(zipfile = dest, exdir = here("_DB", datafolder))
-
-### Download BIS monthly data on policy rates
-url <- "https://www.bis.org/statistics/full_cbpol_m_csv.zip"
-dest <- here("_DB", datafolder, "full_cbpol_m_csv.zip")
+### Download BIS daily and monthly data on policy rates
+#url <- "https://www.bis.org/statistics/full_cbpol_d_csv_row.zip"
+url <- "https://data.bis.org/static/bulk/WS_CBPOL_csv_flat.zip"
+dest <- here("_DB", datafolder, "WS_CBPOL_csv_flat.zip")
 download.file(url, dest)
 unzip(zipfile = dest, exdir = here("_DB", datafolder))
 
 ### Download BIS monthly data on effective exchange rates
-url <- "https://www.bis.org/statistics/full_eer_m_csv.zip"
-dest <- here("_DB", datafolder, "full_eer_m_csv.zip")
+#url <- "https://www.bis.org/statistics/full_eer_m_csv.zip"
+url <- "https://data.bis.org/static/bulk/WS_EER_csv_flat.zip"
+dest <- here("_DB", datafolder, "WS_EER_csv_flat.zip")
 download.file(url, dest)
 unzip(zipfile = dest, exdir = here("_DB", datafolder))
 
+### Download BIS monthly data on policy rates
+# url <- "https://www.bis.org/statistics/full_cbpol_m_csv.zip"
+# dest <- here("_DB", datafolder, "full_cbpol_m_csv.zip")
+# download.file(url, dest)
+# unzip(zipfile = dest, exdir = here("_DB", datafolder))
+
 ### Download BIS monthly data on nominal exchange rates
-url <- "https://www.bis.org/statistics/full_xru_csv.zip"
-dest <- here("_DB", datafolder, "full_xru_csv.zip")
-download.file(url, dest)
-unzip(zipfile = dest, exdir = here("_DB", datafolder))
+# url <- "https://www.bis.org/statistics/full_xru_csv.zip"
+# dest <- here("_DB", datafolder, "full_xru_csv.zip")
+# download.file(url, dest)
+# unzip(zipfile = dest, exdir = here("_DB", datafolder))
 
 ### Download UNCTAD diversification index
 url <- "https://unctadstat-api.unctad.org/bulkdownload/US.ConcentDiversIndices/US_ConcentDiversIndices"

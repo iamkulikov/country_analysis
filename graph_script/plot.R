@@ -1,14 +1,14 @@
 ###### Load libraries and fonts
 library_names <- c("dplyr","reshape2","ggplot2","ggthemes","countrycode","readxl","tidyr","data.table","writexl","unikn",
                    "ggtext","svglite","stringr","directlabels","fanplot", "forcats",
-                   #"ggfan", вернуть когда он вернется на CRAN
+                   "ggfan",  # проверять, не вернулся ли на CRAN
                    "hrbrthemes","glue","readr", "showtext")
+
+#devtools::install_github("jasonhilton/ggfan")
 
 for (library_name in library_names) {
   library(library_name, character.only = TRUE)
 }
-
-devtools::install_github("jasonhilton/ggfan")
 
 font_add_google("Nunito Sans", regular.wt = 400, bold.wt = 700)
 showtext_opts(dpi = 150)
@@ -59,7 +59,6 @@ importData <- function(data_y_fname, data_q_fname, data_m_fname, data_d_fname, d
   dict <- read_csv2(here(path, dict_fname), col_names = T, skip=0, na = '')
   extdata_d <- extdata_d %>% mutate(date = as.Date(date))
   
-  
   extdata_y <- extdata_y %>% mutate(time=year-1987)
   extdata_q <- extdata_q %>% mutate(time=(year-1987)*4+quarter)
   extdata_m <- extdata_m %>% mutate(time=(year-1987)*12+month)
@@ -85,13 +84,11 @@ importFilledData <- function(data_fname, data_d_fname) {
   extdata_y <- extdata_y %>% mutate(time=year-1987)
   extdata_q <- extdata_q %>% mutate(time=(year-1987)*4+quarter)
   extdata_m <- extdata_m %>% mutate(time=(year-1987)*12+month)
-  #extdata_d <- extdata_d %>% mutate(time=year-1987)
+  #extdata_d <- extdata_d %>% mutate(time=as.Date(glue("{day}.{month}.{year}"), "%d.%m.%Y"))
   
   ncols <- length(read_excel(data_fname, sheet = "dict", col_names = T, skip=0, n_max = 0))
-  dict <- read_excel(data_fname, sheet = "dict", col_names = T, skip=0,
-                     col_types = rep("text", ncols))
-  dict_d <- read_excel(data_d_fname, sheet = "dict_d", col_names = T, skip=0,
-                       col_types = rep("text", ncols))
+  dict <- read_excel(data_fname, sheet = "dict", col_names = T, skip=0, col_types = rep("text", ncols))
+  dict_d <- read_excel(data_d_fname, sheet = "dict_d", col_names = T, skip=0, col_types = rep("text", ncols))
   dict <- rbind(dict, dict_d)
   
   return(list(extdata_y = extdata_y, extdata_q = extdata_q, extdata_m = extdata_m, extdata_d = extdata_d, dict = dict))
@@ -150,14 +147,23 @@ getPlotSchedule <- function(plotparam_fname, dict) {
 
 ####### Functions to check the plot schedule
 
+checkColumns <- function(graphplan, graphplan_columns) {
+  if (all(graphplan_columns %in% names(graphplan))) {return(1)} else {return(0)}
+}
+
+checkEmpty <- function(graphplan) {
+  graphplan_a <- graphplan %>% filter(active == 1)
+  if (dim(graphplan_a)[1]==0 | is.na(dim(graphplan_a)[1]) | is.null(dim(graphplan_a)[1])) {return(0)} else {return(1)}
+}
+
 checkGraphTypes <- function(graphplan, graph_types) {
-  graphplan <- graphplan %>% mutate(check_types = 1*(graph_type %in% graph_types))
-  return(graphplan)
+    graphplan <- graphplan %>% mutate(check_types = 1*(graph_type %in% graph_types))
+    return(graphplan)
 }
 
 checkFreq <- function(graphplan) {
-  graphplan <- graphplan %>% mutate(check_freq = 1*(data_frequency %in% c("y", "q", "m", "d") | is.na(data_frequency)))
-  return(graphplan)
+    graphplan <- graphplan %>% mutate(check_freq = 1*(data_frequency %in% c("y", "q", "m", "d") | is.na(data_frequency)))
+    return(graphplan)
 }
 
 checkUnique <- function(graphplan) {
@@ -270,10 +276,15 @@ checkOrientation <- function(graphplan, orient_types) {
 ####### Function to generate text from the error report table
 
 explainErrors <- function(error_report) {
+  
   if (dim(error_report)[1] == 0) {print("No errors")} else {
     
-    print("The plan cannot be executed. Please check following issues.")
+    print("The plan cannot be executed. Please, check the following issues:")
     counter <- 0
+    
+    if (dim(error_report)[1] == 1 & dim(error_report)[2] == 1) {return(cat(paste("0. Please, check that the plan has at least 1 active row and at least these expected columns:",
+    "graph_name, graph_title, graph_type, graph_group, data_frequency, indicators, time_fix, peers, all, x_log, y_log, x_min, x_max, y_min, y_max,",
+    "trend_type, index, recession, sec_y_axis, swap_axis, long_legend, vert_lab, short_names, theme, orientation, show_title, active", sep = "\n")))}
     
     if (dim({error_report %>% filter(check_types == 0)})[1] > 0) {
       print(glue("{counter <- counter + 1; counter}. Unknown graph types in:   {error_report %>% filter(check_types == 0) %>% pull(graph_name) %>% paste(., collapse = ', ')}")) }
@@ -360,6 +371,9 @@ parseGraphPlan <- function(graphrow, dict, horizontal_size, vertical_size) {
   if (orientation=="vertical") {width = vertical_size[1]; height = vertical_size[2]} else {
     width = horizontal_size[1]; height = horizontal_size[2]}
   
+  ## fix special cases to avoid errors (probably change when peers-mode will be available for this type of graph)
+  if (graph_type == "distribution_dynamic") {peers <- 0}
+  
   return(list(indicators = indicators, graph_type = graph_type, x_ind = x_ind, y_ind = y_ind, x_min = x_min, 
               y_min = y_min, x_max = x_max, y_max = y_max, data_frequency = data_frequency,
               trend_type = trend_type, graph_name = graph_name, time_fix = time_fix, indicators_sec = indicators_sec, 
@@ -436,8 +450,9 @@ prepareDates <- function(datetext, freq, end) {
 
 ####### Function to fix peers for the particular graph
 
-fixPeers <- function(country_info, peers, data) {
+fixPeers <- function(country_info, params, data) {
   
+  peers <- params$peers
   if (peers != 0) {
     
     peers_vec <- unlist(strsplit(peers, ": "))
@@ -466,10 +481,17 @@ fixPeers <- function(country_info, peers, data) {
                               ")) %>% arrange(", peers_ind, ") %>% slice(1:peers_param) %>% pull(country_id)" , sep="")  )) 
     }
     
+    peers_iso2c <- peers_iso2c[!is.na(peers_iso2c)]
     peers_iso2c <- peers_iso2c[peers_iso2c!=country_info$country_iso2c]
     return(peers_iso2c)
     
   }
+  
+  if (params$graph_type == "distribution_dynamic") {
+    allc <- country_info$regions$country_iso2c
+    peers_iso2c <- allc[!is.na(allc)]
+    peers_iso2c <- peers_iso2c[peers_iso2c!=country_info$country_iso2c]
+    return(peers_iso2c)}
   
 }
 
@@ -484,7 +506,7 @@ fillGraphPlan <- function(parsedrow, data, country_code, peers_code){
   data_temp <- data_temp %>% select(any_of(c("year", "quarter", "month", "country", "country_id")), all_of(indicators))
   dict <- data$dict
   countries_needed <- c(country_code, peers_code)
-  
+
   ## fix time limits for dynamic graphs (needs to leave unchanged simple x limits in case of non-dynamic)
   
   if (graph_type %in% c("bar_dynamic", "lines_country_comparison", "lines_indicator_comparison", "distribution_dynamic",
@@ -501,11 +523,11 @@ fillGraphPlan <- function(parsedrow, data, country_code, peers_code){
               filter(rowSums(!is.na(.[indicators])) >= ifelse(graph_type %in% c("structure_dynamic",
                                       "scatter_dynamic", "bar_year_comparison", "distribution_year_comparison"), length(indicators), 1)) %>% slice(1) }
           
-          if (graph_type %in% c("lines_country_comparison", "distribution_dynamic")) {                  # at least one country (20 - for distrib)
+          if (graph_type %in% c("lines_country_comparison", "distribution_dynamic")) {                  # at least one country (40 - for distrib)
             data_min <- data_temp %>% select(any_of(c("year", "quarter", "month", "country_id")), all_of(indicators[1])) %>% 
                 filter(country_id %in% countries_needed) %>% 
                 pivot_wider(names_from = country_id, values_from = all_of(indicators[1])) %>% 
-                filter(rowSums(!is.na(.[countries_needed])) >= ifelse(graph_type == "lines_country_comparison", 1, 20)) %>% 
+                filter(rowSums(!is.na(.[countries_needed])) >= ifelse(graph_type == "lines_country_comparison", 1, 40)) %>% 
                 slice(1) }
           
           if (dim(data_min)[1]==0) {x_min <- c(2030, 1); trend_type <- NA} else { 
@@ -527,12 +549,13 @@ fillGraphPlan <- function(parsedrow, data, country_code, peers_code){
               filter(rowSums(!is.na(.[indicators])) >= ifelse(graph_type %in% c("structure_dynamic",
                                   "scatter_dynamic", "bar_year_comparison", "distribution_year_comparison"), length(indicators), 1)) %>% slice(n()) }
           
-          if (graph_type %in% c("lines_country_comparison", "distribution_dynamic")) {            # at least one country (20 - for distrib)
+          if (graph_type %in% c("lines_country_comparison", "distribution_dynamic")) {            # at least one country (40 - for distrib)
             data_max <- data_temp %>% select(any_of(c("year", "quarter", "month", "country_id")), all_of(indicators[1])) %>% 
               filter(country_id %in% countries_needed) %>% 
               pivot_wider(names_from = country_id, values_from = all_of(indicators[1])) %>% 
-              filter(rowSums(!is.na(.[countries_needed])) >= ifelse(graph_type == "lines_country_comparison", 1, 20)) %>% 
-              slice(n()) }
+              filter(rowSums(!is.na(.[countries_needed])) >= ifelse(graph_type == "lines_country_comparison", 1, 40)) %>%
+              slice(n()) 
+            }
       
       if (dim(data_max)[1]==0) {x_max <- c(2030, 4); trend_type <- NA} else { 
         if (data_frequency=="y") {x_max <- data_max %>% pull(year) }

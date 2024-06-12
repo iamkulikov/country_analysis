@@ -5,14 +5,17 @@ library(here)
 here::i_am("_country_analysis_scripts/graph_script/do_plot.R")
 
 ##### Parameters and source names
-country_name <- "Russian Federation"
+country_name <- "Tunisia"
 file_output <- "jpeg"
 horizontal_size <- c(1800, 900)
-vertical_size <- c(900, 900)
+vertical_size <- c(750, 750)
 data_fname <- here("_DB", "Filled_DB.xlsx")
 data_d_fname <- here("_DB", "Filled_d_DB.xlsx")
 peers_fname <- here("_DB", "1_peers_params.xlsx")
 plotparam_fname <- here(country_name, "Auto_report", "2_graphlib.xlsx")
+graphplan_columns <- c("graph_name", "graph_title", "graph_type", "graph_group", "data_frequency", "indicators", "time_fix", "peers", "all", "x_log",
+                       "y_log", "x_min", "x_max", "y_min", "y_max", "trend_type", "index", "recession", "sec_y_axis", "swap_axis", "long_legend", "vert_lab",
+                       "short_names", "theme", "orientation", "show_title", "active")
 graph_types <- c("scatter_dynamic", "scatter_country_comparison", "structure_dynamic", "structure_country_comparison",
                  "structure_country_comparison_norm", "bar_dynamic", "bar_country_comparison", "bar_country_comparison_norm", 
                  "bar_year_comparison", "lines_country_comparison", "lines_indicator_comparison", "distribution_dynamic",
@@ -37,18 +40,19 @@ country_info <- getPeersCodes(country_name = country_name, peers_fname = peers_f
 graphplan <- getPlotSchedule(plotparam_fname = plotparam_fname, dict = D$dict)
 
 ##### Check integrity of the plans
-graphplan <- graphplan %>% filter(active == 1) %>%
-            checkGraphTypes(graph_types = graph_types) %>% checkFreq %>%
-            checkUnique %>% checkAvailability(dict = D$dict) %>% 
-            checkPeers(peer_groups = country_info$regions, dict = D$dict) %>% checkTimes %>%
-            checkBinaryParams %>% checkNumericParams %>% checkTrend(trend_types = trend_types) %>% 
-            checkTheme(theme_types = theme_types) %>% checkOrientation(orient_types = orient_types) %>% 
-            mutate(checks = check_types*check_freq*check_unique*check_availability*check_peers*check_times*check_binary*
-                     check_num*check_trend*check_theme*check_orient)
-error_report <- graphplan %>% filter(checks == 0) %>% select(graph_name, indicators, data_frequency, starts_with("check_"))
+if (checkColumns(graphplan = graphplan, graphplan_columns = graphplan_columns) == 1 & checkEmpty(graphplan = graphplan) == 1) {
+  graphplan <- graphplan %>% filter(active == 1) %>%
+              checkGraphTypes(graph_types = graph_types) %>% checkFreq %>%
+              checkUnique %>% checkAvailability(dict = D$dict) %>% 
+              checkPeers(peer_groups = country_info$regions, dict = D$dict) %>% checkTimes %>%
+              checkBinaryParams %>% checkNumericParams %>% checkTrend(trend_types = trend_types) %>% 
+              checkTheme(theme_types = theme_types) %>% checkOrientation(orient_types = orient_types) %>% 
+              mutate(checks = check_types*check_freq*check_unique*check_availability*check_peers*check_times*check_binary*
+                       check_num*check_trend*check_theme*check_orient)
+  error_report <- graphplan %>% filter(checks == 0) %>% select(graph_name, indicators, data_frequency, starts_with("check_"))
+} else {error_report <- data.frame("Check number of columns and rows")}
 
-
-source(here("_country_analysis_scripts","graph_script","plot.R"))
+#source(here("_country_analysis_scripts","graph_script","plot.R"))
 ##### Plotting sequence
 if (is.null(dim(error_report)[1]) | is.na(dim(error_report)[1]) | (dim(error_report)[1] == 0)) {
   
@@ -61,7 +65,7 @@ if (is.null(dim(error_report)[1]) | is.na(dim(error_report)[1]) | (dim(error_rep
       graph_params <- parseGraphPlan(graphrow = graphplan[i,], dict = D$dict, horizontal_size = horizontal_size, vertical_size = vertical_size)
       
       ### Fixing peers
-      peers_iso2c <- fixPeers(country_info = country_info, peers = graph_params$peers, data = D)
+      peers_iso2c <- fixPeers(country_info = country_info, params = graph_params, data = D)
       
       ### Fill empty graph parameters with defaults and calculate dependent labels
       graph_params <- fillGraphPlan(parsedrow = graph_params, data = D, country_code = country_info$country_iso2c, peers_code = peers_iso2c)

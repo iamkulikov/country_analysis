@@ -97,17 +97,21 @@ download.file(url, dest, mode="wb")
 
 ### Download UNPD population projections, aggregates (links should be updated manually!!!!!)
 ### from here https://population.un.org/wpp/Download/Standard/CSV/
-url <- "https://population.un.org/wpp/Download/Files/1_Indicators%20(Standard)/CSV_FILES/WPP2022_Demographic_Indicators_Medium.zip"
-dest <- here("_DB", datafolder, "UNDP_aggregates.zip")
+url <- "https://population.un.org/wpp/Download/Files/1_Indicator%20(Standard)/CSV_FILES/WPP2024_Demographic_Indicators_Medium.csv.gz"
+dest <- here("_DB", datafolder, "UNDP_aggregates.gz")
+final_dest <- here("_DB", datafolder, "UNDP_aggregates.csv")
 download.file(url, dest)
-unzip(zipfile = dest, exdir = here("_DB", datafolder))
-file.rename(from=here("_DB", datafolder, 'WPP2022_Demographic_Indicators_Medium.csv'), to=here("_DB", datafolder, 'UNDP_aggregates.csv'))
+gzfile <- gzfile(dest, 'rt')
+writeLines(readLines(gzfile), final_dest)
+close(gzfile)
 
-url <- "https://population.un.org/wpp/Download/Files/1_Indicators%20(Standard)/CSV_FILES/WPP2022_PopulationByAge5GroupSex_Medium.zip"
-dest <- here("_DB", datafolder, "UNDP_5yr.zip")
+url <- "https://population.un.org/wpp/Download/Files/1_Indicator%20(Standard)/CSV_FILES/WPP2024_PopulationByAge5GroupSex_Medium.csv.gz"
+dest <- here("_DB", datafolder, "UNDP_5yr.gz")
+final_dest <- here("_DB", datafolder, "UNDP_5yr.csv")
 download.file(url, dest)
-unzip(zipfile = dest, exdir = here("_DB", datafolder))
-file.rename(from=here("_DB", datafolder, 'WPP2022_PopulationByAge5GroupSex_Medium.csv'), to=here("_DB", datafolder, 'UNDP_5yr.csv'))
+gzfile <- gzfile(dest, 'rt')
+writeLines(readLines(gzfile), final_dest)
+close(gzfile)
 
 ### Download macroprudential database iMaPP (link should be updated manually!!!!!)
 ### https://www.elibrary-areaer.imf.org/Macroprudential/Pages/iMaPPDatabase.aspx

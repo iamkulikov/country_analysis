@@ -13,6 +13,7 @@ FiscalMonitor привязать к dropbox?
 допеределать импорт курсов из BIS
 
 Данные:
+все показатели с XDC выгрузить еще и USD и EUR и склеить, потому что кажется, что это reporting currency именно и они ее в базе сами не ковертят
 Медианный и средний доход из Люксембургской базы: https://ourworldindata.org/grapher/median-and-mean-income-after-tax-lis?tab=table&country=~BEL
 Добавить долю в резервах: https://data.imf.org/regular.aspx?key=41175
 Доштудировать IMF базы: структура госдолга

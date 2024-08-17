@@ -219,7 +219,7 @@ checkTimes <- function(graphplan) {
     
     if (graphplan$graph_type[i] %in% c("scatter_country_comparison", "structure_country_comparison", "structure_country_comparison_norm", 
                                        "bar_country_comparison", "bar_country_comparison_norm","bar_year_comparison",
-                                       "bar_year_comparison", "scatter_dynamic")) {
+                                       "bar_year_comparison", "scatter_dynamic", "density_fix")) {
       if ((is.na(graphplan$x_min[i]) | is_numeric(graphplan$x_min[i])) & (is.na(graphplan$x_max[i]) | is_numeric(graphplan$x_max[i])) & isTime(graphplan$time_fix[i])) graphplan$check_times[i] <- 1
     }
   }
@@ -343,7 +343,7 @@ parseGraphPlan <- function(graphrow, dict, horizontal_size, vertical_size) {
   ## convert dates so that they correspond to the graph's intended frequency
   if (graph_type %in% c("scatter_country_comparison", "structure_country_comparison", "structure_country_comparison_norm", 
                         "bar_country_comparison", "bar_country_comparison_norm","bar_year_comparison",
-                        "bar_year_comparison", "scatter_dynamic") & !is.na(time_fix)) {time_fix <- prepareDates(time_fix, freq = data_frequency, end = 1)}
+                        "bar_year_comparison", "scatter_dynamic", "density_fix") & !is.na(time_fix)) {time_fix <- prepareDates(time_fix, freq = data_frequency, end = 1)}
   if (graph_type %in% c("structure_dynamic", "bar_dynamic", "lines_country_comparison", "lines_indicator_comparison", 
                         "distribution_dynamic")) {
         if (!is.na(x_min)) x_min <- prepareDates(x_min, freq = data_frequency, end = 0)
@@ -363,6 +363,12 @@ parseGraphPlan <- function(graphrow, dict, horizontal_size, vertical_size) {
     coeff <- as.numeric(tail(indicators_sec, 1))
     indicators_sec <- head(indicators_sec, -1)
   } else {indicators_sec <- NA; coeff <- NA}
+  
+  ## fix x limits (may be optimized probably)
+  if (graph_type %in% c('scatter_country_comparison', 'density_fix')) {  
+    x_min <- as.numeric(x_min)
+    x_max <- as.numeric(x_max)
+    }
   
   ## theme and labs calculation
   if (show_title == 1) { title <- graph_title } else {title <- ""} 
@@ -581,7 +587,7 @@ fillGraphPlan <- function(parsedrow, data, country_code, peers_code){
   ## fix the time point for cross-section graphs
   
   if (graph_type %in% c("bar_year_comparison", "distribution_year_comparison", "scatter_country_comparison", "bar_country_comparison", 
-                        "structure_country_comparison", "structure_country_comparison_norm", "triangle")) {
+                        "structure_country_comparison", "structure_country_comparison_norm", "density_fix", "triangle")) {
         
         if (!is.na(time_fix)) { 
           
@@ -590,7 +596,7 @@ fillGraphPlan <- function(parsedrow, data, country_code, peers_code){
             }
           
           if (graph_type %in% c("scatter_country_comparison", "bar_country_comparison", "structure_country_comparison",
-                                "structure_country_comparison_norm", "triangle")) {
+                                "structure_country_comparison_norm", "density_fix", "triangle")) {
             time_fix <- unlist(strsplit(as.character(time_fix), "q|m|d" ))
             time_fix <- as.numeric(time_fix[order(-nchar(time_fix))])
           }
@@ -602,7 +608,7 @@ fillGraphPlan <- function(parsedrow, data, country_code, peers_code){
           }
           
           if (graph_type %in% c("scatter_country_comparison", "bar_country_comparison", "structure_country_comparison",
-                                "structure_country_comparison_norm", "triangle")) {           # all indicators for the main country
+                                "structure_country_comparison_norm", "density_fix", "triangle")) {           # all indicators for the main country
             
               data_fix <- data_temp %>% select(any_of(c("year", "quarter", "month", "country_id")), all_of(indicators)) %>% 
                 filter(country_id %in% country_code) %>% 
@@ -688,6 +694,8 @@ funcNameTransform <- function(graph_type) {
   
 }
 
+###### Scatter dynamic
+# to-do
 
 ###### Scatter plot
 
@@ -724,6 +732,66 @@ scatterCountryComparison <- function(data, graph_params, country_iso2c, peers_is
   
   return(list(graph = theplot, data = data_all)) 
 }
+
+###### Scatter before-after
+# to-do
+
+###### Bar dynamic - dodged, stacked or stacked and normalized
+
+barDynamic <- function(data, graph_params, country_iso2c, peers_iso2c, verbose=T) {
+  
+  for (j in seq_along(graph_params)) { eval(parse(text = paste0(names(graph_params)[j], " <- graph_params$", names(graph_params)[j]) )) }
+  if (verbose == T) {print(graph_name)}
+  
+  data_temp <- data$extdata %>% select(any_of(c("country", "country_id", "year", "quarter", "month", "time", indicators)))
+  data_all <- reshape2::melt(data_temp, id.vars=names(data_temp)[1:(dim(data_temp)[2]-length(indicators))],
+                             variable.name="variable", value.name="value")
+  data_all <- data_all %>% filter(variable %in% indicators, time >= time_start, time <= time_end, country_id == country_iso2c, !is.na(value)) 
+  if (is.na(sec_y_axis)==F) { data_all <- data_all %>% mutate(value = ifelse(variable %in% indicators_sec, value*coeff, value)) }
+  if (graph_type=="structure_dynamic") {data_total <- data_all %>% group_by(time) %>% summarize(total=sum(value)) %>% ungroup()}
+  
+  dict_temp <- data$dict %>% filter(indicator_code %in% indicators, source_frequency == data_frequency) %>% 
+    arrange(factor(indicator_code, levels = indicators)) %>% select(indicator)
+  y_lab <- unname(unlist(dict_temp))
+  if (is.na(sec_y_axis)==F) {
+    y_lab[indicators %in% indicators_sec] <- paste(y_lab[indicators %in% indicators_sec], ", rha", sep="")
+    y_lab[!(indicators %in% indicators_sec)] <- paste(y_lab[!(indicators %in% indicators_sec)], ", lha", sep="")
+  }
+  
+  theplot <- ggplot(data_all, aes(time, value, fill=as.factor(variable)))
+  if (is.na(sec_y_axis)==T) {theplot <- theplot + scale_y_continuous(limits=c(y_min, y_max))} else {
+    theplot <- theplot + scale_y_continuous(limits=c(y_min, y_max), sec.axis = sec_axis(~./coeff))
+  }
+  
+  theplot <- theplot + scale_x_continuous(breaks = seq(time_start + timetony_start, time_end - timetony_end + 1, by = labfreq), 
+                                          labels = c(ifelse(timetony_start==0,x_min[1],x_min[1]+1):x_max[1])) 
+  
+  if (graph_type=="bar_dynamic") {theplot <- theplot + geom_col(alpha=.8, width=0.65, position = position_dodge(width = 0.65)) } else {
+    theplot <- theplot + geom_col(alpha=.8, width=0.65, 
+                                  position = case_when(graph_type=="structure_dynamic" ~ "stack", graph_type=="structure_dynamic_norm" ~ "fill"))
+  }
+  
+  if (graph_type=="structure_dynamic") {theplot <- theplot + stat_summary(fun = sum, geom = "point",
+                                                                          shape = 17, size = 2, mapping = aes(group = time), show.legend = F)}
+  
+  eval(parse(text = paste("theplot <- theplot + ", theme, sep="") ))
+  
+  theplot <- theplot + 
+    scale_fill_manual(values = as.vector(ACRA[c('green','sec2','dark','sec1','red','sec3','sec6','black','brown','sec5','sec7', 'sec8',
+                                                'add1', 'add2', 'reddest', 'add4', 'add5')]), name="", labels=y_lab) +
+    ggtitle(title) + labs(caption = caption, x=NULL, y=NULL) +
+    geom_hline(yintercept = 0, color = "dark grey", size = 1)
+  
+  theplot <- theplot + theme(plot.title = element_textbox_simple(), legend.position="bottom")
+  if (length(indicators)==1) {theplot <- theplot + guides(fill = "none")}
+  
+  if (theme == "theme_ipsum") { theplot <- theplot + theme(text = element_text(family = "Nunito Sans")) }
+  return(list(graph = theplot, data = data_all))
+  
+}
+
+structureDynamic <- barDynamic
+structureDynamicNorm <- barDynamic
 
 
 ###### Bar country comparison - dodged, stacked or stacked and normalized
@@ -797,7 +865,6 @@ barCountryComparison <- function(data, graph_params, country_iso2c, peers_iso2c,
 structureCountryComparison <- barCountryComparison
 structureCountryComparisonNorm <- barCountryComparison
 
-
 ###### Bar multi-year comparison for multiple variables
 
 barYearComparison <- function(data, graph_params, country_iso2c, peers_iso2c, verbose=T) {
@@ -828,64 +895,6 @@ barYearComparison <- function(data, graph_params, country_iso2c, peers_iso2c, ve
   return(list(graph = theplot, data = data_all))
   
 }
-
-
-###### Bar dynamic - dodged, stacked or stacked and normalized
-
-barDynamic <- function(data, graph_params, country_iso2c, peers_iso2c, verbose=T) {
-  
-  for (j in seq_along(graph_params)) { eval(parse(text = paste0(names(graph_params)[j], " <- graph_params$", names(graph_params)[j]) )) }
-  if (verbose == T) {print(graph_name)}
-  
-  data_temp <- data$extdata %>% select(any_of(c("country", "country_id", "year", "quarter", "month", "time", indicators)))
-  data_all <- reshape2::melt(data_temp, id.vars=names(data_temp)[1:(dim(data_temp)[2]-length(indicators))],
-                             variable.name="variable", value.name="value")
-  data_all <- data_all %>% filter(variable %in% indicators, time >= time_start, time <= time_end, country_id == country_iso2c, !is.na(value)) 
-  if (is.na(sec_y_axis)==F) { data_all <- data_all %>% mutate(value = ifelse(variable %in% indicators_sec, value*coeff, value)) }
-  if (graph_type=="structure_dynamic") {data_total <- data_all %>% group_by(time) %>% summarize(total=sum(value)) %>% ungroup()}
-  
-  dict_temp <- data$dict %>% filter(indicator_code %in% indicators, source_frequency == data_frequency) %>% 
-    arrange(factor(indicator_code, levels = indicators)) %>% select(indicator)
-  y_lab <- unname(unlist(dict_temp))
-  if (is.na(sec_y_axis)==F) {
-    y_lab[indicators %in% indicators_sec] <- paste(y_lab[indicators %in% indicators_sec], ", rha", sep="")
-    y_lab[!(indicators %in% indicators_sec)] <- paste(y_lab[!(indicators %in% indicators_sec)], ", lha", sep="")
-  }
-  
-  theplot <- ggplot(data_all, aes(time, value, fill=as.factor(variable)))
-  if (is.na(sec_y_axis)==T) {theplot <- theplot + scale_y_continuous(limits=c(y_min, y_max))} else {
-    theplot <- theplot + scale_y_continuous(limits=c(y_min, y_max), sec.axis = sec_axis(~./coeff))
-  }
-  
-  theplot <- theplot + scale_x_continuous(breaks = seq(time_start + timetony_start, time_end - timetony_end + 1, by = labfreq), 
-                                          labels = c(ifelse(timetony_start==0,x_min[1],x_min[1]+1):x_max[1])) 
-  
-  if (graph_type=="bar_dynamic") {theplot <- theplot + geom_col(alpha=.8, width=0.65, position = position_dodge(width = 0.65)) } else {
-    theplot <- theplot + geom_col(alpha=.8, width=0.65, 
-                                  position = case_when(graph_type=="structure_dynamic" ~ "stack", graph_type=="structure_dynamic_norm" ~ "fill"))
-  }
-  
-  if (graph_type=="structure_dynamic") {theplot <- theplot + stat_summary(fun = sum, geom = "point",
-                                                                          shape = 17, size = 2, mapping = aes(group = time), show.legend = F)}
-  
-  eval(parse(text = paste("theplot <- theplot + ", theme, sep="") ))
-  
-  theplot <- theplot + 
-    scale_fill_manual(values = as.vector(ACRA[c('green','sec2','dark','sec1','red','sec3','sec6','black','brown','sec5','sec7', 'sec8',
-                                                'add1', 'add2', 'reddest', 'add4', 'add5')]), name="", labels=y_lab) +
-    ggtitle(title) + labs(caption = caption, x=NULL, y=NULL) +
-    geom_hline(yintercept = 0, color = "dark grey", size = 1)
-  
-  theplot <- theplot + theme(plot.title = element_textbox_simple(), legend.position="bottom")
-  if (length(indicators)==1) {theplot <- theplot + guides(fill = "none")}
-  
-  if (theme == "theme_ipsum") { theplot <- theplot + theme(text = element_text(family = "Nunito Sans")) }
-  return(list(graph = theplot, data = data_all))
-  
-}
-
-structureDynamic <- barDynamic
-structureDynamicNorm <- barDynamic
 
 
 ###### Lines indicator comparison
@@ -978,6 +987,29 @@ linesCountryComparison <- function(data, graph_params, country_iso2c, peers_iso2
   
 }
 
+###### Distribution fix (horizontal across-country density estimate for the fixed time period)
+
+densityFix <- function(data, graph_params, country_iso2c, peers_iso2c, verbose=T) {
+  
+  for (j in seq_along(graph_params)) { eval(parse(text = paste0(names(graph_params)[j], " <- graph_params$", names(graph_params)[j]) )) }
+  if (verbose == T) {print(graph_name)}
+  
+  data_all <- data$extdata %>% select(any_of(c("country", "country_id", "year", "quarter", "month", "time", indicators[1])))
+  names(data_all)[length(names(data_all))] <- "variable"
+  data_all <- data_all %>% filter(time == time_fix)
+  # фильтр нужного времени расширить для любой частоты
+  
+  theplot <- ggplot(data_all, aes(variable, after_stat(density)))
+  eval(parse(text = paste("theplot <- theplot + ", theme, sep="") ))
+  
+  theplot <- theplot + geom_histogram(fill = ACRA['green'], colour = ACRA['grey'], size = .2) + geom_density(colour = ACRA['dark']) +
+    xlim(x_min, x_max) + ggtitle(title) + labs(x = x_lab, y = 'Плотность', caption = caption) +
+    annotate(geom = 'text', label = time_fix_label, x = Inf, y = Inf, hjust = 1.5, vjust = 1.5)
+  
+  return(list(graph = theplot, data = data_all))
+  
+}
+
 
 ###### Distribution dynamics (fan plot)
 
@@ -1015,3 +1047,13 @@ distributionDynamic <- function(data, graph_params, country_iso2c, peers_iso2c, 
   return(list(graph = theplot, data = data_all))
   
 }
+
+
+###### Distribution year comparison (candle plot, fixed indicator)
+
+# distributionYearComparison <- function(datagraph_params, country_iso2c, peers_iso2c, verbose=T) {}
+
+
+###### Distribution indicator comparison (candle plot, fixed time period)
+
+# distributionIndicatorComparison <- function(datagraph_params, country_iso2c, peers_iso2c, verbose=T) {}

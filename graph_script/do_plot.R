@@ -5,7 +5,7 @@ library(here)
 here::i_am("_country_analysis_scripts/graph_script/do_plot.R")
 
 ##### Parameters and source names
-country_name <- "Turkiye"
+country_name <- "Russian Federation"
 file_output <- "jpeg"
 horizontal_size <- c(1800, 900)
 vertical_size <- c(750, 750)
@@ -16,10 +16,12 @@ plotparam_fname <- here(country_name, "Auto_report", "2_graphlib.xlsx")
 graphplan_columns <- c("graph_name", "graph_title", "graph_type", "graph_group", "data_frequency", "indicators", "time_fix", "peers", "all", "x_log",
                        "y_log", "x_min", "x_max", "y_min", "y_max", "trend_type", "index", "recession", "sec_y_axis", "swap_axis", "long_legend", "vert_lab",
                        "short_names", "theme", "orientation", "show_title", "active")
-graph_types <- c("scatter_dynamic", "scatter_country_comparison", "structure_dynamic", "structure_country_comparison",
-                 "structure_country_comparison_norm", "bar_dynamic", "bar_country_comparison", "bar_country_comparison_norm", 
-                 "bar_year_comparison", "lines_country_comparison", "lines_indicator_comparison", "distribution_dynamic",
-                 "distribution_year_comparison")
+graph_types <- c("scatter_dynamic", "scatter_country_comparison", "scatter_before_after", 
+                 "bar_dynamic", "bar_country_comparison", "bar_country_comparison_norm", "bar_year_comparison", 
+                 "structure_dynamic", "structure_country_comparison", "structure_country_comparison_norm",
+                 "lines_indicator_comparison", "lines_country_comparison", 
+                 "density_fix", "distribution_dynamic", "distribution_year_comparison", "distribution_indicator_comparison",
+                 "triangle")
 trend_types <- c("lm" ,"loess")
 orient_types <- c("horizontal", "vertical")
 theme_types <- c("ipsum", "ACRA", "economist", "minimal")
@@ -80,7 +82,7 @@ if (is.null(dim(error_report)[1]) | is.na(dim(error_report)[1]) | (dim(error_rep
       eval(parse(text= paste0( 
       "theplot <- ", func_name, "(data = data_temp, graph_params = graph_params, country_iso2c = country_info$country_iso2c, peers_iso2c = peers_iso2c, verbose = verbose)"
         ) ))
-      #theplot$data
+      # theplot$data
       
       ### Saving graph file
       filename <- paste(graph_params$graph_name, file_output, sep=".")

@@ -7,7 +7,7 @@ library(here)
 here::i_am("_country_analysis_scripts/download_script/do_fill.R")
 test <- 0
 
-countries <- c("Armenia", "Brazil", "Bulgaria", "Greece", "China", "India", "Kazakhstan", "Kyrgyz Republic", "Romania",
+countries <- c("Armenia", "Belarus", "Brazil", "Bulgaria", "Greece", "China", "India", "Kazakhstan", "Kyrgyz Republic", "Romania",
                "Russian Federation", "Slovak Republic", "South Africa", "Switzerland", "Turkiye", "Ukraine", "Uzbekistan",
                "United Arab Emirates", "Ethiopia")
 # "Iran, Islamic Rep." - что делать с этой точкой на конце? так папка называться не может, но название 
@@ -32,8 +32,8 @@ fillplan <- readFillParams(param_fname = here("_DB", param_fname))
 ##### Check integrity of the plans
 fillplan <- checkNames(fillplan = fillplan, formula_words = formula_words)
 fillplan <- checkUnique(fillplan = fillplan)
-fillplan <- checkAvailability(fillplan = fillplan, impplan = impplan) %>% mutate(checks = check_names*check_unique*check_availability)
-error_report <- fillplan %>% filter(checks == 0)
+fillplan <- checkAvailability(fillplan = fillplan, impplan = impplan) |> mutate(checks = check_names*check_unique*check_availability)
+error_report <- fillplan |> filter(checks == 0)
 #error_report$formula
 
 if (is.null(dim(error_report)[1]) | is.na(dim(error_report)[1]) | (dim(error_report)[1] == 0)) {

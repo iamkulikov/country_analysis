@@ -5,10 +5,10 @@ library(here)
 here::i_am("_country_analysis_scripts/graph_script/do_plot.R")
 
 ##### Parameters and source names
-country_name <- "Russian Federation"
+country_name <- "China"
 file_output <- "jpeg"
 horizontal_size <- c(1800, 900)
-vertical_size <- c(750, 750)
+vertical_size <- c(850, 850)
 data_fname <- here("_DB", "Filled_DB.xlsx")
 data_d_fname <- here("_DB", "Filled_d_DB.xlsx")
 peers_fname <- here("_DB", "1_peers_params.xlsx")
@@ -43,15 +43,15 @@ graphplan <- getPlotSchedule(plotparam_fname = plotparam_fname, dict = D$dict)
 
 ##### Check integrity of the plans
 if (checkColumns(graphplan = graphplan, graphplan_columns = graphplan_columns) == 1 & checkEmpty(graphplan = graphplan) == 1) {
-  graphplan <- graphplan %>% filter(active == 1) %>%
-              checkGraphTypes(graph_types = graph_types) %>% checkFreq %>%
-              checkUnique %>% checkAvailability(dict = D$dict) %>% 
-              checkPeers(peer_groups = country_info$regions, dict = D$dict) %>% checkTimes %>%
-              checkBinaryParams %>% checkNumericParams %>% checkTrend(trend_types = trend_types) %>% 
-              checkTheme(theme_types = theme_types) %>% checkOrientation(orient_types = orient_types) %>% 
+  graphplan <- graphplan |> filter(active == 1) |>
+              checkGraphTypes(graph_types = graph_types) |> checkFreq() |>
+              checkUnique() |> checkAvailability(dict = D$dict) |> 
+              checkPeers(peer_groups = country_info$regions, dict = D$dict) |> checkTimes() |>
+              checkBinaryParams() |> checkNumericParams() |> checkTrend(trend_types = trend_types) |> 
+              checkTheme(theme_types = theme_types) |> checkOrientation(orient_types = orient_types) |> 
               mutate(checks = check_types*check_freq*check_unique*check_availability*check_peers*check_times*check_binary*
                        check_num*check_trend*check_theme*check_orient)
-  error_report <- graphplan %>% filter(checks == 0) %>% select(graph_name, indicators, data_frequency, starts_with("check_"))
+  error_report <- graphplan |> filter(checks == 0) |> select(graph_name, indicators, data_frequency, starts_with("check_"))
 } else {error_report <- data.frame("Check number of columns and rows")}
 
 #source(here("_country_analysis_scripts","graph_script","plot.R"))

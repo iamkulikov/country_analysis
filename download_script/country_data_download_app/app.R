@@ -9,7 +9,7 @@ source(here("service.R"))
 # Import data
 FD <- importData(data_y_fname = "extdata_y.csv", data_q_fname = "extdata_q.csv", data_m_fname = "extdata_m.csv", data_d_fname = "extdata_d.csv",
                  dict_fname = "dict.csv", path = here())
-countries <- FD$extdata_y$country %>% unique()
+countries <- FD$extdata_y$country |> unique()
 #countries <- c("Russia", "France", "Saudi Arabia")
 
 ui <-   fluidPage(
@@ -60,7 +60,7 @@ server <- function(input, output, session) {
   
   data_to_download <- reactive({ if (is.null(input$country_choice)) {return(NULL)} else {
     switch(input$file_structure,
-           "Model" = data_subset() %>% '[['("y") %>% generateModelSheet(dict_to_show()),
+           "Model" = data_subset() %>% '[['("y") |> generateModelSheet(dict_to_show()),
             "All data (vertical)" = data_subset(),
             "All data (horizontal)" = transposeDatalist(data_subset()) 
     )

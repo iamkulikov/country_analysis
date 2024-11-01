@@ -28,9 +28,9 @@ impplan_full <- readImportParams(param_fname = here("_DB", param_fname), update_
 ##### Check integrity of the plans
 impplan_full <- checkNames(fillplan = impplan_full, formula_words = formula_words)
 impplan_full <- checkUnique(fillplan = impplan_full)
-impplan_full <- checkFileExistence(impplan = impplan_full, extdata_folder = here("_DB", "_extsources")) %>% 
+impplan_full <- checkFileExistence(impplan = impplan_full, extdata_folder = here("_DB", "_extsources")) |> 
     mutate(checks = check_names*check_unique*check_exist)
-error_report <- impplan_full %>% filter(checks == 0)
+error_report <- impplan_full |> filter(checks == 0)
 
 if (is.null(dim(error_report)[1]) | is.na(dim(error_report)[1]) | (dim(error_report)[1] == 0)) {
       

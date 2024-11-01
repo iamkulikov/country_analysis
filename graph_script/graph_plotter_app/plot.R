@@ -55,13 +55,13 @@ importData <- function(data_y_fname, data_q_fname, data_m_fname, data_d_fname, d
   }
   
   dict <- read_csv2(here(path, dict_fname), col_names = T, skip=0, na = '')
-  extdata_d <- extdata_d %>% mutate(date = as.Date(date))
+  extdata_d <- extdata_d |> mutate(date = as.Date(date))
   
   
-  extdata_y <- extdata_y %>% mutate(time=year-1987)
-  extdata_q <- extdata_q %>% mutate(time=(year-1987)*4+quarter)
-  extdata_m <- extdata_m %>% mutate(time=(year-1987)*12+month)
-  #extdata_d <- extdata_d %>% mutate(time=year-1987)
+  extdata_y <- extdata_y |> mutate(time=year-1987)
+  extdata_q <- extdata_q |> mutate(time=(year-1987)*4+quarter)
+  extdata_m <- extdata_m |> mutate(time=(year-1987)*12+month)
+  #extdata_d <- extdata_d |> mutate(time=year-1987)
   
   return(list(extdata_y = extdata_y, extdata_q = extdata_q, extdata_m = extdata_m, extdata_d = extdata_d, dict = dict))
   
@@ -80,10 +80,10 @@ importFilledData <- function(data_fname, data_d_fname) {
   extdata_d <- read_excel(data_d_fname, sheet = "d", col_names = T, skip=0,
                           col_types = c("text", "text", "date", rep("numeric", ncols-3)))
   
-  extdata_y <- extdata_y %>% mutate(time=year-1987)
-  extdata_q <- extdata_q %>% mutate(time=(year-1987)*4+quarter)
-  extdata_m <- extdata_m %>% mutate(time=(year-1987)*12+month)
-  #extdata_d <- extdata_d %>% mutate(time=year-1987)
+  extdata_y <- extdata_y |> mutate(time=year-1987)
+  extdata_q <- extdata_q |> mutate(time=(year-1987)*4+quarter)
+  extdata_m <- extdata_m |> mutate(time=(year-1987)*12+month)
+  #extdata_d <- extdata_d |> mutate(time=year-1987)
   
   ncols <- length(read_excel(data_fname, sheet = "dict", col_names = T, skip=0, n_max = 0))
   dict <- read_excel(data_fname, sheet = "dict", col_names = T, skip=0,
@@ -107,16 +107,16 @@ getPeersCodes <- function(country_name, peers_fname) {
   labels <- c("region", groupsdata[3,-1])
   groupsdata <- data.frame(groupsdata[-c(1:3),])
   colnames(groupsdata) <- labels
-  country_iso3c <- groupsdata %>% filter(rownames(groupsdata) == country_name) %>% pull(country_code)
+  country_iso3c <- groupsdata |> filter(rownames(groupsdata) == country_name) |> pull(country_code)
   country_iso2c <- countrycode(country_iso3c, origin = 'iso3c', destination = 'iso2c')
-  groupsdata <- groupsdata %>% select(-c(region)) %>% 
-    mutate(country_iso2c = countrycode(country_code, origin = 'iso3c', destination = 'iso2c')) %>%
-    rename('country_iso3c' = 'country_code') %>% as_tibble
+  groupsdata <- groupsdata |> select(-c(region)) |> 
+    mutate(country_iso2c = countrycode(country_code, origin = 'iso3c', destination = 'iso2c')) |>
+    rename('country_iso3c' = 'country_code') |> as_tibble()
   
   peersdata <- read_excel(peers_fname, sheet = "groups", col_names = T, skip=n_groups)
   peers_default_iso3c <- names(peersdata)[peersdata[peersdata$country_code == country_iso3c, ] == 1]
   peers_default_iso2c <- countrycode(peers_default_iso3c, origin = 'iso3c', destination = 'iso2c')
-  peers_neighbours_iso3c <- peersdata %>% select(region, country_code) %>% filter(region==peersdata$region[peersdata$country_code==country_iso3c]) %>%
+  peers_neighbours_iso3c <- peersdata |> select(region, country_code) |> filter(region==peersdata$region[peersdata$country_code==country_iso3c]) |>
     pull(country_code)
   peers_neighbours_iso2c <- countrycode(peers_neighbours_iso3c, origin = 'iso3c', destination = 'iso2c')
   
@@ -130,7 +130,7 @@ getPeersCodes <- function(country_name, peers_fname) {
 
 getPlotSchedule <- function(plotparam_fname, dict) {
   
-  graphplan <- read_excel(plotparam_fname, sheet = "library", col_names = T, skip=1) %>% mutate(source_name=NA)
+  graphplan <- read_excel(plotparam_fname, sheet = "library", col_names = T, skip=1) |> mutate(source_name=NA)
   
   for (i in 1:dim(graphplan)[1]) {
     a <- unlist(str_extract_all( string = graphplan$indicators[i], pattern = paste(na.omit(dict$indicator_code), collapse = "|") ))
@@ -148,7 +148,7 @@ getPlotSchedule <- function(plotparam_fname, dict) {
 ####### Functions to check the plot schedule
 checkGraphTypes <- function(graphplan, graph_types) {
   
-  graphplan <- graphplan %>% mutate(check_types = 1)
+  graphplan <- graphplan |> mutate(check_types = 1)
   for (i in 1:dim(graphplan)[1]) {
     
     if(graphplan$graph_type[i] %in% graph_types) {} else {graphplan$check_types[i] = 0}
@@ -162,25 +162,25 @@ checkGraphTypes <- function(graphplan, graph_types) {
 
 checkUnique <- function(graphplan) {
   
-  graphplan <- graphplan %>% mutate(check_unique = 1)
+  graphplan <- graphplan |> mutate(check_unique = 1)
   
 }
 
 
 checkPeers <- function(graphplan, peer_groups) {
   
-  graphplan <- graphplan %>% mutate(check_peers = 1)
+  graphplan <- graphplan |> mutate(check_peers = 1)
   
 }
 
 
 checkAvailability <- function(graphplan, dict) {
   
-  graphplan <- graphplan %>% mutate(check_availability = 0)
+  graphplan <- graphplan |> mutate(check_availability = 0)
   for (i in 1:dim(graphplan)[1]) {
     
-    needed <- graphplan$indicators[i] %>% str_split(", ") %>% '[['(1)
-    available <- dict %>% filter(source_frequency == graphplan$data_frequency[i]) %>% pull(indicator_code)
+    needed <- graphplan$indicators[i] |> str_split(", ") %>% '[['(1)
+    available <- dict |> filter(source_frequency == graphplan$data_frequency[i]) |> pull(indicator_code)
     if(all(needed %in% available)) {graphplan$check_availability[i] = 1}
     
   }
@@ -280,23 +280,23 @@ fixPeers <- function(country_info, peers, data) {
     if (peers_type=="custom") {peers_iso2c <- peers_vec}
     if (peers_type == "default") {peers_iso2c <- country_info$peers_default_iso2c}
     if (peers_type == "neighbours") {peers_iso2c <- country_info$peers_neighbours_iso2c}
-    eval(parse(text = paste( "if (peers_type %in% names(country_info$regions)) {peers_iso2c <- country_info$regions %>% filter(", peers_type, " == 1) %>% pull(country_iso2c)}" , sep="")  )) 
+    eval(parse(text = paste( "if (peers_type %in% names(country_info$regions)) {peers_iso2c <- country_info$regions |> filter(", peers_type, " == 1) |> pull(country_iso2c)}" , sep="")  )) 
     
     if (peers_type=="similar"|peers_type=="top"|peers_type=="low") {peers_ind <- peers_vec[1]; peers_param <- as.numeric(peers_vec[2]); peers_year <- as.numeric(peers_vec[3])}
     if (peers_type=="similar") {
-      eval(parse(text = paste( "peers_central <- data$extdata_y %>% filter(year == ", peers_year, ", country_id == country_info$country_iso2c) %>% pull(", peers_ind, ")" , sep="")  )) 
-      eval(parse(text=paste("peers_iso2c <- data$extdata_y %>% filter(year == peers_year, ", peers_ind,  " > peers_central*(1-peers_param), ",
-                            peers_ind, " < peers_central*(1+peers_param)) %>% pull(country_id)" , sep="") ))
+      eval(parse(text = paste( "peers_central <- data$extdata_y |> filter(year == ", peers_year, ", country_id == country_info$country_iso2c) |> pull(", peers_ind, ")" , sep="")  )) 
+      eval(parse(text=paste("peers_iso2c <- data$extdata_y |> filter(year == peers_year, ", peers_ind,  " > peers_central*(1-peers_param), ",
+                            peers_ind, " < peers_central*(1+peers_param)) |> pull(country_id)" , sep="") ))
     }
     
     if (peers_type=="top") {
-      eval(parse(text = paste("peers_iso2c <- data$extdata_y %>% filter(year == peers_year, !is.na(", peers_ind,
-                              ")) %>% arrange(desc(", peers_ind, ")) %>% slice(1: peers_param) %>% pull(country_id)" , sep="")  )) 
+      eval(parse(text = paste("peers_iso2c <- data$extdata_y |> filter(year == peers_year, !is.na(", peers_ind,
+                              ")) |> arrange(desc(", peers_ind, ")) |> slice(1: peers_param) |> pull(country_id)" , sep="")  )) 
     }
     
     if (peers_type=="low") {
-      eval(parse(text = paste("peers_iso2c <- data$extdata_y %>% filter(year == peers_year, !is.na(", peers_ind,
-                              ")) %>% arrange(", peers_ind, ") %>% slice(1:peers_param) %>% pull(country_id)" , sep="")  )) 
+      eval(parse(text = paste("peers_iso2c <- data$extdata_y |> filter(year == peers_year, !is.na(", peers_ind,
+                              ")) |> arrange(", peers_ind, ") |> slice(1:peers_param) |> pull(country_id)" , sep="")  )) 
     }
     
     peers_iso2c <- peers_iso2c[peers_iso2c!=country_info$country_iso2c]
@@ -348,9 +348,9 @@ scatterCountryComparison <- function(data, graph_params, country_iso2c, peers_is
   for (j in seq_along(graph_params)) { eval(parse(text = paste0(names(graph_params)[j], " <- graph_params$", names(graph_params)[j]) )) }
   if (verbose == T) {print(graph_name)}
   
-  data_all <- data$extdata %>% filter(time==time_fix) %>% select("country", "country_id", "year", all_of(indicators))
-  data_highlight <- data_all %>% filter(country_id==country_iso2c)
-  if (peers!=0) {data_peers <- data_all %>% filter(country_id %in% peers_iso2c)} else {data_peers <- NULL}
+  data_all <- data$extdata |> filter(time==time_fix) |> select("country", "country_id", "year", all_of(indicators))
+  data_highlight <- data_all |> filter(country_id==country_iso2c)
+  if (peers!=0) {data_peers <- data_all |> filter(country_id %in% peers_iso2c)} else {data_peers <- NULL}
   if (all==1) {alpha=1} else {alpha=0}
   
   eval(parse(text = paste("theplot <- ggplot(data = data_all, aes(", x_ind, ",", y_ind, "))", sep="") ))
@@ -386,30 +386,30 @@ barCountryComparison <- function(data, graph_params, country_iso2c, peers_iso2c,
   for (j in seq_along(graph_params)) { eval(parse(text = paste0(names(graph_params)[j], " <- graph_params$", names(graph_params)[j]) )) }
   if (verbose == T) {print(graph_name)}
   
-  dict_temp <- data$dict %>% filter(indicator_code %in% indicators, source_frequency == data_frequency) %>% 
-    arrange(factor(indicator_code, levels = indicators)) %>% select(indicator)
+  dict_temp <- data$dict |> filter(indicator_code %in% indicators, source_frequency == data_frequency) |> 
+    arrange(factor(indicator_code, levels = indicators)) |> select(indicator)
   y_lab <- unname(unlist(dict_temp))
   if (is.na(sec_y_axis)==F) {
     y_lab[indicators %in% indicators_sec] <- paste(y_lab[indicators %in% indicators_sec], ", rha", sep="")
     y_lab[!(indicators %in% indicators_sec)] <- paste(y_lab[!(indicators %in% indicators_sec)], ", lha", sep="")
   }
   
-  data_temp <- data$extdata %>% select(any_of(c("country", "country_id", "year", "quarter", "month", "time", indicators))) 
+  data_temp <- data$extdata |> select(any_of(c("country", "country_id", "year", "quarter", "month", "time", indicators))) 
   data_all <- reshape2::melt(data_temp, id.vars=names(data_temp)[1:(dim(data_temp)[2]-length(indicators))],
                              variable.name="variable", value.name="value")
-  data_all <- data_all %>% filter(variable %in% indicators, time==time_fix, !is.na(value)) %>%
+  data_all <- data_all |> filter(variable %in% indicators, time==time_fix, !is.na(value)) |>
     mutate(highlight2 = as.factor(ifelse(country_id==country_iso2c,1,0))) 
   
-  if (length(indicators)==1) {data_all <- data_all %>% mutate(highlight = as.factor(case_when(country_id %in% peers_iso2c ~ 1,
+  if (length(indicators)==1) {data_all <- data_all |> mutate(highlight = as.factor(case_when(country_id %in% peers_iso2c ~ 1,
                                                                                               country_id %in% country_iso2c ~ 2, TRUE ~ 0)) )}
-  if (is.na(sec_y_axis)==F) { data_all <- data_all %>% mutate(value = ifelse(variable %in% indicators_sec, value*coeff, value)) }
+  if (is.na(sec_y_axis)==F) { data_all <- data_all |> mutate(value = ifelse(variable %in% indicators_sec, value*coeff, value)) }
   
-  if (all==1) {} else {data_all <- data_all %>% filter(country_id %in% c(peers_iso2c, country_iso2c)) }
+  if (all==1) {} else {data_all <- data_all |> filter(country_id %in% c(peers_iso2c, country_iso2c)) }
   
-  ordering_table <- data_all %>% filter(variable == indicators[1]) %>% select(country_id, value) %>% arrange(desc(value)) %>% 
-    mutate(ordering = row_number()) %>% select(country_id, ordering)
-  data_all <- data_all %>% left_join(ordering_table, by="country_id") %>% arrange(desc(variable), ordering)
-  data_all <- data_all %>% mutate(variable = factor(variable, levels = indicators))
+  ordering_table <- data_all |> filter(variable == indicators[1]) |> select(country_id, value) |> arrange(desc(value)) |> 
+    mutate(ordering = row_number()) |> select(country_id, ordering)
+  data_all <- data_all |> left_join(ordering_table, by="country_id") |> arrange(desc(variable), ordering)
+  data_all <- data_all |> mutate(variable = factor(variable, levels = indicators))
   
   if (length(indicators)==1) {theplot <- ggplot(data_all, aes(reorder(country_id, -value), value, fill = highlight)) } else 
   {theplot <- ggplot(data_all, aes(reorder(country_id, ordering), value, fill = variable)) }
@@ -456,11 +456,11 @@ barYearComparison <- function(data, graph_params, country_iso2c, peers_iso2c, ve
   if (verbose == T) {print(graph_name)}
   
   data_all <- reshape2::melt(data$extdata, id.vars=c("country", "country_id", "year"), variable.name="variable", value.name="value")
-  data_all <- data_all %>% filter(variable %in% indicators, year %in% time_fix, country_id == country_iso2c, !is.na(value)) %>% 
+  data_all <- data_all |> filter(variable %in% indicators, year %in% time_fix, country_id == country_iso2c, !is.na(value)) |> 
     arrange(desc(variable), desc(value))
   #x_lab <- unname(unlist(dict[dict$indicator_code %in% indicators & dict$source_frequency==data_frequency,1]))
-  dict_temp <- data$dict %>% filter(indicator_code %in% indicators, source_frequency == data_frequency) %>% 
-    arrange(factor(indicator_code, levels = indicators)) %>% select(indicator)
+  dict_temp <- data$dict |> filter(indicator_code %in% indicators, source_frequency == data_frequency) |> 
+    arrange(factor(indicator_code, levels = indicators)) |> select(indicator)
   x_lab <- unname(unlist(dict_temp))
   x_lab <- str_wrap(x_lab, width = 15)
   
@@ -487,15 +487,15 @@ barDynamic <- function(data, graph_params, country_iso2c, peers_iso2c, verbose=T
   for (j in seq_along(graph_params)) { eval(parse(text = paste0(names(graph_params)[j], " <- graph_params$", names(graph_params)[j]) )) }
   if (verbose == T) {print(graph_name)}
   
-  data_temp <- data$extdata %>% select(any_of(c("country", "country_id", "year", "quarter", "month", "time", indicators)))
+  data_temp <- data$extdata |> select(any_of(c("country", "country_id", "year", "quarter", "month", "time", indicators)))
   data_all <- reshape2::melt(data_temp, id.vars=names(data_temp)[1:(dim(data_temp)[2]-length(indicators))],
                              variable.name="variable", value.name="value")
-  data_all <- data_all %>% filter(variable %in% indicators, time >= time_start, time <= time_end, country_id == country_iso2c, !is.na(value)) 
-  if (is.na(sec_y_axis)==F) { data_all <- data_all %>% mutate(value = ifelse(variable %in% indicators_sec, value*coeff, value)) }
-  if (graph_type=="structure_dynamic") {data_total <- data_all %>% group_by(time) %>% summarize(total=sum(value)) %>% ungroup()}
+  data_all <- data_all |> filter(variable %in% indicators, time >= time_start, time <= time_end, country_id == country_iso2c, !is.na(value)) 
+  if (is.na(sec_y_axis)==F) { data_all <- data_all |> mutate(value = ifelse(variable %in% indicators_sec, value*coeff, value)) }
+  if (graph_type=="structure_dynamic") {data_total <- data_all |> group_by(time) |> summarize(total=sum(value)) |> ungroup()}
   
-  dict_temp <- data$dict %>% filter(indicator_code %in% indicators, source_frequency == data_frequency) %>% 
-    arrange(factor(indicator_code, levels = indicators)) %>% select(indicator)
+  dict_temp <- data$dict |> filter(indicator_code %in% indicators, source_frequency == data_frequency) |> 
+    arrange(factor(indicator_code, levels = indicators)) |> select(indicator)
   y_lab <- unname(unlist(dict_temp))
   if (is.na(sec_y_axis)==F) {
     y_lab[indicators %in% indicators_sec] <- paste(y_lab[indicators %in% indicators_sec], ", rha", sep="")
@@ -545,20 +545,20 @@ linesIndicatorComparison <- function(data, graph_params, country_iso2c, peers_is
   for (j in seq_along(graph_params)) { eval(parse(text = paste0(names(graph_params)[j], " <- graph_params$", names(graph_params)[j]) )) }
   if (verbose == T) {print(graph_name)}
   
-  dict_temp <- data$dict %>% filter(indicator_code %in% indicators, source_frequency == data_frequency) %>% 
-    arrange(factor(indicator_code, levels = indicators)) %>% select(indicator)
+  dict_temp <- data$dict |> filter(indicator_code %in% indicators, source_frequency == data_frequency) |> 
+    arrange(factor(indicator_code, levels = indicators)) |> select(indicator)
   y_lab <- unname(unlist(dict_temp))
   if (is.na(sec_y_axis)==F) {
     y_lab[indicators %in% indicators_sec] <- paste(y_lab[indicators %in% indicators_sec], ", rha", sep="")
     y_lab[!(indicators %in% indicators_sec)] <- paste(y_lab[!(indicators %in% indicators_sec)], ", lha", sep="")
   }
   
-  data_temp <- data$extdata %>% select(any_of(c("country", "country_id", "year", "quarter", "month", "time", indicators)))
+  data_temp <- data$extdata |> select(any_of(c("country", "country_id", "year", "quarter", "month", "time", indicators)))
   data_all <- reshape2::melt(data_temp, id.vars=names(data_temp)[1:(dim(data_temp)[2]-length(indicators))],
                              variable.name="variable", value.name="value")
-  data_all <- data_all %>% filter(variable %in% indicators, time >= time_start, time <= time_end, country_id == country_iso2c, !is.na(value)) 
-  data_all <- data_all %>% left_join(data$dict, by=c("variable"="indicator_code")) %>% filter(source_frequency == data_frequency)
-  if (is.na(sec_y_axis)==F) { data_all <- data_all %>% mutate(value = ifelse(variable %in% indicators_sec, value*coeff, value)) }
+  data_all <- data_all |> filter(variable %in% indicators, time >= time_start, time <= time_end, country_id == country_iso2c, !is.na(value)) 
+  data_all <- data_all |> left_join(data$dict, by=c("variable"="indicator_code")) |> filter(source_frequency == data_frequency)
+  if (is.na(sec_y_axis)==F) { data_all <- data_all |> mutate(value = ifelse(variable %in% indicators_sec, value*coeff, value)) }
   
   theplot <- ggplot(data_all, aes(time, value)) + geom_line(aes(group=variable, color=variable), alpha=1, size=2)
   if (is.na(sec_y_axis)==T) {theplot <- theplot + scale_y_continuous(limits=c(y_min, y_max))} else {
@@ -593,14 +593,14 @@ linesCountryComparison <- function(data, graph_params, country_iso2c, peers_iso2
   y_ind <- x_ind
   y_lab <- x_lab
   
-  data_temp <- data$extdata %>% select(any_of(c("country", "country_id", "year", "quarter", "month", "time", indicators)))
+  data_temp <- data$extdata |> select(any_of(c("country", "country_id", "year", "quarter", "month", "time", indicators)))
   data_all <- reshape2::melt(data_temp, id.vars=names(data_temp)[1:(dim(data_temp)[2]-length(indicators))],
                              variable.name="variable", value.name="value")
-  data_all <- data_all %>% filter(variable %in% indicators, time >= time_start, time <= time_end)
-  if (!(is.na(index)|index==0)) { data_all <- data_all %>% group_by(variable, country_id) %>% mutate(value = value/first(value)) %>% ungroup() }
+  data_all <- data_all |> filter(variable %in% indicators, time >= time_start, time <= time_end)
+  if (!(is.na(index)|index==0)) { data_all <- data_all |> group_by(variable, country_id) |> mutate(value = value/first(value)) |> ungroup() }
   
-  if (peers != 0) {data_peers <- data_all %>% filter(country_id %in% peers_iso2c)}
-  data_country <- data_all %>% filter(country_id %in% country_iso2c)
+  if (peers != 0) {data_peers <- data_all |> filter(country_id %in% peers_iso2c)}
+  data_country <- data_all |> filter(country_id %in% country_iso2c)
   
   theplot <- ggplot(data_all, aes(time, value))
   
@@ -639,15 +639,15 @@ distributionDynamic <- function(data, graph_params, country_iso2c, peers_iso2c, 
   y_ind <- x_ind
   y_lab <- x_lab
   
-  data_temp <- data$extdata %>% select(any_of(c("country", "country_id", "year", "quarter", "month", "time", indicators)))
+  data_temp <- data$extdata |> select(any_of(c("country", "country_id", "year", "quarter", "month", "time", indicators)))
   data_all <- reshape2::melt(data_temp, id.vars=names(data_temp)[1:(dim(data_temp)[2]-length(indicators))],
                              variable.name="variable", value.name="value")
-  data_all <- data_all %>% filter(variable %in% indicators, time >= time_start, time <= time_end, !is.na(value)) %>%
+  data_all <- data_all |> filter(variable %in% indicators, time >= time_start, time <= time_end, !is.na(value)) |>
     select(-c(variable))
-  data_quant <- data_all %>% calc_quantiles(intervals=(1:19)/20, x_var="time", y_var="value", rename=F) %>%
+  data_quant <- data_all |> calc_quantiles(intervals=(1:19)/20, x_var="time", y_var="value", rename=F) |>
     arrange(time, desc(quantile))
-  data_country <- data_all %>% filter(country_id == country_iso2c) %>% select(time, value)
-  data_quant <- data_quant %>% left_join(data_country, by=c("time"="time"), suffix=c("","_c"))
+  data_country <- data_all |> filter(country_id == country_iso2c) |> select(time, value)
+  data_quant <- data_quant |> left_join(data_country, by=c("time"="time"), suffix=c("","_c"))
   
   theplot <- ggplot(data=data_quant, aes(time, value, quantile=quantile)) + geom_fan(intervals=c(seq(10,90, by=10))/100)
   theplot <- theplot + coord_cartesian(ylim=c(y_min, y_max))+scale_fill_gradient(low=ACRA['medianish'], high=ACRA['green']) +

@@ -13,7 +13,7 @@ imfTool <- function(code, database, freq, start, end) {
     } else {
     df <- sapply(obs, as.data.table, simplify = T) }
   
-  if (database =="PCPS") {a <- data.frame(df) %>% mutate(iso2c = "1W", X.OBS_VALUE = as.numeric(X.OBS_VALUE))} else {
+  if (database =="PCPS") {a <- data.frame(df) |> mutate(iso2c = "1W", X.OBS_VALUE = as.numeric(X.OBS_VALUE))} else {
   
     a <- NULL
     for (i in 1:length(df)) {
@@ -22,8 +22,8 @@ imfTool <- function(code, database, freq, start, end) {
       #print(dim(df[[i]]))
       #dim(df[[i]])[1] != 0
       if ( is.null(dim(df[[i]])) | !{"X.OBS_VALUE" %in% names(data.frame(df[[i]]))} ) {} else {
-        a <- data.frame(df[[i]]) %>% select(any_of(c("X.TIME_PERIOD", "X.OBS_VALUE"))) %>% 
-            mutate(country_id = countries[i], X.OBS_VALUE = as.numeric(X.OBS_VALUE)) %>% rbind(a) 
+        a <- data.frame(df[[i]]) |> select(any_of(c("X.TIME_PERIOD", "X.OBS_VALUE"))) |> 
+            mutate(country_id = countries[i], X.OBS_VALUE = as.numeric(X.OBS_VALUE)) |> rbind(a) 
       }
     }
   }

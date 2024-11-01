@@ -14,8 +14,16 @@ FiscalMonitor привязать к dropbox?
 расширить контейнер до 2035?
 
 Данные:
+история целей по инфляции: https://cbr.ru/StaticHtml/File/146496/research_policy_notes_b_1_3.pdf
+по финсектору из презы atlantic council по Китаю
+разложение роста на труд и производительность труда: https://www.conference-board.org/data/economydatabase/total-economy-database-productivity (с VPN)
+https://www.conference-board.org/retrievefile.cfm?filename=TED_SummaryTables_Charts_may20241.pdf&type=subsite
+производство и переработка минералов: https://ourworldindata.org/metals-minerals
+https://www.sciencebase.gov/catalog/item/65a6e45fd34e5af967a46749
+https://www.bgs.ac.uk/mineralsuk/statistics/world-mineral-statistics/
 все показатели с XDC выгрузить еще и USD и EUR и склеить, потому что кажется, что это reporting currency именно и они ее в базе сами не ковертят
 Медианный и средний доход из Люксембургской базы: https://ourworldindata.org/grapher/median-and-mean-income-after-tax-lis?tab=table&country=~BEL
+https://ourworldindata.org/explorers/incomes-across-distribution-lis?country=RUS~CHL&Indicator=Decile+thresholds&Decile=All+deciles&Income+measure=After+tax&Period=Year&Adjust+for+cost+sharing+within+households+%28equivalized+income%29=false
 Добавить долю в резервах: https://data.imf.org/regular.aspx?key=41175
 Доштудировать IMF базы: структура госдолга
 Структура госдолга на базе ECB data warehouse (остальное будет из local). Есть ли шансы для SR, FC и флоатеров в госдолге кроме локальных?
@@ -31,9 +39,10 @@ FiscalMonitor привязать к dropbox?
 Добавить NIIP и структуру внешних активов/пассивов: https://www.brookings.edu/articles/the-external-wealth-of-nations-database/
 Debt securities statistics из BIS, по крайнй мере, C1 и C3 IDS?
 Убедиться, что нужно грузить из BIS только broad индекс NEER, что narrow не увеличивает покрытие
+Валютная структура резервов: https://web.pdx.edu/~ito/IM_dataset.htm
+И еще одна: https://cepr.org/voxeu/columns/currency-denomination-foreign-exchange-reserves-taboo-past-towards-disclosure-and
 
 3) fill:
-
 Функции:
 как usegrowth, чтобы склеивать через индексы и делать прогноз уровней по прогнозу приростов
 придумать визуализацию/представление схемы расчетов? как в eviews зависимости up и down

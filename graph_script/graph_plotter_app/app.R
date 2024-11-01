@@ -44,13 +44,13 @@ graph_types <- c("scatter_dynamic", "scatter_country_comparison", "structure_dyn
                  "structure_country_comparison_norm", "bar_dynamic", "bar_country_comparison", "bar_country_comparison_norm", 
                  "bar_year_comparison", "lines_country_comparison", "lines_indicator_comparison", "distribution_dynamic")
 
-countries_peers <- as.list(D$extdata_y$country_id %>% unique())
-countries <- D$extdata_y$country %>% unique()
+countries_peers <- as.list(D$extdata_y$country_id |> unique())
+countries <- D$extdata_y$country |> unique()
 names(countries_peers) <- countries
 
-indicators_all <- D$dict %>% select(indicator, indicator_code, source_frequency)
-indicators_start <- as.list(indicators_all %>% pull(indicator_code))
-names(indicators_start) <- indicators_all %>% pull(indicator)
+indicators_all <- D$dict |> select(indicator, indicator_code, source_frequency)
+indicators_start <- as.list(indicators_all |> pull(indicator_code))
+names(indicators_start) <- indicators_all |> pull(indicator)
 indicator_groups <- c("", "GDP growth decomposition", "World shares", "BOP (Y)", "BOP (Q)",
                       "Trade balance (Y)","Trade balance (Q)", "IIP assets (Y)", "IIP liabilities (Y)",
                       "Exchange rates",
@@ -312,7 +312,7 @@ server <- function(input, output, session) {
                             show_title = 1*input$show_title,
                             active = 1,
                             source_name = sources()
-                            ) %>% mutate(across(everything(), ~replace(., . ==  "" , NA)))
+                            ) |> mutate(across(everything(), ~replace(., . ==  "" , NA)))
                       })
   
   ## Constructing peers string from inputs
@@ -355,9 +355,9 @@ server <- function(input, output, session) {
   observeEvent( input$indicators,
                 {   
                   if (all(input$indicators != " ")) {
-                    indicators_selected_temp <- indicators_all %>% filter(indicator_code %in% input$indicators) 
-                    indicators_selected <- indicators_selected_temp %>% pull(indicator_code) %>% as.list
-                    names(indicators_selected) <- indicators_selected_temp %>% pull(indicator)
+                    indicators_selected_temp <- indicators_all |> filter(indicator_code %in% input$indicators) 
+                    indicators_selected <- indicators_selected_temp |> pull(indicator_code) |> as.list()
+                    names(indicators_selected) <- indicators_selected_temp |> pull(indicator)
                     updateSelectizeInput(session, "sec_y_axis_ind", label = "2nd Y-axis", 
                                          choices = indicators_selected, selected = sec_y_axis_chosen)   # корень проблемы затирания
                   }
@@ -372,11 +372,11 @@ server <- function(input, output, session) {
                 {   
                   
                   if (input$data_frequency != " ") {
-                    indicators_temp <- indicators_all %>% filter(source_frequency == input$data_frequency)} else {
+                    indicators_temp <- indicators_all |> filter(source_frequency == input$data_frequency)} else {
                       indicators_temp <-indicators_all}
                   
-                  indicators_variants <- as.list( indicators_temp %>% pull(indicator_code) )
-                  names(indicators_variants) <- indicators_temp %>% pull(indicator)
+                  indicators_variants <- as.list( indicators_temp |> pull(indicator_code) )
+                  names(indicators_variants) <- indicators_temp |> pull(indicator)
                   
                   if (input$ind_group != "") {
                     
@@ -554,13 +554,13 @@ server <- function(input, output, session) {
         country_info <- getPeersCodes(country_name = input$country_choice, peers_fname = peers_fname)
     
         ##### Check integrity of the plans
-        graphplan_aug <- graphplan() %>% filter(active == 1) %>%
-          checkGraphTypes(graph_types = graph_types) %>% 
-          checkUnique %>%
-          checkPeers(peer_groups = country_info$regions) %>% # после того как напишу check проверить
-          checkAvailability(dict = D$dict) %>%
+        graphplan_aug <- graphplan() |> filter(active == 1) |>
+          checkGraphTypes(graph_types = graph_types) |> 
+          checkUnique() |>
+          checkPeers(peer_groups = country_info$regions) |> # после того как напишу check проверить
+          checkAvailability(dict = D$dict) |>
           mutate(checks = check_types*check_unique*check_peers*check_availability)
-        error_report <- graphplan_aug %>% filter(checks == 0)
+        error_report <- graphplan_aug |> filter(checks == 0)
       
         
         if (is.null(dim(error_report)[1]) | is.na(dim(error_report)[1]) | (dim(error_report)[1] == 0)) {
@@ -592,7 +592,7 @@ server <- function(input, output, session) {
             
             ###Print graph plan
             updateTextInput(session, inputId = "graph_plan", 
-                      value = capture.output(write.table(graphplan() %>% 
+                      value = capture.output(write.table(graphplan() |> 
                                   select(-c(source_name)), row.names = F, col.names = F , quote = F, sep = "\t", na="")) )
           
         } else {print("Errors found"); print(error_report)}
@@ -650,7 +650,7 @@ server <- function(input, output, session) {
   
   observeEvent(input$copyPlan, {
     
-    plan_to_copy <- graphplan() %>% select(-c(source_name))
+    plan_to_copy <- graphplan() |> select(-c(source_name))
     names(plan_to_copy) <- NULL
     
     if (!is.null(plan_to_copy)) {

@@ -7,9 +7,10 @@ here::i_am("_country_analysis_scripts/download_script/download.R")
 datafolder <- "_extsources"
 
 ### Download WGIs
-url <- "https://www.worldbank.org/content/dam/sites/govindicators/doc/wgidataset.xlsx"
-dest <- here("_DB", datafolder, "wgidataset.xlsx")
+url <- "https://www.worldbank.org/content/dam/sites/govindicators/doc/wgidataset_excel.zip"
+dest <- here("_DB", datafolder, "wgidataset_excel.zip")
 download.file(url, dest, mode="wb")
+unzip(zipfile = dest, exdir = here("_DB", datafolder))
 
 ### Download BIS daily and monthly data on nominal exchange rates
 #url <- "https://www.bis.org/statistics/full_xru_d_csv_row.zip"

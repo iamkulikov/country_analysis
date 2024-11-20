@@ -204,36 +204,28 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
     ##### Import WGI
     try({
       
-      wgi_impplan <- impplan |> filter(active==1, database_name=="WGI", retrieve_type=="file", source_frequency=="y")
+      wgi_impplan <- impplan |> filter(active==1, database_name=="WGI", retrieve_type=="file", source_frequency=="y") |>
+        mutate(wgi_type = unlist(strsplit(retrieve_code, "/"))[c(T,F)],  wgi_var = unlist(strsplit(retrieve_code, "/"))[c(F,T)])
       wgi_names <- wgi_impplan$indicator_code
       wgi_fname <- here("_DB", "_extsources", wgi_impplan$file_name[1])
       wgi_sheets <- wgi_impplan$sheet_name
-      wgi_type <- wgi_impplan$retrieve_code
-      wgi_data <- NULL
+      wgi_type <- wgi_impplan$wgi_type
+      wgi_var <- wgi_impplan$wgi_var
       
-      if (length(wgi_names)>0 & all(!is.na(wdiy_names))) {
-          
+      if (length(wgi_names)>0 & all(!is.na(wgi_names))) {
+         
+        wgi_data_full <- read_excel(wgi_fname[1], sheet = wgi_sheets[1], col_names = T, na = "..", skip=0)
+         
         print("WGI")
         for (i in seq_along(wgi_names)) {
             
-            suppressMessages({
-            wgi_data <- read_excel(wgi_fname, sheet = wgi_sheets[i], col_names = F, na = "#N/A", skip=15)
-            wgi_header <- read_excel(wgi_fname, sheet = wgi_sheets[i], col_names = F, na = "#N/A", skip=13, n_max=2)
-            })
-            wgi_data <- wgi_data[ , wgi_header[2,] %in% c("Country/Territory","Code",wgi_type[i])]
-            names(wgi_data) <- c("country","country_id", wgi_header[1, as.vector(wgi_header[2,] == wgi_type[i]) ])
-            
-            wgi_data |> select(starts_with(c("country","1","2"))) |>
-              mutate(country_id = countrycode(country_id, origin = 'iso3c', destination = 'iso2c', 
-                                        custom_match = c('ROM' = 'RO','ADO' = 'AD','ANT' = 'AN',
-                                        'KSV' = 'XK','TMP' = 'TL','WBG' = 'PS','ZAR' = 'CD'), warn = F)) |>
-              select(-c("country")) -> wgi_data
-            
-            reshape2::melt(wgi_data, id.vars = "country_id", variable.name = "year", value.name = wgi_names[i]) |> 
-              mutate(year =  as.numeric(as.character(year))) -> wgi_data
-            
-            extdata_y |> left_join(wgi_data, by = c("country_id" = "country_id", "year"="year"), 
-                                    suffix = c("", "_wgi")) -> extdata_y
+            wgi_data_full |> select(code, year, indicator, !!sym(wgi_type[i])) |> filter(indicator == wgi_var[i]) |>
+              mutate(country_id = countrycode(code, origin = 'iso3c', destination = 'iso2c',
+                                            custom_match = c('ROM' = 'RO','ADO' = 'AD','ANT' = 'AN',
+                                                             'KSV' = 'XK','TMP' = 'TL','WBG' = 'PS','ZAR' = 'CD'), warn = F)) |>
+              rename(!!sym(wgi_names[i]) := !!sym(wgi_type[i])) |> select(-c("code", "indicator")) -> wgi_data
+          
+            extdata_y |> left_join(wgi_data, by = c("country_id" = "country_id", "year"="year"), suffix = c("", "_wgi")) -> extdata_y
             print("+")
             
           }

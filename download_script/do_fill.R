@@ -4,7 +4,7 @@ library(here)
 ##### Choose filling model
 
 ##### Where is the filling schedule saved? What are the data files?
-here::i_am("_country_analysis_scripts/download_script/do_fill.R")
+here::i_am("download_script/do_fill.R")
 test <- 0
 
 countries <- c("Armenia", "Belarus", "Brazil", "Bulgaria", "Greece", "China", "India", "Kazakhstan", "Kyrgyz Republic", "Romania",
@@ -21,13 +21,13 @@ data_d_fname <- "Imported_d_DB.xlsx"; filled_fname <- "Filled_DB.xlsx"; filled_d
   filled_fname <- "Temp_filled.xlsx"; filled_d_fname <- "Temp_filled_d.xlsx"}
 
 ##### Import function definitions
-source(here("_country_analysis_scripts","download_script","import.R"))
-source(here("_country_analysis_scripts","download_script","fill.R"))
+source(here("download_script","import.R"))
+source(here("download_script","fill.R"))
 
 ##### Import parameters and schedules
-imp_params <- readImportParams(param_fname = here("_DB", param_fname), update_mode = 0)
+imp_params <- readImportParams(param_fname = here("assets", "_DB", param_fname), update_mode = 0)
 for(i in seq_along(imp_params)) { assign(names(imp_params)[i], imp_params[[i]]) }
-fillplan <- readFillParams(param_fname = here("_DB", param_fname))
+fillplan <- readFillParams(param_fname = here("assets", "_DB", param_fname))
 
 ##### Check integrity of the plans
 fillplan <- checkNames(fillplan = fillplan, formula_words = formula_words)
@@ -41,7 +41,7 @@ if (is.null(dim(error_report)[1]) | is.na(dim(error_report)[1]) | (dim(error_rep
       print("Checks passed")
       
       ##### The filling sequence
-      D <- importOldData(data_fname = here("_DB", data_fname), data_d_fname = here("_DB", data_d_fname))
+      D <- importOldData(data_fname = here("assets", "_DB", data_fname), data_d_fname = here("assets", "_DB", data_d_fname))
       data_dim <- captureDimensions(extdata_y = D$extdata_y, extdata_q = D$extdata_q, extdata_m = D$extdata_m, extdata_d = D$extdata_d)
       print("Filling started")
       D <- createDateColumns(extdata_y = D$extdata_y, extdata_q = D$extdata_q, extdata_m = D$extdata_m, extdata_d = D$extdata_d)
@@ -59,9 +59,9 @@ if (is.null(dim(error_report)[1]) | is.na(dim(error_report)[1]) | (dim(error_rep
       ### All countries
       saveplan <- generateSaveplan(impplan = impplan, fillplan = fillplan)
       FD <- preExport(saveplan = saveplan, extdata_y = FD$extdata_y, extdata_q = FD$extdata_q, extdata_m = FD$extdata_m, extdata_d = FD$extdata_d)
-      writeDatafiles(data_fname = here("_DB", filled_fname), data_d_fname = here("_DB", filled_d_fname), extdata_y = FD$extdata_y, extdata_q = FD$extdata_q, extdata_m = FD$extdata_m, extdata_d = FD$extdata_d, dict = FD$dict, dict_d = FD$dict_d)
-      writeDatafilesCsv(datalist = FD, path = here("_country_analysis_scripts", "download_script", "country_data_download_app"))
-      writeDatafilesCsv(datalist = FD, path = here("_country_analysis_scripts", "graph_script", "graph_plotter_app"))
+      writeDatafiles(data_fname = here("assets", "_DB", filled_fname), data_d_fname = here("assets", "_DB", filled_d_fname), extdata_y = FD$extdata_y, extdata_q = FD$extdata_q, extdata_m = FD$extdata_m, extdata_d = FD$extdata_d, dict = FD$dict, dict_d = FD$dict_d)
+      writeDatafilesCsv(datalist = FD, path = here("download_script", "country_data_download_app"))
+      writeDatafilesCsv(datalist = FD, path = here("graph_script", "graph_plotter_app"))
       
       ### Single countries
       writeCountryFile(countries = countries, datalist = FD)

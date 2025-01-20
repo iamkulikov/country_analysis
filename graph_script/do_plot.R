@@ -2,17 +2,17 @@
 library(here)
 
 ##### Where is the plotting schedule saved? What are the data files?
-here::i_am("_country_analysis_scripts/graph_script/do_plot.R")
+here::i_am("graph_script/do_plot.R")
 
 ##### Parameters and source names
 country_name <- "Brazil"
 file_output <- "jpeg"
 horizontal_size <- c(1800, 900)
 vertical_size <- c(850, 850)
-data_fname <- here("_DB", "Filled_DB.xlsx")
-data_d_fname <- here("_DB", "Filled_d_DB.xlsx")
-peers_fname <- here("_DB", "1_peers_params.xlsx")
-plotparam_fname <- here(country_name, "Auto_report", "2_graphlib.xlsx")
+data_fname <- here("assets", "_DB", "Filled_DB.xlsx")
+data_d_fname <- here("assets", "_DB", "Filled_d_DB.xlsx")
+peers_fname <- here("assets", "_DB", "1_peers_params.xlsx")
+plotparam_fname <- here("assets", country_name, "Auto_report", "2_graphlib.xlsx")
 graphplan_columns <- c("graph_name", "graph_title", "graph_type", "graph_group", "data_frequency", "indicators", "time_fix", "peers", "all", "x_log",
                        "y_log", "x_min", "x_max", "y_min", "y_max", "trend_type", "index", "recession", "sec_y_axis", "swap_axis", "long_legend", "vert_lab",
                        "short_names", "theme", "orientation", "show_title", "active")
@@ -28,9 +28,9 @@ theme_types <- c("ipsum", "ACRA", "economist", "minimal")
 verbose <- T
 
 ##### Import function definitions
-source(here("_country_analysis_scripts","download_script","import.R"))
-source(here("_country_analysis_scripts","download_script","fill.R"))
-source(here("_country_analysis_scripts","graph_script","plot.R"))
+source(here("download_script","import.R"))
+source(here("download_script","fill.R"))
+source(here("graph_script","plot.R"))
 
 ###### Import data from the local database
 D <- importFilledData(data_fname = data_fname, data_d_fname = data_d_fname)
@@ -86,7 +86,7 @@ if (is.null(dim(error_report)[1]) | is.na(dim(error_report)[1]) | (dim(error_rep
       
       ### Saving graph file
       filename <- paste(graph_params$graph_name, file_output, sep=".")
-      ggsave(path = here(country_name, "Auto_report"), filename = filename,  plot = theplot$graph, device = file_output,
+      ggsave(path = here("assets", country_name, "Auto_report"), filename = filename,  plot = theplot$graph, device = file_output,
             width = graph_params$width, height = graph_params$height, units = "px", dpi = 150)
       #theplot
       

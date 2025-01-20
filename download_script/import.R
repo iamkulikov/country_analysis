@@ -2,15 +2,16 @@
 
 ##### Load libraries
 library_names <- c("dplyr","reshape2","WDI","countrycode","readxl","readr","tidyr","data.table","writexl","stringr",
-                   "gsubfn","jsonlite","Rilostat","glue","httr","rlist","here")
+                   "gsubfn","jsonlite","Rilostat","glue","httr","here")
+# ,"rlist"
 
 for (library_name in library_names) {
   library(library_name, character.only = TRUE)
 }
 
 ##### Import custom tools
-here::i_am("_country_analysis_scripts/download_script/import.R")
-source(here("_country_analysis_scripts","download_script","imf_tool.R"))
+here::i_am("download_script/import.R")
+source(here("download_script","imf_tool.R"))
 
 ##### Set parameters
 d_container_start <- "2019-01-01"
@@ -134,7 +135,7 @@ dropDataToUpdate <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d
 ##### Function to check if all the necessary files for import exist
 
 checkFileExistence <- function(impplan, extdata_folder) {
-  
+  print(extdata_folder)
   impplan_temp <- impplan |> filter(retrieve_type == "file") |> 
       mutate(check_exist = 1*file.exists(here(extdata_folder, file_name))) |>
       select(indicator_code, source_frequency, check_exist)
@@ -207,7 +208,7 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
       wgi_impplan <- impplan |> filter(active==1, database_name=="WGI", retrieve_type=="file", source_frequency=="y") |>
         mutate(wgi_type = unlist(strsplit(retrieve_code, "/"))[c(T,F)],  wgi_var = unlist(strsplit(retrieve_code, "/"))[c(F,T)])
       wgi_names <- wgi_impplan$indicator_code
-      wgi_fname <- here("_DB", "_extsources", wgi_impplan$file_name[1])
+      wgi_fname <- here("assets", "_DB", "_extsources", wgi_impplan$file_name[1])
       wgi_sheets <- wgi_impplan$sheet_name
       wgi_type <- wgi_impplan$wgi_type
       wgi_var <- wgi_impplan$wgi_var
@@ -239,7 +240,7 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
       
       unctad_impplan <- impplan |> filter(active==1, source_name=="UNCTAD", retrieve_type=="file", source_frequency=="y")
       unctad_names <- unctad_impplan$indicator_code
-      unctad_fname <- here("_DB", "_extsources", unctad_impplan$file_name[1])
+      unctad_fname <- here("assets", "_DB", "_extsources", unctad_impplan$file_name[1])
     
       if (length(unctad_names)>0 & all(!is.na(unctad_names))) {
         
@@ -371,7 +372,7 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
       
       ids_impplan <- impplan |> filter(active==1, database_name=="IDS", retrieve_type=="file", source_frequency=="y")
       ids_names <- ids_impplan$indicator_code
-      ids_fname <- here("_DB", "_extsources", ids_impplan$file_name[1])
+      ids_fname <- here("assets", "_DB", "_extsources", ids_impplan$file_name[1])
       ids_sheets <- unique(ids_impplan$sheet_name)
       ids_codes <- ids_impplan$retrieve_code
       
@@ -405,12 +406,12 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
       bis_impplan <- impplan |> filter(active==1, source_name=="BIS", retrieve_type=="file", 
                                         database_name %in% c("Policy rates (flat)", "US dollar exchange rates (flat)"))
       bis_names <- bis_impplan$indicator_code
-      bis_fname <- here("_DB", "_extsources", bis_impplan$file_name)
+      bis_fname <- here("assets", "_DB", "_extsources", bis_impplan$file_name)
       bis_freq <- toupper(bis_impplan$source_frequency)
       bis_codes <- bis_impplan$retrieve_code
 
       suppressMessages({
-        EZ_countries <- read_excel(here("_DB","1_peers_params.xlsx"), sheet = "groups", col_names = F, skip=2, n_max=11)[c(2,11),-c(1:3)]
+        EZ_countries <- read_excel(here("assets", "_DB","1_peers_params.xlsx"), sheet = "groups", col_names = F, skip=2, n_max=11)[c(2,11),-c(1:3)]
       })
       EZ_countries <- data.frame(t(EZ_countries)) |> filter(X1 == 1) |> select(X2) |> unlist()
       EZ_countries <- countrycode(EZ_countries, origin = 'iso3c', destination = 'iso2c', 
@@ -476,7 +477,7 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
       
       bis_impplan <- impplan |> filter(active==1, source_name=="BIS", retrieve_type=="file", database_name == "Effective exchange rate indices (monthly)")
       bis_names <- bis_impplan$indicator_code
-      bis_fname <- here("_DB", "_extsources", bis_impplan$file_name)
+      bis_fname <- here("assets", "_DB", "_extsources", bis_impplan$file_name)
       bis_freq <- toupper(bis_impplan$source_frequency)
       bis_codes <- bis_impplan$retrieve_code
       
@@ -511,7 +512,7 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
       
       fm_impplan <- impplan |> filter(active==1, database_name=="FM", retrieve_type=="file", source_frequency=="y")
       fm_names <- fm_impplan$indicator_code
-      fm_fname <- here("_DB", "_extsources", fm_impplan$file_name[1])
+      fm_fname <- here("assets", "_DB", "_extsources", fm_impplan$file_name[1])
       fm_sheets <- fm_impplan$sheet_name
       
       if (length(fm_names)>0 & all(!is.na(fm_names))) {
@@ -590,7 +591,7 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
       covid_impplan <- impplan |> filter(active==1, source_name=="Ourworldindata", retrieve_type=="file", database_name== "COVID tracker")
       covid_names <- covid_impplan$indicator_code
       covid_codes <- covid_impplan$retrieve_code
-      covid_fname <- here("_DB", "_extsources", covid_impplan$file_name[1])
+      covid_fname <- here("assets", "_DB", "_extsources", covid_impplan$file_name[1])
       
       if (length(covid_names)>0 & all(!is.na(covid_names))) {
         
@@ -618,7 +619,7 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
       unhdr_impplan <- impplan |> filter(active==1, source_name=="UN", retrieve_type=="file", database_name=="HDR")
       unhdr_names <- unhdr_impplan$indicator_code
       unhdr_codes <- unhdr_impplan$retrieve_code
-      unhdr_fname <- here("_DB", "_extsources", unhdr_impplan$file_name)
+      unhdr_fname <- here("assets", "_DB", "_extsources", unhdr_impplan$file_name)
       
       if (length(unhdr_names)>0 & all(!is.na(unhdr_names))) {
         
@@ -652,7 +653,7 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
       ci_impplan <- impplan |> filter(active==1, database_name=="Chinn-Ito", retrieve_type=="file", source_frequency=="y")
       ci_names <- ci_impplan$indicator_code
       ci_codes <- ci_impplan$retrieve_code
-      ci_fname <- here("_DB", "_extsources", ci_impplan$file_name[1])
+      ci_fname <- here("assets", "_DB", "_extsources", ci_impplan$file_name[1])
       ci_sheets <- ci_impplan$sheet_name
       
       if (length(ci_names)>0 & all(!is.na(ci_names))) {
@@ -686,7 +687,7 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
       weo_impplan <- impplan |> filter(active==1, database_name=="WEO", retrieve_type=="file", source_frequency=="y")
       weo_names <- weo_impplan$indicator_code
       weo_codes <- weo_impplan$retrieve_code
-      weo_fname <- here("_DB", "_extsources", weo_impplan$file_name[1])
+      weo_fname <- here("assets", "_DB", "_extsources", weo_impplan$file_name[1])
       weo_sheets <- weo_impplan$sheet_name
       
       if (length(weo_names)>0 & all(!is.na(weo_names))) {
@@ -727,7 +728,7 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
     weo_impplan <- impplan |> filter(active==1, database_name=="WEO_aggr", retrieve_type=="file", source_frequency=="y")
     weo_names <- weo_impplan$indicator_code
     weo_codes <- weo_impplan$retrieve_code
-    weo_fname <- here("_DB", "_extsources", weo_impplan$file_name[1])
+    weo_fname <- here("assets", "_DB", "_extsources", weo_impplan$file_name[1])
     weo_sheets <- weo_impplan$sheet_name
     
     if (length(weo_names)>0 & all(!is.na(weo_names))) {
@@ -765,7 +766,7 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
     pp_impplan <- impplan |> filter(active==1, database_name=="WPP_aggr", retrieve_type=="file", source_frequency=="y")
     pp_names <- pp_impplan$indicator_code
     pp_codes <- pp_impplan$retrieve_code
-    pp_fname <- here("_DB", "_extsources", pp_impplan$file_name[1])
+    pp_fname <- here("assets", "_DB", "_extsources", pp_impplan$file_name[1])
     
     if (length(pp_names)>0 & all(!is.na(pp_names))) {
       
@@ -800,7 +801,7 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
     pp_names <- pp_impplan$indicator_code
     pp_codes <- pp_impplan$retrieve_code
     pp_dict <- data.frame(pp_codes, pp_names)
-    pp_fname <- here("_DB", "_extsources", pp_impplan$file_name[1])
+    pp_fname <- here("assets", "_DB", "_extsources", pp_impplan$file_name[1])
     
     if (length(pp_names)>0 & all(!is.na(pp_names))) {
       
@@ -829,7 +830,7 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
     
     hres_impplan <- impplan |> filter(active==1, database_name=="BondsInReserves", retrieve_type=="file", source_frequency=="y")
     hres_names <- hres_impplan$indicator_code[1]
-    hres_fname <- here("_DB", "_extsources", hres_impplan$file_name[1])
+    hres_fname <- here("assets", "_DB", "_extsources", hres_impplan$file_name[1])
     hres_sheets <- hres_impplan$sheet_name[1]
     
     if (length(hres_names)>0 & all(!is.na(hres_names))) {
@@ -864,7 +865,7 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
     if (length(fsdb_names)>0 & all(!is.na(fsdb_names))) {
       
       print("FSDB")
-      fsdb_fname <- here("_DB", "_extsources", fsdb_impplan$file_name[1])
+      fsdb_fname <- here("assets", "_DB", "_extsources", fsdb_impplan$file_name[1])
       
       for(i in seq_along(fsdb_names)) {
       
@@ -898,7 +899,7 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
     if (length(imapp_names)>0 & all(!is.na(imapp_names))) {
       
       print("iMaPP")
-      imapp_fname <- here("_DB", "_extsources", imapp_impplan$file_name[1])
+      imapp_fname <- here("assets", "_DB", "_extsources", imapp_impplan$file_name[1])
       
       for(i in seq_along(imapp_sheets)) {
         
@@ -935,7 +936,7 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
       if (length(fsb_names)>0 & all(!is.na(fsb_names))) {
         
         print("FSB")
-        fsb_fname <- here("_DB", "_extsources", fsb_impplan$file_name[1])
+        fsb_fname <- here("assets", "_DB", "_extsources", fsb_impplan$file_name[1])
         old_codes <- fsb_impplan |> filter(sheet_name == fsb_sheet) |> pull(retrieve_code)
         new_codes <- fsb_impplan |> filter(sheet_name == fsb_sheet) |> pull(indicator_code)
         

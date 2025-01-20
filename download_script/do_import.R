@@ -9,7 +9,7 @@ formula_words <- c("lag", "lead", "rollsum", "rollavg", "rollvol", "mean", "last
                    "fromto", "year")
 
 ##### Where is import schedule saved? What are the data files?
-here::i_am("_country_analysis_scripts/download_script/do_import.R")
+here::i_am("download_script/do_import.R")
 
 if (test == 0) {param_fname <- "0_database_params.xlsx"; data_fname <- "Imported_DB.xlsx";
 data_d_fname <- "Imported_d_DB.xlsx"; filled_fname <- "Filled_DB.xlsx"; filled_d_fname <- "Filled_d_DB.xlsx"} else {
@@ -17,18 +17,18 @@ data_d_fname <- "Imported_d_DB.xlsx"; filled_fname <- "Filled_DB.xlsx"; filled_d
   filled_fname <- "Temp_filled.xlsx"; filled_d_fname <- "Temp_filled_d.xlsx"}
 
 ##### Import function definitions
-source(here("_country_analysis_scripts","download_script","import.R"))
-source(here("_country_analysis_scripts","download_script","fill.R"))
+source(here("download_script","import.R"))
+source(here("download_script","fill.R"))
 
 ##### Import parameters and schedules
-imp_params <- readImportParams(param_fname = here("_DB", param_fname), update_mode = update_mode)
+imp_params <- readImportParams(param_fname = here("assets", "_DB", param_fname), update_mode = update_mode)
 for(i in seq_along(imp_params)) { assign(names(imp_params)[i], imp_params[[i]]) }
-impplan_full <- readImportParams(param_fname = here("_DB", param_fname), update_mode = 0)$impplan
+impplan_full <- readImportParams(param_fname = here("assets", "_DB", param_fname), update_mode = 0)$impplan
   
 ##### Check integrity of the plans
 impplan_full <- checkNames(fillplan = impplan_full, formula_words = formula_words)
 impplan_full <- checkUnique(fillplan = impplan_full)
-impplan_full <- checkFileExistence(impplan = impplan_full, extdata_folder = here("_DB", "_extsources")) |> 
+impplan_full <- checkFileExistence(impplan = impplan_full, extdata_folder = here("assets", "_DB", "_extsources")) |> 
     mutate(checks = check_names*check_unique*check_exist)
 error_report <- impplan_full |> filter(checks == 0)
 
@@ -40,7 +40,7 @@ if (is.null(dim(error_report)[1]) | is.na(dim(error_report)[1]) | (dim(error_rep
     if (update_mode == 0) { 
         D <- generateDataContainers(from = year_first, to = year_final) 
     } else {
-        D <- importOldData(here("_DB", data_fname), here("_DB", data_d_fname))
+        D <- importOldData(here("assets", "_DB", data_fname), here("assets", "_DB", data_d_fname))
     }
     
     data_dim <- captureDimensions(extdata_y = D$extdata_y, extdata_q = D$extdata_q, extdata_m = D$extdata_m, extdata_d = D$extdata_d)
@@ -65,7 +65,7 @@ if (is.null(dim(error_report)[1]) | is.na(dim(error_report)[1]) | (dim(error_rep
     
     ##### Export data
     D <- preExport(saveplan = saveplan, extdata_y = D$extdata_y, extdata_q = D$extdata_q, extdata_m = D$extdata_m, extdata_d = D$extdata_d)
-    writeDatafiles(data_fname = here("_DB", data_fname), data_d_fname = here("_DB", data_d_fname), extdata_y = D$extdata_y, extdata_q = D$extdata_q, extdata_m = D$extdata_m, extdata_d = D$extdata_d, dict = D$dict, dict_d = D$dict_d)
+    writeDatafiles(data_fname = here("assets", "_DB", data_fname), data_d_fname = here("assets", "_DB", data_d_fname), extdata_y = D$extdata_y, extdata_q = D$extdata_q, extdata_m = D$extdata_m, extdata_d = D$extdata_d, dict = D$dict, dict_d = D$dict_d)
 
     
 }  else {print("Errors found"); print(error_report)}

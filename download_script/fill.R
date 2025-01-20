@@ -8,7 +8,7 @@ for (library_name in library_names) {
   library(library_name, character.only = TRUE)
 }
 
-here::i_am("_country_analysis_scripts/download_script/fill.R")
+here::i_am("download_script/fill.R")
 
 ##### Function to set filling schedule
 
@@ -288,7 +288,7 @@ writeCountryFile <- function(countries, datalist) {
         } 
         
         names(datalist_country) <- c("y", "q", "m", "d", "dict")
-        write_xlsx(datalist_country, path = here(countryname_export, "Data", glue("{countryname_export}_data_filled.xlsx")), 
+        write_xlsx(datalist_country, path = here("assets", countryname_export, "Data", glue("{countryname_export}_data_filled.xlsx")), 
                    col_names = T, format_headers = T)
         
       }
@@ -327,7 +327,7 @@ writeCountryModelFile <- function(countries, extdata_y, saveplan) {
     
     data_export <- list(data_export)
     names(data_export) <- c("y")
-    write_xlsx(data_export, path = here(countryname_export, "Data", glue("{countryname_export}_data_model.xlsx")), 
+    write_xlsx(data_export, path = here("assets", countryname_export, "Data", glue("{countryname_export}_data_model.xlsx")), 
                col_names = T, format_headers = T)
     
   }

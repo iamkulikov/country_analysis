@@ -130,3 +130,6 @@ url <- "https://www.fsb.org/wp-content/uploads/Monitoring-Dataset-2024.xlsx"
 dest <- here("assets", "_DB", datafolder, "NBFI_FSB.xlsx")
 download.file(url, dest, mode="wb")
 
+### Download Global Macro Data manually in csv format - GMD.csv !!!
+### https://www.globalmacrodata.com/data.html
+

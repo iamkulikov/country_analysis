@@ -15,6 +15,8 @@ FiscalMonitor привязать к dropbox?
 переписать все rename (и графики) с помощью !!sym и !!syms (и понять типы evaluation)
 
 Данные:
+грузануть разом: https://www.globalmacrodata.com/index.html
+разложение ВВП по секторам (и расходам тоже?): unstats.un.org/unsd/snaama/Downloads
 история целей по инфляции: https://cbr.ru/StaticHtml/File/146496/research_policy_notes_b_1_3.pdf
 по финсектору из презы atlantic council по Китаю
 разложение роста на труд и производительность труда: https://www.conference-board.org/data/economydatabase/total-economy-database-productivity (с VPN)
@@ -33,7 +35,7 @@ https://ourworldindata.org/explorers/incomes-across-distribution-lis?country=RUS
 Из комтрейда выцепить торговых партнеров
 Как брать CDS с cbonds? Где брать ставки по госбондам?
 Взять что-нибудь с WHO - expected healthy life? 
-Качать ли ARA IMF? https://www.imf.org/external/datamapper/Reserves_ARA@ARA/CHN/IND/BRA/RUS/ZAF
+Качать ли ARA IMF или рассчитывать на основе данных? https://www.imf.org/external/datamapper/Reserves_ARA@ARA/CHN/IND/BRA/RUS/ZAF
 Добавить дефолты (расчетные) и из базы BOC-BOE (или нашей?)
 Убрать со строки 410 зависимость от фиксированного количества групп пиров (сейчас 11) при определении состава Еврозоны
 Проверить, как получилось заполнение Еврозоны в месячных/дневных policy rate и курсах
@@ -64,6 +66,7 @@ Debt securities statistics из BIS, по крайнй мере, C1 и C3 IDS?
 сделать рейтинг блоков (как что? или просто на графиках?)
 добавить поле short_label для использования на графиках
 сделать правильный combine для extebt_fc_role и extdebt_sr_role
+модификаторы?
 
 4) augment:
 

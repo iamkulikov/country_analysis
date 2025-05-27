@@ -80,9 +80,9 @@ unzip(zipfile = dest, exdir = here("assets", "_DB", datafolder))
 ### Download fiscal space database and check that it is called Fiscal-space-data.xlsx
 ### https://www.worldbank.org/en/research/brief/fiscal-space
 
-### Download fresh IMF database on GG debt held in global reserves
+### Download fresh IMF database on GG debt held in global reserves. Find new place in IMF for this data!!!
 ### and insert it to the Reserves.xlsx file manually!!!
-### https://data.imf.org/regular.aspx?key=60587813
+### https://legacydata.imf.org/regular.aspx?key=60587813
 
 ### Download UN HDR data (links should be updated manually!!!!!)
 ### https://hdr.undp.org/data-center/documentation-and-downloads
@@ -124,7 +124,7 @@ unzip(zipfile = dest, exdir = here("assets", "_DB", datafolder))
 file.rename(from=here("assets", "_DB", datafolder, 'iMaPP_database-2024-12-2.xlsx'), to=here("assets", "_DB", datafolder, 'iMaPP_database.xlsx'))
 
 ### Download NBFI markey data from Financial Stability Board (link should be updated manually!!!!!)
-### https://www.fsb.org/2023/12/global-monitoring-report-on-non-bank-financial-intermediation-2023/
+### https://www.fsb.org/2024/12/global-monitoring-report-on-non-bank-financial-intermediation-2024/
 
 url <- "https://www.fsb.org/wp-content/uploads/Monitoring-Dataset-2024.xlsx"
 dest <- here("assets", "_DB", datafolder, "NBFI_FSB.xlsx")

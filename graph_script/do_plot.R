@@ -5,7 +5,7 @@ library(here)
 here::i_am("graph_script/do_plot.R")
 
 ##### Parameters and source names
-country_name <- "South Africa"
+country_name <- "Brazil"
 file_output <- "jpeg"
 horizontal_size <- c(1800, 900)
 vertical_size <- c(850, 850)

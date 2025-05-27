@@ -667,7 +667,7 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
           ci_data <- eval(parse(text = glue("ci_data |> select('IMF-World Bank Country Code', year,'{ci_codes[i]}')") ))
           ci_data <- eval(parse(text = glue("rename(ci_data,'country_id'='IMF-World Bank Country Code', 'value'='{ci_codes[i]}')") ))
           
-          ci_data <- ci_data |> mutate(country_id = countrycode(country_id, origin = 'imf', destination = 'iso2c'),
+          ci_data <- ci_data |> mutate(country_id = as.numeric(country_id), country_id = countrycode(country_id, origin = 'imf', destination = 'iso2c'),
                    year = as.numeric(year), value = as.numeric(value) ) |> select(country_id, year, value)
           
           ci_data <- eval(parse(text = glue("rename(ci_data,'{ci_names[i]}'='value')") ))
@@ -954,7 +954,38 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
       }  
     }
     
-  })   
+  })
+  
+  
+  ##### Import data from the Global Macro Data
+  
+  try({
+    
+    gmd_impplan <- impplan |> filter(active==1, database_name=="GMD", retrieve_type=="file", source_frequency=="y")
+    gmd_names <- gmd_impplan$indicator_code
+    
+    
+    if (length(gmd_names)>0 & all(!is.na(gmd_names))) {
+      
+      print("GMD")
+      gmd_fname <- here("assets", "_DB", "_extsources", gmd_impplan$file_name[1])
+        
+      old_codes <- gmd_impplan |> pull(retrieve_code)
+      new_codes <- gmd_impplan |> pull(indicator_code)
+      gmd_data <- read.csv(gmd_fname, header = TRUE, sep = ",", quote = "\"",
+                           dec = ".", fill = TRUE, comment.char = "", na.strings=c(0,"..","","NA")) |>
+        mutate(country_id = countrycode(ISO3, origin = 'iso3c', destination = 'iso2c', 
+                                 custom_match = c('ROM' = 'RO','ADO' = 'AD','ANT' = 'AN',
+                                                  'KSV' = 'XK','TMP' = 'TL','WBG' = 'PS','ZAR' = 'CD'), warn = F)) |>
+        rename_at(vars(old_codes), ~new_codes) |> select("country_id", "year", all_of(new_codes)) |>
+        mutate(year = as.numeric(year))
+        
+      extdata_y <- extdata_y |> left_join(gmd_data, by = c("country_id" = "country_id", "year"="year"), suffix=c("","_old"))
+      print("+")
+      
+    }
+    
+  })  
  
     ##### Return imported
     return(list(extdata_y = extdata_y, extdata_q = extdata_q, extdata_m = extdata_m, extdata_d = extdata_d))

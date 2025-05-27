@@ -13,6 +13,8 @@ FiscalMonitor привязать к dropbox?
 допеределать импорт курсов из BIS (а что не доделано?)
 расширить контейнер до 2036?
 переписать все rename (и графики) с помощью !!sym и !!syms (и понять типы evaluation)
+написать общие функции import_long, import_wide, которые сократят import? (тип исходника, формат файлов, первая строчка данных, 
+название столбца кодов, частота)
 
 Данные:
 грузануть разом: https://www.globalmacrodata.com/index.html
@@ -44,6 +46,7 @@ Debt securities statistics из BIS, по крайнй мере, C1 и C3 IDS?
 Убедиться, что нужно грузить из BIS только broad индекс NEER, что narrow не увеличивает покрытие
 Валютная структура резервов: https://web.pdx.edu/~ito/IM_dataset.htm
 И еще одна: https://cepr.org/voxeu/columns/currency-denomination-foreign-exchange-reserves-taboo-past-towards-disclosure-and
+Из BIS: DSR, credit gaps, credit to NFCs, что-то банковское
 
 3) fill:
 Функции:

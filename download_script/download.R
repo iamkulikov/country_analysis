@@ -133,3 +133,42 @@ download.file(url, dest, mode="wb")
 ### Download Global Macro Data manually in csv format - GMD.csv !!!
 ### https://www.globalmacrodata.com/data.html
 
+### Download "Total Economy Database - Output, Labor and Labor Productivity" DB manually 
+### in xlsx format and rename CB_GrowthFactors.xlsx !!!
+### https://data-central.conference-board.org/
+
+### Download "Total Economy Database - Growth Accounting and Total Factor Productivity" DB manually 
+### in xlsx format and rename CB_GrowthAccounting.xlsx !!!
+### https://data-central.conference-board.org/
+
+### Update cpi_target.xlsx in extsources manually!!! Source TO-FIND?
+
+### Update defaults_DB.xlsx in extsources manually!!! 
+
+### Download BoC–BoE Sovereign Default Database manually
+### Find new link somewhere here by analogy: https://www.bankofcanada.ca/2024/07/staff-analytical-note-2024-19/
+url <- "https://www.bankofcanada.ca/wp-content/uploads/2024/07/BoC-BoE-Database-2024.xlsx"
+dest <- here("assets", "_DB", datafolder, "BOC-BOE.xlsx")
+download.file(url, dest, mode="wb")
+
+### Download R&R "This time is different" sovereign default database
+### Use S&P_External sheet to fill explicit sheet in Default_DB manually (only starts of the periods). 
+### Copy parts of ExternalDefaultDummys to fill RR sheet in Default_DB
+url <- "https://carmenreinhart.com/wp-content/uploads/2020/04/165_data-3.xlsx"
+dest <- here("assets", "_DB", datafolder, "RR.xlsx")
+download.file(url, dest, mode="wb")
+
+### Download Global Crises Data
+url <- "https://www.hbs.edu/behavioral-finance-and-financial-stability/Documents/ChartData/MapCharts/20160923_global_crisis_data.xlsx"
+dest <- here("assets", "_DB", datafolder, "GCD.xlsx")
+download.file(url, dest, mode="wb")
+
+### Download Horn/Cruces/Trebesch hidden default database
+url <- "https://docs.google.com/spreadsheets/d/1Vp6PvRaAtv5Hh0OyJGGFbyj28PKAOrOx/export?format=xlsx"
+dest <- here("assets", "_DB", datafolder, "HCT_hidden.xlsx")
+download.file(url, dest, mode="wb", method = "libcurl")
+
+### Download Cruces/Trebesch sovereign haircut database
+url <- "https://docs.google.com/spreadsheets/d/1yUUMPAEF9uKbYV6bG3dLZ6dzDQnkJqcS/export?format=xlsx"
+dest <- here("assets", "_DB", datafolder, "CT_haircut.xlsx")
+download.file(url, dest, mode="wb", method = "libcurl")

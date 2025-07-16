@@ -11,22 +11,17 @@ FiscalMonitor привязать к dropbox?
 починить as_tibble в 102 строчке, видимо добавить .name_repair
 сделать нормальную склейку стран еврозоны для данных из BIS
 допеределать импорт курсов из BIS (а что не доделано?)
-расширить контейнер до 2036?
 переписать все rename (и графики) с помощью !!sym и !!syms (и понять типы evaluation)
 написать общие функции import_long, import_wide, которые сократят import? (тип исходника, формат файлов, первая строчка данных, 
 название столбца кодов, частота)
+поменять место do_import где используется checkFileExistence, чтобы можно было хранить модификаторы в корне
 
 Данные:
-грузануть разом: https://www.globalmacrodata.com/index.html
 разложение ВВП по секторам (и расходам тоже?): unstats.un.org/unsd/snaama/Downloads
-история целей по инфляции: https://cbr.ru/StaticHtml/File/146496/research_policy_notes_b_1_3.pdf
 по финсектору из презы atlantic council по Китаю
-разложение роста на труд и производительность труда: https://www.conference-board.org/data/economydatabase/total-economy-database-productivity (с VPN)
-https://www.conference-board.org/retrievefile.cfm?filename=TED_SummaryTables_Charts_may20241.pdf&type=subsite
 производство и переработка минералов: https://ourworldindata.org/metals-minerals
 https://www.sciencebase.gov/catalog/item/65a6e45fd34e5af967a46749
 https://www.bgs.ac.uk/mineralsuk/statistics/world-mineral-statistics/
-все показатели с XDC выгрузить еще и USD и EUR и склеить, потому что кажется, что это reporting currency именно и они ее в базе сами не ковертят
 Медианный и средний доход из Люксембургской базы: https://ourworldindata.org/grapher/median-and-mean-income-after-tax-lis?tab=table&country=~BEL
 https://ourworldindata.org/explorers/incomes-across-distribution-lis?country=RUS~CHL&Indicator=Decile+thresholds&Decile=All+deciles&Income+measure=After+tax&Period=Year&Adjust+for+cost+sharing+within+households+%28equivalized+income%29=false
 Добавить долю в резервах: https://data.imf.org/regular.aspx?key=41175
@@ -38,18 +33,25 @@ https://ourworldindata.org/explorers/incomes-across-distribution-lis?country=RUS
 Как брать CDS с cbonds? Где брать ставки по госбондам?
 Взять что-нибудь с WHO - expected healthy life? 
 Качать ли ARA IMF или рассчитывать на основе данных? https://www.imf.org/external/datamapper/Reserves_ARA@ARA/CHN/IND/BRA/RUS/ZAF
-Добавить дефолты (расчетные) и из базы BOC-BOE (или нашей?)
-Убрать со строки 410 зависимость от фиксированного количества групп пиров (сейчас 11) при определении состава Еврозоны
+Проверить широкие дефолты из базы BOC-BOE и добавить остальные
+Убрать со строки 414 зависимость от фиксированного количества групп пиров (сейчас 11) при определении состава Еврозоны
 Проверить, как получилось заполнение Еврозоны в месячных/дневных policy rate и курсах
 Добавить NIIP и структуру внешних активов/пассивов: https://www.brookings.edu/articles/the-external-wealth-of-nations-database/
-Debt securities statistics из BIS, по крайнй мере, C1 и C3 IDS?
 Убедиться, что нужно грузить из BIS только broad индекс NEER, что narrow не увеличивает покрытие
 Валютная структура резервов: https://web.pdx.edu/~ito/IM_dataset.htm
 И еще одна: https://cepr.org/voxeu/columns/currency-denomination-foreign-exchange-reserves-taboo-past-towards-disclosure-and
-Из BIS: DSR, credit gaps, credit to NFCs, что-то банковское
+Из BIS что-то банковское
+Понять пользовательские сценарии с поиском показателей по названию (переименовать ли все gen gov как GG?)
+
+Не забыть:
+все показатели с XDC выгруджать еще и USD и EUR и склеить, потому что кажется, что это reporting currency именно и они ее в базе сами не ковертят
+фильтрануть чтобы не было регионов везде |> filter(!country_id %in% c("S4", "S2", "V4", "V1", "S1", "8S", "T5", "ZG", "ZF", "T6", "XT"))
+откуда они вообще появились?
+Заменить ли на API для R вот это? https://www.globalmacrodata.com/index.html
 
 3) fill:
 Функции:
+проверить FC GG debt влияние на PF блок (пример: Румыния) - а он просто обнулен, потому что данных нет
 как usegrowth, чтобы склеивать через индексы и делать прогноз уровней по прогнозу приростов
 придумать визуализацию/представление схемы расчетов? как в eviews зависимости up и down
 добавить dict в importOldData, чтобы тянуть дату обновления данных?
@@ -64,11 +66,13 @@ Debt securities statistics из BIS, по крайнй мере, C1 и C3 IDS?
 сделать транспонированную опцию в writeCountryFile - перенести ее из service в fill?
 
 График вычислений:
+доделать все преобразования для разложения роста:
+https://www.conference-board.org/retrievefile.cfm?filename=TED_SummaryTables_Charts_may20241.pdf&type=subsite
 потенциальный ВВП (какое-то простое сглаживание?) и фискальный импульс
 дописать все, нужное для модели (дефолты)
 сделать рейтинг блоков (как что? или просто на графиках?)
 добавить поле short_label для использования на графиках
-сделать правильный combine для extebt_fc_role и extdebt_sr_role
+сделать правильный combine для extdebt_fc_role и extdebt_sr_role
 модификаторы?
 
 4) augment:

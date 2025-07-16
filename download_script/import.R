@@ -2,7 +2,7 @@
 
 ##### Load libraries
 library_names <- c("dplyr","reshape2","WDI","countrycode","readxl","readr","tidyr","data.table","writexl","stringr",
-                   "gsubfn","jsonlite","Rilostat","glue","httr","here")
+                   "gsubfn","jsonlite","Rilostat","glue","httr","here","zoo","rlang","purrr")
 # ,"rlist"
 
 for (library_name in library_names) {
@@ -15,7 +15,7 @@ source(here("download_script","imf_tool.R"))
 
 ##### Set parameters
 d_container_start <- "2019-01-01"
-d_container_end <- "2025-12-31"  # it's easier to expand container manually without using update=0 mode
+d_container_end <- "2026-12-31"  # it's easier to expand container manually without using update=0 mode
 
 ##### Function to set import/update schedule
 
@@ -43,7 +43,7 @@ generateDataContainers <- function(from, to) {
   countries <- WDI(indicator = "NY.GDP.MKTP.CD", start = from, end = to, extra=F) |>
     select("country", "iso2c") |> rename("country_id" = "iso2c")
   countries <- unique(countries[,c('country','country_id')])
-  countries <- subset(countries, as.numeric(rownames(countries)) > 1650)
+  countries <- subset(countries, as.numeric(rownames(countries)) > 475) # leaving aggregates out
   
   extdata_y <- expand.grid(paste(countries$country,countries$country_id,sep="."),years) |>
     mutate(country_id = str_sub(Var1, - 2, - 1) , country = str_sub(Var1, 1, -4)) |>
@@ -64,26 +64,47 @@ generateDataContainers <- function(from, to) {
 
 }
 
+##### Helper function to import series from a single xlsx sheet
+
+readSeriesSheet <- function(path, sheet = "Sheet1", fixed_types = c("text", "text")) {
+  
+  ncols <- ncol(read_excel(path = path, sheet = sheet, n_max = 0))
+  read_excel(path, sheet = sheet, col_types = c(fixed_types, rep("numeric", ncols - length(fixed_types))))
+  
+}
+
+
 ##### Function to import previously downloaded data
 
-importOldData <- function(data_fname, data_d_fname) {
+sheet_keys <- c(y = "y", q = "q", m = "m")
+
+importOldData <- function(data_fname, data_d_fname, sheet_keys) {
   
-    #data_fname <- "Imported_DB.xlsx"
-    #data_d_fname <- "Imported_d_DB.xlsx"
-    
-    for (i in c("y", "q", "m")) {
-      eval(parse(text = glue("ncols <- length(read_excel(data_fname, sheet = '{i}', col_names = T, skip=0, n_max = 0))") ))
-      eval(parse(text = glue("extdata_{i} <- read_excel(data_fname, sheet = '{i}', col_names = T, skip=0, \\
-                            col_types = c('text', 'text', rep('numeric', ncols-2)))") ))
-    }
-    
-    ncols <- length(read_excel(data_d_fname, sheet = "d", col_names = T, skip=0, n_max = 0))
-    extdata_d <- read_excel(data_d_fname, sheet = "d", col_names = T, skip=0,
-                            col_types = c("text", "text", "date", rep("numeric", ncols-3)))
-    
-    return(list(extdata_y = extdata_y, extdata_q = extdata_q, extdata_m = extdata_m, extdata_d = extdata_d))
-    
-  }
+  extdata_list <- map(sheet_keys, ~ readSeriesSheet(data_fname, .x)) |> set_names(paste0("extdata_", names(sheet_keys)))
+  extdata_list$extdata_d <- readSeriesSheet(data_d_fname, sheet = "d", fixed_types  = c("text", "text", "date") )
+  
+  return(extdata_list)
+}
+
+
+# importOldData <- function(data_fname, data_d_fname) {
+#   
+#     #data_fname <- "Imported_DB.xlsx"
+#     #data_d_fname <- "Imported_d_DB.xlsx"
+#     
+#     for (i in c("y", "q", "m")) {
+#       eval(parse(text = glue("ncols <- length(read_excel(data_fname, sheet = '{i}', col_names = T, skip=0, n_max = 0))") ))
+#       eval(parse(text = glue("extdata_{i} <- read_excel(data_fname, sheet = '{i}', col_names = T, skip=0, \\
+#                             col_types = c('text', 'text', rep('numeric', ncols-2)))") ))
+#     }
+#     
+#     ncols <- length(read_excel(data_d_fname, sheet = "d", col_names = T, skip=0, n_max = 0))
+#     extdata_d <- read_excel(data_d_fname, sheet = "d", col_names = T, skip=0,
+#                             col_types = c("text", "text", "date", rep("numeric", ncols-3)))
+#     
+#     return(list(extdata_y = extdata_y, extdata_q = extdata_q, extdata_m = extdata_m, extdata_d = extdata_d))
+#     
+#   }
 
 
 ##### Function to update import schedule after each cycle of import attempts
@@ -119,23 +140,59 @@ updateImportPlan <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d
 ##### Function to drop data, which needs to be updated
 
 dropDataToUpdate <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
-    
-    for (i in seq_along(impplan$indicator)) { 
-      
-      eval(parse( text = paste0("if ('", impplan$indicator_code[i], "' %in% names(extdata_", impplan$source_frequency[i],")) {extdata_",
-                                impplan$source_frequency[i], " <- extdata_",
-                                impplan$source_frequency[i], " |> select(-c(", impplan$indicator_code[i],")) }") ))
-    
-    }
+
+  if (requireNamespace("cli", quietly = TRUE)) use_cli <- TRUE else use_cli <- FALSE  
+  extdata_list <- list(y = extdata_y, q = extdata_q, m = extdata_m, d = extdata_d)
   
-    return(list(extdata_y = extdata_y, extdata_q = extdata_q, extdata_m = extdata_m, extdata_d = extdata_d))
+  # helper for talking 
+  say <- function(freq, dropped) {
+    txt <- if (length(dropped)) {sprintf("Dropped from extdata_%s: %s", freq, toString(dropped)) } else {
+      sprintf("Nothing to drop from extdata_%s", freq) }
+    if (use_cli) cli::cli_alert_info(txt) else message(txt, appendLF = TRUE)
+  }
+  
+  # iterate over list and remove columns
+  extdata_list <- imap( extdata_list,
+    ~ {
+      # all columns in impplan for this frequency
+      wanted <- impplan |>
+        filter(source_frequency == .y) |>
+        pull(indicator_code)
+      
+      # columns that really exist in this data frame
+      to_drop <- intersect(wanted, names(.x))
+      
+      # say what we’re doing
+      say(.y, to_drop)
+      
+      # return the data frame minus those columns
+      .x |> select(-any_of(to_drop))
+    }
+  )
+  
+  list(extdata_y = extdata_list$y, extdata_q = extdata_list$q, extdata_m = extdata_list$m, extdata_d = extdata_list$d)
   
 }
+
+
+# dropDataToUpdate <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
+#     
+#     for (i in seq_along(impplan$indicator)) { 
+#       
+#       eval(parse( text = paste0("if ('", impplan$indicator_code[i], "' %in% names(extdata_", impplan$source_frequency[i],")) {extdata_",
+#                                 impplan$source_frequency[i], " <- extdata_",
+#                                 impplan$source_frequency[i], " |> select(-c(", impplan$indicator_code[i],")) }") ))
+#     
+#     }
+#   
+#     return(list(extdata_y = extdata_y, extdata_q = extdata_q, extdata_m = extdata_m, extdata_d = extdata_d))
+#   
+# }
 
 ##### Function to check if all the necessary files for import exist
 
 checkFileExistence <- function(impplan, extdata_folder) {
-  print(extdata_folder)
+  
   impplan_temp <- impplan |> filter(retrieve_type == "file") |> 
       mutate(check_exist = 1*file.exists(here(extdata_folder, file_name))) |>
       select(indicator_code, source_frequency, check_exist)
@@ -978,15 +1035,343 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
                                  custom_match = c('ROM' = 'RO','ADO' = 'AD','ANT' = 'AN',
                                                   'KSV' = 'XK','TMP' = 'TL','WBG' = 'PS','ZAR' = 'CD'), warn = F)) |>
         rename_at(vars(old_codes), ~new_codes) |> select("country_id", "year", all_of(new_codes)) |>
-        mutate(year = as.numeric(year))
+        mutate(year = as.numeric(year)) 
         
       extdata_y <- extdata_y |> left_join(gmd_data, by = c("country_id" = "country_id", "year"="year"), suffix=c("","_old"))
       print("+")
       
     }
     
-  })  
+  })
+  
+  
+  ##### Import data from the Conference Board
+  
+  try({
+    
+    for (i in c("CB_GrowthAccounting.xlsx", "CB_GrowthFactors.xlsx")) {
+      
+      cby_impplan <- impplan |> filter(active == 1, file_name == i, retrieve_type == "file", source_frequency == "y")
+      cby_codes <- cby_impplan$retrieve_code
+      cby_names <- cby_impplan$indicator_code
+      
+      if (length(cby_codes) > 0 && all(!is.na(cby_codes))) {
+        
+        print(glue("Conference Board - {i}"))
+        cby_fname <- here("assets", "_DB", "_extsources", cby_impplan$file_name[1])
+        codes_row <- read_excel(cby_fname, sheet = "Annual", skip  = 5, n_max = 1, col_names = FALSE) |> unlist(use.names = FALSE)
+        codes_row[is.na(codes_row)] <- "year"
+        cb_raw <- read_excel(cby_fname, sheet = "Annual", skip = 7, col_names  = FALSE,  .name_repair = "minimal")
+        colnames(cb_raw) <- codes_row
+        
+        cb_long <- cb_raw |> pivot_longer(-year, names_to = "tbl_code", values_to = "value") |> filter(!is.na(value)) |>
+          mutate(iso3 = str_match(tbl_code, "^[^_]+_([A-Z]{3})_")[, 2], indicator  = str_match(tbl_code, "^[^_]+_[A-Z]{3}_(.+)")[, 2]) |>
+          select(year, iso3, indicator, value) |> filter(indicator %in% cby_codes) |> 
+          mutate(year = as.numeric(year), country_id = countrycode(iso3, origin = 'iso3c', destination = 'iso2c', 
+                        custom_match = c('ROM' = 'RO','ADO' = 'AD','ANT' = 'AN', 'KSV' = 'XK','TMP' = 'TL','WBG' = 'PS',
+                                        'ZAR' = 'CD'), warn = F)) |>
+          filter(!country_id %in% c("S4", "S2", "V4", "V1", "S1", "8S", "T5", "ZG", "ZF", "T6", "XT"))
+        
+        cb_wide <- cb_long |> pivot_wider(names_from = indicator, values_from = value)
+        ren_vec <- setNames(cby_names, str_replace(cby_codes, "^[^_]+_[A-Z]{3}_", ""))
+        cb_wide <- cb_wide |> rename_with(~ ren_vec[.x], .cols = names(ren_vec))
+        
+        extdata_y <- extdata_y |>
+          left_join(cb_wide, by = c("country_id", "year"), suffix = c("", "_old"))
+        
+        print("+")
+        
+      }
+    }
+  })
  
+
+  ##### Import data on CPI targets
+  
+  try({
+    
+      cpt_impplan <- impplan |> filter(active == 1, database_name == "CPI targets", retrieve_type == "file", source_frequency == "y")
+      cpt_codes <- cpt_impplan |> pull(retrieve_code)
+      new_codes <- cpt_impplan |> pull(indicator_code)
+      cpt_fname <- here("assets", "_DB", "_extsources", cpt_impplan$file_name[1])
+      cpt_sheet <- cpt_impplan$sheet_name[1]
+      
+      if (length(cpt_codes) > 0 && all(!is.na(cpt_codes))) {
+        
+        print("CPI targets")
+        cpt_raw <- read_excel(cpt_fname, sheet = cpt_sheet, skip = 0, col_names  = T,  .name_repair = "minimal")
+        cpt_raw <- cpt_raw |> mutate(year = as.numeric(year)) |> 
+          rename_at(vars(cpt_codes), ~new_codes) |> select("country_id", "year", all_of(new_codes))
+        
+        extdata_y <- extdata_y |> left_join(cpt_raw, by = c("country_id", "year"), suffix = c("", "_old"))
+        
+        print("+") 
+      }
+        
+  })
+  
+  
+  ##### Import BIS debt data
+  
+  try({
+    
+    bisd_impplan <- impplan |> filter(active == 1, source_name == "BIS", 
+                          database_name %in% c("Debt securities", "DSR", "Credit-to-GDP"), retrieve_type == "API")
+    bisd_codes <- bisd_impplan |> pull(retrieve_code) 
+    new_codes <- bisd_impplan |> pull(indicator_code)
+    
+    if (length(bisd_codes) > 0 && all(!is.na(bisd_codes))) {
+      
+      print("BIS debt securities")
+      
+      for (i in 1:length(bisd_codes)) {
+        bisd_raw <- read.csv(bisd_codes[i]) |> as_tibble() |> 
+          rename(country_id = any_of(c("REF_AREA", "BORROWERS_CTY"))) |> 
+          separate(TIME_PERIOD, into = c("year", "quarter"), sep = "-Q") |>
+          mutate(year = as.numeric(year), quarter = as.numeric(quarter)) |> 
+          rename_at(vars(OBS_VALUE), ~new_codes[i]) |> select("country_id", "year", "quarter", all_of(new_codes[i]))
+        
+        extdata_q <- extdata_q |> left_join(bisd_raw, by = c("country_id", "year", "quarter"), suffix = c("", "_old"))
+        print("+")
+      }
+       
+    }
+    
+  })
+  
+  
+  ##### Import data on RAs defaults
+  
+  try({
+    
+    ra_impplan <- impplan |> filter(active == 1, database_name == "RAs", retrieve_type == "file", source_frequency == "y")
+    ra_codes <- ra_impplan |> pull(retrieve_code)
+    new_codes <- ra_impplan |> pull(indicator_code)
+    ra_fname <- here("assets", "_DB", "_extsources", ra_impplan$file_name[1])
+    ra_sheet <- ra_impplan$sheet_name[1]
+    
+    if (length(ra_codes) > 0 && all(!is.na(ra_codes))) {
+      
+      print("Observable sovereign defaults")
+      ra_raw <- read_excel(ra_fname, sheet = ra_sheet, skip = 0, col_names  = T,  .name_repair = "minimal")
+      ra_raw <- ra_raw |> mutate(year = as.numeric(year)) |> 
+        rename_at(vars(ra_codes), ~new_codes) |> select("country_id", "year", all_of(new_codes))
+      
+      extdata_y <- extdata_y |> left_join(ra_raw, by = c("country_id", "year"), suffix = c("", "_old")) |>
+        mutate(across(all_of(new_codes), ~ replace_na(.x, 0)))
+      
+      print("+") 
+    }
+    
+  })
+  
+  
+  ##### Import data on defaults from BOC-BOE
+  
+  try({
+    
+    def_impplan <- impplan |> filter(active == 1, database_name == "BOC-BOE", retrieve_type == "file", source_frequency == "y")
+    def_codes <- def_impplan |> pull(retrieve_code)
+    new_codes <- def_impplan |> pull(indicator_code)
+    def_fname <- here("assets", "_DB", "_extsources", def_impplan$file_name[1])
+    def_sheet <- def_impplan$sheet_name[1]
+    
+    if (length(def_codes) > 0 && all(!is.na(def_codes))) {
+      
+      print("BOC-BOE sovereign defaults (filled)")
+      def_raw <- read_excel(def_fname, sheet = def_sheet, skip = 64, col_names  = T,  .name_repair = "minimal")
+      def_raw <- def_raw |> separate(col = k, into  = c("country_id", "year"), sep = "_", remove = TRUE, convert = TRUE) |>
+        mutate(year = as.numeric(year),
+               country_id = countrycode(country_id, origin = 'iso3c', destination = 'iso2c', warn = F)) |> 
+        rename_at(vars(def_codes), ~new_codes) |> select("country_id", "year", all_of(new_codes)) |> 
+        filter(!is.na(country_id))
+      
+      def_corr <- def_raw |> pivot_longer(cols = all_of(new_codes), names_to = "var", 
+                                          values_to = "raw", values_transform = list(raw = as.character)) |>
+        mutate(raw = as.character(raw), star = str_detect(raw, "^\\*+$"), numeric = parse_number(raw)) |> 
+        group_by(country_id, var) %>% arrange(year, .by_group = TRUE) |>  
+        mutate(forward  = na.locf(numeric,  na.rm = FALSE), backward = na.locf(numeric, fromLast = TRUE, na.rm = FALSE),
+               filled   = case_when(star ~ coalesce(forward, backward, 0), is.na(numeric) ~ 0, TRUE ~ numeric)) |>
+        ungroup() |> select(-raw, -star, -numeric, -forward, -backward) |>
+        pivot_wider(names_from = var, values_from = filled) |> relocate(all_of(new_codes), .after = c(country_id, year))  
+      
+      extdata_y <- extdata_y |> left_join(def_corr, by = c("country_id", "year"), suffix = c("", "_old")) |>
+        mutate(across(all_of(new_codes), ~ replace_na(.x, 0)))
+      
+      print("+") 
+    }
+    
+  })
+  
+  
+  ##### Import data on sovereign defaults from Reinhart and Rogoff
+  
+  try({
+    
+    rr_impplan <- impplan |> filter(active == 1, database_name == "RR", retrieve_type == "file", source_frequency == "y")
+    rr_codes <- rr_impplan |> pull(retrieve_code)
+    new_codes <- rr_impplan |> pull(indicator_code)
+    rr_fname <- here("assets", "_DB", "_extsources", rr_impplan$file_name[1])
+    rr_sheet <- rr_impplan$sheet_name[1]
+    
+    if (length(rr_codes) > 0 && all(!is.na(rr_codes))) {
+      
+      print("RR sovereign defaults")
+      rr_tidy <- read_excel(rr_fname, sheet = rr_sheet, skip = 0, col_names  = T,  .name_repair = "minimal") |>
+                  select(-country_name) |> pivot_longer(!country_id, names_to = "year", values_to = new_codes[1]) |>
+                  mutate(year = as.numeric(year))
+      
+      rr_tidy <- eval(parse(text = glue("rr_tidy |> mutate( {new_codes[1]} = as.numeric(({new_codes[1]} == 1)*(lag({new_codes[1]}, 1) == 0) ))") ))
+    
+      
+      extdata_y <- extdata_y |> left_join(rr_tidy, by = c("country_id", "year"), suffix = c("", "_old")) |>
+        mutate(across(all_of(new_codes), ~ replace_na(.x, 0)))
+      
+      print("+") 
+    } 
+    
+  })
+  
+  
+  ##### Import data on sovereign defaults from Global Crisis Database
+  
+  try({
+    
+    gcd_impplan <- impplan |> filter(active == 1, database_name == "GCD", retrieve_type == "file", source_frequency == "y")
+    gcd_codes <- gcd_impplan |> pull(retrieve_code)
+    new_codes <- gcd_impplan |> pull(indicator_code)
+    gcd_fname <- here("assets", "_DB", "_extsources", gcd_impplan$file_name)
+    gcd_sheet <- gcd_impplan$sheet_name
+    
+    if (length(gcd_codes) > 0 && all(!is.na(gcd_codes))) {
+      
+      print("GCD sovereign defaults")
+      
+      gcd_tidy <- read_excel(gcd_fname[1], sheet = gcd_sheet[1], skip = 0, col_names  = T,  .name_repair = "minimal") |>
+        select(CC3, Year, all_of(gcd_codes)) |> filter(!row_number() == 1) |> rename_at(vars(gcd_codes), ~new_codes) |>
+        mutate(year = as.numeric(Year), country_id = countrycode(CC3, origin = 'iso3c', destination = 'iso2c', 
+            custom_match = c('ROM' = 'RO','ADO' = 'AD','ANT' = 'AN', 'KSV' = 'XK','TMP' = 'TL','WBG' = 'PS', 'ZAR' = 'CD'), warn = F)) |>
+        select(country_id, year, all_of(new_codes)) |> mutate_at(.vars = all_of(new_codes), .funs = as.numeric)
+      
+      for (i in 1:length(new_codes)) {
+        gcd_tidy <- eval(parse(text = glue("gcd_tidy |> 
+                      mutate( {new_codes[i]} = as.numeric(({new_codes[i]} == 1)*(lag({new_codes[i]}, 1) == 0) ))") ))
+      }
+      
+      extdata_y <- extdata_y |> left_join(gcd_tidy, by = c("country_id", "year"), suffix = c("", "_old")) |>
+        mutate(across(all_of(new_codes), ~ replace_na(.x, 0))) }
+      
+      print("+") 
+    
+    })
+  
+  
+  ##### Import data on sovereign defaults from "Horn, Reinhart and Trebesch: Hidden Defaults"
+  
+  try({
+    
+    hrt_impplan <- impplan |> filter(active == 1, database_name == "HRT", retrieve_type == "file", source_frequency == "y")
+    hrt_codes <- hrt_impplan |> pull(retrieve_code)
+    new_codes <- hrt_impplan |> pull(indicator_code)
+    hrt_fname <- here("assets", "_DB", "_extsources", hrt_impplan$file_name)
+    hrt_sheet <- hrt_impplan$sheet_name
+    
+    if (length(hrt_codes) > 0 && all(!is.na(hrt_codes))) {
+      
+      print("HRT sovereign defaults")
+      
+      for (i in seq_along(new_codes)) {
+        
+        first_row <- read_excel(path = hrt_fname[i], sheet  = hrt_sheet[i], range  = cell_rows(1), col_names = F, na = c("", "NA"), n_max = 1)
+        skip_n <- if (all(is.na(first_row))) 6 else 0
+        
+        hrt_tidy <- read_excel(hrt_fname[i], sheet = hrt_sheet[i], skip = skip_n, col_names  = T,  .name_repair = "minimal") |>
+          select(any_of(c("Year","ISOCode", "Symbolic?", "DebtorCountry", "WDI code", "Start of default or restructuring process: default or announcement"))) 
+        
+        if ("Symbolic?" %in% names(hrt_tidy)) { hrt_tidy <- hrt_tidy |> filter(`Symbolic?` == 0 | is.na(`Symbolic?`)) }
+        
+        date_col <- "Start of default or restructuring process: default or announcement"
+        if (date_col %in% names(hrt_tidy)) { 
+          hrt_tidy <- hrt_tidy |> mutate(EventDate = as_date(as.numeric(.data[[date_col]]), origin = "1899-12-30"),
+              Year = year(EventDate), .after = {{date_col}}) |> rename("ISOCode" = "WDI code") |>
+            mutate(ISOCode = countrycode(ISOCode, "wb", "iso3c"))
+        }
+        # какой реально код там, если не wb (почему не находит ROM, CRO, SLO? задать руками?)
+        
+        code_cols <- intersect(c("ISOCode", "WDI code"), names(hrt_tidy))
+        if (length(code_cols) == 0 && "DebtorCountry" %in% names(hrt_tidy)) { hrt_tidy <- hrt_tidy |>
+            mutate( ISOCode = countrycode(DebtorCountry, "country.name", "iso3c"),  .after = DebtorCountry) }
+        
+        hrt_tidy <- hrt_tidy |> mutate(country_id = countrycode(ISOCode, "iso3c", "iso2c")) |> rename('year'='Year') |>
+          select(country_id, year) |> mutate(!!sym(new_codes[i]) := 1) |> unique()
+        # задать руками SER, ZBW, CBV?
+        
+        extdata_y <- extdata_y |> left_join(hrt_tidy, by = c("country_id", "year"), suffix = c("", "_old")) |>
+          mutate(across(all_of(new_codes[i]), ~ replace_na(.x, 0))) }
+      }
+    
+    print("+") 
+    
+  })
+  
+  
+  ##### Import data on sovereign defaults from "Sovereign Defaults: The Price of Haircuts", by Juan Cruces and Christoph Trebesch
+  
+  try({
+    
+    ct_impplan <- impplan |> filter(active == 1, database_name == "CT", retrieve_type == "file", source_frequency == "y")
+    ct_codes <- ct_impplan |> pull(retrieve_code)
+    new_codes <- ct_impplan |> pull(indicator_code)
+    ct_fname <- here("assets", "_DB", "_extsources", ct_impplan$file_name)
+    ct_sheet <- ct_impplan$sheet_name
+    
+    if (length(ct_codes) > 0 && all(!is.na(ct_codes))) {
+      
+      print("CT sovereign defaults")
+      
+      ct_tidy <- read_excel(ct_fname[1], sheet = ct_sheet[1], skip = 13, col_names  = F) |>
+        rename(country_id = 4, def_date = 5) |> select(country_id, def_date) |>
+        mutate(year = as.numeric(year(def_date)),
+            country_id = countrycode(country_id, origin = 'iso3c', destination = 'iso2c', 
+            custom_match = c('ROM' = 'RO','ADO' = 'AD','ANT' = 'AN', 'KSV' = 'XK','TMP' = 'TL','WBG' = 'PS', 'ZAR' = 'CD'), warn = F)) |>
+        select(country_id, year) |> unique()
+      
+      for (i in 1:length(new_codes)) {
+        ct_tidy <- eval(parse(text = glue("ct_tidy |> mutate( {new_codes[i]} = 1 )") ))
+      }
+      
+      extdata_y <- extdata_y |> left_join(ct_tidy, by = c("country_id", "year"), suffix = c("", "_old")) |>
+        mutate(across(all_of(new_codes), ~ replace_na(.x, 0))) }
+    
+    print("+") 
+    
+  })
+  
+  
+  ##### Import sovereign model modifiers
+  
+  try({
+    
+    mod_impplan <- impplan |> filter(active == 1, database_name == "Modifiers", retrieve_type == "file", source_frequency == "y")
+    mod_codes <- mod_impplan |> pull(retrieve_code)
+    new_codes <- mod_impplan |> pull(indicator_code)
+    mod_fname <- here("assets", "_DB", "_extsources", mod_impplan$file_name)
+    mod_sheet <- mod_impplan$sheet_name
+    
+    if (length(mod_codes) > 0 && all(!is.na(mod_codes))) {
+      
+      print("Modifiers")
+      
+      mod_tidy <- read_excel(mod_fname[1], sheet = mod_sheet[1], skip = 1, col_names  = T, .name_repair = "minimal") |> 
+        mutate(year = as.numeric(year)) |> rename_at(vars(mod_codes), ~new_codes) |> select(country_id, year, any_of(new_codes))
+      
+      extdata_y <- extdata_y |> left_join(mod_tidy, by = c("country_id", "year"), suffix = c("", "_old"))
+    
+      print("+") 
+    }
+    
+  })
+  
     ##### Return imported
     return(list(extdata_y = extdata_y, extdata_q = extdata_q, extdata_m = extdata_m, extdata_d = extdata_d))
     print("+++")

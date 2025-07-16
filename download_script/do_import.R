@@ -5,8 +5,10 @@ library(here)
 test <- 0
 update_mode <- 1    # 0 if all the data and containers should be new, 1 if only update
 n_attempts <- 15    # how many times should we ping API's for needed data
-formula_words <- c("lag", "lead", "rollsum", "rollavg", "rollvol", "mean", "last", "first", "min", "pmin", "max", "pmax", "sum", "coalesce", "share", "exp",
-                   "fromto", "year")
+formula_words <- c("lag", "lead", "rollsum", "rollavg", "rollvol", "mean", "last", "first", "min", "pmin", "max", "pmax", 
+                   "sum", "coalesce", "share", "exp", "fromto", "year", "na_if", "cummax", "cummin", "cumsum", "ceiling", 
+                   "letterize")
+sheet_keys <- c(y = "y", q = "q", m = "m")
 
 ##### Where is import schedule saved? What are the data files?
 here::i_am("download_script/do_import.R")
@@ -40,7 +42,7 @@ if (is.null(dim(error_report)[1]) | is.na(dim(error_report)[1]) | (dim(error_rep
     if (update_mode == 0) { 
         D <- generateDataContainers(from = year_first, to = year_final) 
     } else {
-        D <- importOldData(here("assets", "_DB", data_fname), here("assets", "_DB", data_d_fname))
+        D <- importOldData(here("assets", "_DB", data_fname), here("assets", "_DB", data_d_fname), sheet_keys = sheet_keys)
     }
     
     data_dim <- captureDimensions(extdata_y = D$extdata_y, extdata_q = D$extdata_q, extdata_m = D$extdata_m, extdata_d = D$extdata_d)

@@ -105,6 +105,25 @@ captureDimensions <- function(extdata_y, extdata_q, extdata_m, extdata_d) {
 }
 
 
+##### Function to save length of data containers (time x countries)
+
+letterize <- function(score, mode = 1, invalid = NA_character_) {
+
+  if (all(is.na(score))) return(rep(invalid, length(score)))
+  if (!is.numeric(score)) stop("`score` must be a numeric (integer‑like) vector.")
+  if (!mode %in% c(1, 2)) stop("`mode` must be 1 (upper‑case) or 2 (lower‑case).")
+  
+  scale_raw <- c("aaa", "aa+", "aa", "aa-", "a+", "a", "a-", "bbb+", "bbb", "bbb-", "bb+", "bb", "bb-", "b+", "b", "b-", "ccc/c")
+  scale_uc  <- toupper(scale_raw)
+  
+  out <- rep(invalid, length(score))             
+  ok  <- !is.na(score) & score >= 1 & score <= length(scale_raw)
+  lookup <- if (mode == 1) scale_uc else scale_raw
+  out[ok] <- lookup[score[ok]]
+  return(out)
+  
+}
+
 ##### Function for the filling cycle
 
 fill <- function(fillplan, extdata_y, extdata_q, extdata_m, extdata_d) {

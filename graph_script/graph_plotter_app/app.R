@@ -17,7 +17,7 @@ library("svglite")
 library("stringr")
 library("directlabels")
 library("fanplot")
-#library("ggfan")
+library("ggfan")
 library("hrbrthemes")
 library("glue")
 library("readr")
@@ -51,7 +51,8 @@ names(countries_peers) <- countries
 indicators_all <- D$dict |> select(indicator, indicator_code, source_frequency)
 indicators_start <- as.list(indicators_all |> pull(indicator_code))
 names(indicators_start) <- indicators_all |> pull(indicator)
-indicator_groups <- c("", "GDP growth decomposition", "World shares", "BOP (Y)", "BOP (Q)",
+indicator_groups <- c("", "GDP growth decomposition (expenses)", "GDP growth decomposition (prod. function)",
+                      "World shares", "BOP (Y)", "BOP (Q)",
                       "Trade balance (Y)","Trade balance (Q)", "IIP assets (Y)", "IIP liabilities (Y)",
                       "Exchange rates",
                       "Budget revenue definitions (Y)", "Budget revenue structure (Y)",
@@ -64,6 +65,7 @@ indicator_groups <- c("", "GDP growth decomposition", "World shares", "BOP (Y)",
                       "Global prices")
 indicator_groups_content <- list("", 
                                  c("cons_role", "govcons_role", "gcfc_role", "netex_role", "other_role"),
+                                 c("labor_quant_contrib_cb", "labor_qual_contrib_cb", "cap_contrib_cb", "tfp_growth_cb"),
                                  c("pop_shr", "gdp_ppp_shr", "ex_gs_shr"),
                                  c("ca_gdp", "bop_finacc_nrmns_gdp", "bop_res_mns_gdp", "bop_capacc_gdp", "bop_err_gdp"),
                                  c("ca_gdp_sm", "bop_finacc_nrmns_gdp_sm", "bop_res_mns_gdp_sm", "bop_capacc_gdp_sm", "bop_err_gdp_sm"),

@@ -12,8 +12,9 @@ countries <- c("Armenia", "Belarus", "Brazil", "Bulgaria", "Greece", "China", "I
                 "Uzbekistan", "United Arab Emirates", "Ethiopia")
 # "Iran, Islamic Rep." - что делать с этой точкой на конце? так папка называться не может, но название 
 # в базе именно такое (дропнуть изначально при кодировке базы все точки на концах?)
-formula_words <- c("lag", "lead", "rollsum", "rollavg", "rollvol", "mean", "last", "first", "min", "pmin", "max", "pmax", "sum", "coalesce", "share", "exp",
-                   "fromto", "year")
+formula_words <- c("lag", "lead", "rollsum", "rollavg", "rollvol", "mean", "last", "first", "min", "pmin", "max", "pmax", 
+                   "sum", "coalesce", "share", "exp", "fromto", "year", "na_if", "cummax", "cummin", "cumsum", "ceiling",
+                   "letterize")
 
 if (test == 0) {param_fname <- "0_database_params.xlsx"; data_fname <- "Imported_DB.xlsx";
 data_d_fname <- "Imported_d_DB.xlsx"; filled_fname <- "Filled_DB.xlsx"; filled_d_fname <- "Filled_d_DB.xlsx"} else {

@@ -43,57 +43,159 @@ ipsum_theme <- function(base_size = 12, base_family = "Nunito Sans") {
 #using +scale_color_manual(values = ACRA)
 
 
-####### Function to import filled data
+##### Function to import previously downloaded data
 
-importData <- function(data_y_fname, data_q_fname, data_m_fname, data_d_fname, dict_fname, path) {
+#' @param yqm_file Путь к файлу с Y/Q/M (RDS или XLSX)
+#' @param d_file   Путь к файлу с D (RDS или XLSX)
+#' @param sheet_keys Имена листов/ключей для Y/Q/M; по умолчанию c(y="y", q="q", m="m")
+#' @param format   "auto" | "rds" | "xlsx"; auto смотрит на расширение yqm_file
+#' @param add_time Логический флаг: добавлять ли time для Y/Q/M (FALSE по умолчанию)
+#'
+#' @return list(extdata_y, extdata_q, extdata_m, extdata_d, dict)
+#' @export
+
+importData <- function(yqm_file, d_file, sheet_keys  = c(y = "y", q = "q", m = "m"),
+                       format = c("auto", "rds", "xlsx"), add_time    = FALSE) {
   
-  for (i in c("y", "q", "m", "d")) {
-    eval(parse(text = glue("ncols <- length(read_csv2(here(path, data_{i}_fname), col_names = T, skip=0, n_max = 0, na = ''))") ))
-    if (i == "d") {types <- paste0('cc?', strrep('d', ncols-3))} else {
-      types <- paste0('cc', strrep('d', ncols-2)) }
-    eval(parse(text = glue("extdata_{i} <- read_csv2(here(path, data_{i}_fname), col_names = T, col_types = types, na = '' )") ))
+  # --- 0. Валидация и определение формата ------------------------------------
+  format <- rlang::arg_match(format)
+  if (format == "auto") {
+    ext <- tools::file_ext(yqm_file)
+    format <- if (tolower(ext) == "rds") "rds" else "xlsx"
   }
   
-  dict <- read_csv2(here(path, dict_fname), col_names = T, skip=0, na = '')
-  extdata_d <- extdata_d |> mutate(date = as.Date(date))
-  
-  
-  extdata_y <- extdata_y |> mutate(time=year-1987)
-  extdata_q <- extdata_q |> mutate(time=(year-1987)*4+quarter)
-  extdata_m <- extdata_m |> mutate(time=(year-1987)*12+month)
-  #extdata_d <- extdata_d |> mutate(time=year-1987)
-  
-  return(list(extdata_y = extdata_y, extdata_q = extdata_q, extdata_m = extdata_m, extdata_d = extdata_d, dict = dict))
-  
-}
-
-
-importFilledData <- function(data_fname, data_d_fname) {
-  
-  for (i in c("y", "q", "m")) {
-    eval(parse(text = glue("ncols <- length(read_excel(data_fname, sheet = '{i}', col_names = T, skip=0, n_max = 0))") ))
-    eval(parse(text = glue("extdata_{i} <- read_excel(data_fname, sheet = '{i}', col_names = T, skip=0, \\
-                            col_types = c('text', 'text', rep('numeric', ncols-2)))") ))
+  # --- Вспомогательные функции (локальный скоуп) ------------------------------
+  .read_dict_from_rds_exact <- function(bundle, name, origin_label) {
+    if (is.null(bundle[[name]])) {
+      cli::cli_warn("В {origin_label} не найден объект словаря с именем '{name}'. Продолжаю без него.")
+      return(NULL)
+    }
+    bundle[[name]]
   }
   
-  ncols <- length(read_excel(data_d_fname, sheet = "d", col_names = T, skip=0, n_max = 0))
-  extdata_d <- read_excel(data_d_fname, sheet = "d", col_names = T, skip=0,
-                          col_types = c("text", "text", "date", rep("numeric", ncols-3)))
+  .read_dict_from_xlsx_exact <- function(path, sheet, origin_label) {
+    if (!file.exists(path)) {
+      cli::cli_warn("Файл {.path {path}} ({origin_label}) не найден для чтения словаря '{sheet}'. Продолжаю без него.")
+      return(NULL)
+    }
+    sheets <- tryCatch(readxl::excel_sheets(path), error = function(e) character())
+    if (!(sheet %in% sheets)) {
+      cli::cli_warn("В {origin_label} не найден лист словаря '{sheet}'. Продолжаю без него.")
+      return(NULL)
+    }
+    ncols <- ncol(readxl::read_excel(path, sheet = sheet, n_max = 0))
+    if (is.na(ncols) || ncols == 0) {
+      cli::cli_warn("Лист словаря '{sheet}' в {origin_label} пуст. Продолжаю без него.")
+      return(NULL)
+    }
+    readxl::read_excel(
+      path,
+      sheet     = sheet,
+      col_names = TRUE,
+      col_types = rep("text", ncols)
+    ) |>
+      tibble::as_tibble()
+  }
   
-  extdata_y <- extdata_y |> mutate(time=year-1987)
-  extdata_q <- extdata_q |> mutate(time=(year-1987)*4+quarter)
-  extdata_m <- extdata_m |> mutate(time=(year-1987)*12+month)
-  #extdata_d <- extdata_d |> mutate(time=year-1987)
+  .maybe_add_time <- function(out, add_time_flag) {
+    if (!isTRUE(add_time_flag)) return(out)
+    out$extdata_y <- .add_time_safe_y(out$extdata_y)
+    out$extdata_q <- .add_time_safe_q(out$extdata_q)
+    out$extdata_m <- .add_time_safe_m(out$extdata_m)
+    # extdata_d не трогаем
+    out
+  }
   
-  ncols <- length(read_excel(data_fname, sheet = "dict", col_names = T, skip=0, n_max = 0))
-  dict <- read_excel(data_fname, sheet = "dict", col_names = T, skip=0,
-                     col_types = rep("text", ncols))
-  dict_d <- read_excel(data_d_fname, sheet = "dict_d", col_names = T, skip=0,
-                       col_types = rep("text", ncols))
-  dict <- rbind(dict, dict_d)
+  .add_time_safe_y <- function(df) {
+    if (is.null(df)) return(df)
+    if (!all(c("year") %in% names(df))) {
+      cli::cli_warn("Для Y не удалось добавить 'time': отсутствует колонка 'year'.")
+      return(df)
+    }
+    dplyr::mutate(df, time = .data$year - 1987L)
+  }
   
-  return(list(extdata_y = extdata_y, extdata_q = extdata_q, extdata_m = extdata_m, extdata_d = extdata_d, dict = dict))
+  .add_time_safe_q <- function(df) {
+    if (is.null(df)) return(df)
+    req <- c("year", "quarter")
+    if (!all(req %in% names(df))) {
+      cli::cli_warn("Для Q не удалось добавить 'time': нет колонок {setdiff(req, names(df))}.")
+      return(df)
+    }
+    dplyr::mutate(df, time = (.data$year - 1987L) * 4L + .data$quarter)
+  }
   
+  .add_time_safe_m <- function(df) {
+    if (is.null(df)) return(df)
+    req <- c("year", "month")
+    if (!all(req %in% names(df))) {
+      cli::cli_warn("Для M не удалось добавить 'time': нет колонок {setdiff(req, names(df))}.")
+      return(df)
+    }
+    dplyr::mutate(df, time = (.data$year - 1987L) * 12L + .data$month)
+  }
+  
+  .bind_dicts <- function(d1, d2) {
+    dicts <- purrr::compact(list(d1, d2))
+    if (length(dicts) == 0) return(NULL)
+    dplyr::bind_rows(dicts)
+  }
+  
+  # --- 1. RDS path ------------------------------------------------------------
+  if (format == "rds") {
+    # 1.1 читаем оба бандла
+    yqm_bundle <- readRDS(yqm_file)   # ожидаем list(y, q, m, dict, ...)
+    d_bundle   <- readRDS(d_file)     # ожидаем list(d, dict_d, ...)
+    
+    # 1.2 собираем extdata_* из Y/Q/M и D (как в исходной функции)
+    out <- purrr::map(
+      sheet_keys,
+      ~ yqm_bundle[[.x]]
+    ) |>
+      purrr::set_names(paste0("extdata_", names(sheet_keys)))
+    
+    out$extdata_d <- d_bundle[["d"]]
+    
+    # 1.3 словари: строго по именам "dict" и "dict_d"
+    dict_yqm <- .read_dict_from_rds_exact(yqm_bundle, "dict",   origin_label = "файле Y/Q/M (RDS)")
+    dict_d   <- .read_dict_from_rds_exact(d_bundle,   "dict_d", origin_label = "файле D (RDS)")
+    out$dict <- .bind_dicts(dict_yqm, dict_d)
+    
+    # 1.4 опционально добавляем time
+    out <- .maybe_add_time(out, add_time)
+    
+    return(out)
+  }
+  
+  # --- 2. XLSX path -----------------------------------------------------------
+  if (format == "xlsx") {
+    # 2.1 читаем Y/Q/M через ваш помощник
+    out <- purrr::map(
+      sheet_keys,
+      ~ readSeriesSheet(yqm_file, sheet = .x)
+    ) |>
+      purrr::set_names(paste0("extdata_", names(sheet_keys)))
+    
+    # 2.2 читаем D через ваш помощник (с фиксированными типами)
+    out$extdata_d <- readSeriesSheet(
+      d_file,
+      sheet       = "d",
+      fixed_types = c("text", "text", "date")
+    )
+    
+    # 2.3 словари: строго по листам "dict" (в YQM) и "dict_d" (в D)
+    dict_yqm <- .read_dict_from_xlsx_exact(yqm_file, sheet = "dict",   origin_label = "файле Y/Q/M (XLSX)")
+    dict_d   <- .read_dict_from_xlsx_exact(d_file,   sheet = "dict_d", origin_label = "файле D (XLSX)")
+    out$dict <- .bind_dicts(dict_yqm, dict_d)
+    
+    # 2.4 опционально добавляем time
+    out <- .maybe_add_time(out, add_time)
+    
+    return(out)
+  }
+  
+  # --- 3. Defensive fallback --------------------------------------------------
+  rlang::abort("Unsupported format – choose 'rds', 'xlsx', or 'auto'.")
 }
 
 

@@ -5,12 +5,12 @@ library(here)
 here::i_am("graph_script/do_plot.R")
 
 ##### Parameters and source names
-country_name <- "Brazil"
+country_name <- "Switzerland"
 file_output <- "jpeg"
 horizontal_size <- c(1800, 900)
 vertical_size <- c(850, 850)
-data_fname <- here("assets", "_DB", "Filled_DB.xlsx")
-data_d_fname <- here("assets", "_DB", "Filled_d_DB.xlsx")
+data_fname <- here("assets", "_DB", "Filled_DB.rds")
+data_d_fname <- here("assets", "_DB", "Filled_DB_d.rds")
 peers_fname <- here("assets", "_DB", "1_peers_params.xlsx")
 plotparam_fname <- here("assets", country_name, "Auto_report", "2_graphlib.xlsx")
 graphplan_columns <- c("graph_name", "graph_title", "graph_type", "graph_group", "data_frequency", "indicators", "time_fix", "peers", "all", "x_log",
@@ -25,6 +25,7 @@ graph_types <- c("scatter_dynamic", "scatter_country_comparison", "scatter_befor
 trend_types <- c("lm" ,"loess")
 orient_types <- c("horizontal", "vertical")
 theme_types <- c("ipsum", "ACRA", "economist", "minimal")
+sheet_keys <- c(y = "y", q = "q", m = "m")
 verbose <- T
 
 ##### Import function definitions
@@ -33,7 +34,8 @@ source(here("download_script","fill.R"))
 source(here("graph_script","plot.R"))
 
 ###### Import data from the local database
-D <- importFilledData(data_fname = data_fname, data_d_fname = data_d_fname)
+# D <- importFilledData(data_fname = data_fname, data_d_fname = data_d_fname)
+D <- importData(yqm_file = data_fname, d_file = data_d_fname, sheet_keys = sheet_keys, format = "auto", add_time = T)
 
 ###### Determining country focus and peers
 country_info <- getPeersCodes(country_name = country_name, peers_fname = peers_fname)

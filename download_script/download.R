@@ -61,9 +61,9 @@ unzip(zipfile = dest, exdir = here("assets", "_DB", datafolder))
 
 ### Download COVID data from Ourworldindata (don't need to update any more)
 ### or manually from here https://github.com/owid/covid-19-data/blob/master/public/data/owid-covid-data.csv
-#url <- "https://covid.ourworldindata.org/data/owid-covid-data.csv"
-#dest <- here("_DB", datafolder, "owid-covid-data.csv")
-#download.file(url, dest, mode="wb")
+# url <- "https://covid.ourworldindata.org/data/owid-covid-data.csv"
+# dest <- here("_DB", datafolder, "owid-covid-data.csv")
+# download.file(url, dest, mode="wb")
 
 ### Download Fiscal Monitor structural indicators table 
 ### and insert it to the FiscalMonitor.xlsx file manually!!!
@@ -86,7 +86,7 @@ unzip(zipfile = dest, exdir = here("assets", "_DB", datafolder))
 
 ### Download UN HDR data (links should be updated manually!!!!!)
 ### https://hdr.undp.org/data-center/documentation-and-downloads
-url <- "https://hdr.undp.org/sites/default/files/2023-24_HDR/HDR23-24_Composite_indices_complete_time_series.csv"
+url <- "https://hdr.undp.org/sites/default/files/2025_HDR/HDR25_Composite_indices_complete_time_series.csv"
 dest <- here("assets", "_DB", datafolder, "HDR.csv")
 download.file(url, dest)
 
@@ -143,7 +143,7 @@ download.file(url, dest, mode="wb")
 
 ### Update cpi_target.xlsx in extsources manually!!! Source TO-FIND?
 
-### Update defaults_DB.xlsx in extsources manually!!! 
+### Update defaults_DB.xlsx in extsources manually!!! Check in source manually
 
 ### Download BoC–BoE Sovereign Default Database manually
 ### Find new link somewhere here by analogy: https://www.bankofcanada.ca/2024/07/staff-analytical-note-2024-19/

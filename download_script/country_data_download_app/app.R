@@ -6,9 +6,13 @@ here::i_am("app.R")
 
 source(here("service.R"))
 
+data_fname <- here("Filled_DB.rds")
+data_d_fname <- here("Filled_DB_d.rds")
+sheet_keys <- c(y = "y", q = "q", m = "m")
+
 # Import data
-FD <- importData(data_y_fname = "extdata_y.csv", data_q_fname = "extdata_q.csv", data_m_fname = "extdata_m.csv", data_d_fname = "extdata_d.csv",
-                 dict_fname = "dict.csv", path = here())
+FD <- importData(yqm_file = data_fname, d_file = data_d_fname, sheet_keys = sheet_keys, format = "auto", add_time = T)
+
 countries <- FD$extdata_y$country |> unique()
 #countries <- c("Russia", "France", "Saudi Arabia")
 

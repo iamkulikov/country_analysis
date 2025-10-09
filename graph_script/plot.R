@@ -46,54 +46,54 @@ ipsum_theme <- function(base_size = 12, base_family = "Nunito Sans") {
 
 
 ####### Function to import filled data
-
-importData <- function(data_y_fname, data_q_fname, data_m_fname, data_d_fname, dict_fname, path) {
-  
-  for (i in c("y", "q", "m", "d")) {
-    eval(parse(text = glue("ncols <- length(read_csv2(here(path, data_{i}_fname), col_names = T, skip=0, n_max = 0, na = ''))") ))
-    if (i == "d") {types <- paste0('cc?', strrep('d', ncols-3))} else {
-      types <- paste0('cc', strrep('d', ncols-2)) }
-    eval(parse(text = glue("extdata_{i} <- read_csv2(here(path, data_{i}_fname), col_names = T, col_types = types, na = '' )") ))
-  }
-  
-  dict <- read_csv2(here(path, dict_fname), col_names = T, skip=0, na = '')
-  extdata_d <- extdata_d |> mutate(date = as.Date(date))
-  
-  extdata_y <- extdata_y |> mutate(time=year-1987)
-  extdata_q <- extdata_q |> mutate(time=(year-1987)*4+quarter)
-  extdata_m <- extdata_m |> mutate(time=(year-1987)*12+month)
-  #extdata_d <- extdata_d |> mutate(time=year-1987)
-  
-  return(list(extdata_y = extdata_y, extdata_q = extdata_q, extdata_m = extdata_m, extdata_d = extdata_d, dict = dict))
-  
-}
-
-
-importFilledData <- function(data_fname, data_d_fname) {
-  
-  for (i in c("y", "q", "m")) {
-    eval(parse(text = glue("ncols <- length(read_excel(data_fname, sheet = '{i}', col_names = T, skip=0, n_max = 0))") ))
-    eval(parse(text = glue("extdata_{i} <- read_excel(data_fname, sheet = '{i}', col_names = T, skip=0, \\
-                            col_types = c('text', 'text', rep('numeric', ncols-2)))") ))
-  }
-  
-  ncols <- length(read_excel(data_d_fname, sheet = "d", col_names = T, skip=0, n_max = 0))
-  extdata_d <- read_excel(data_d_fname, sheet = "d", col_names = T, skip=0,
-                          col_types = c("text", "text", "date", rep("numeric", ncols-3)))
-  
-  extdata_y <- extdata_y |> mutate(time=year-1987)
-  extdata_q <- extdata_q |> mutate(time=(year-1987)*4+quarter)
-  extdata_m <- extdata_m |> mutate(time=(year-1987)*12+month)
-  #extdata_d <- extdata_d |> mutate(time=as.Date(glue("{day}.{month}.{year}"), "%d.%m.%Y"))
-  
-  ncols <- length(read_excel(data_fname, sheet = "dict", col_names = T, skip=0, n_max = 0))
-  dict <- read_excel(data_fname, sheet = "dict", col_names = T, skip=0, col_types = rep("text", ncols))
-  dict_d <- read_excel(data_d_fname, sheet = "dict_d", col_names = T, skip=0, col_types = rep("text", ncols))
-  dict <- rbind(dict, dict_d)
-  
-  return(list(extdata_y = extdata_y, extdata_q = extdata_q, extdata_m = extdata_m, extdata_d = extdata_d, dict = dict))
-  
-}
+# 
+# importData <- function(data_y_fname, data_q_fname, data_m_fname, data_d_fname, dict_fname, path) {
+#   
+#   for (i in c("y", "q", "m", "d")) {
+#     eval(parse(text = glue("ncols <- length(read_csv2(here(path, data_{i}_fname), col_names = T, skip=0, n_max = 0, na = ''))") ))
+#     if (i == "d") {types <- paste0('cc?', strrep('d', ncols-3))} else {
+#       types <- paste0('cc', strrep('d', ncols-2)) }
+#     eval(parse(text = glue("extdata_{i} <- read_csv2(here(path, data_{i}_fname), col_names = T, col_types = types, na = '' )") ))
+#   }
+#   
+#   dict <- read_csv2(here(path, dict_fname), col_names = T, skip=0, na = '')
+#   extdata_d <- extdata_d |> mutate(date = as.Date(date))
+#   
+#   extdata_y <- extdata_y |> mutate(time=year-1987)
+#   extdata_q <- extdata_q |> mutate(time=(year-1987)*4+quarter)
+#   extdata_m <- extdata_m |> mutate(time=(year-1987)*12+month)
+#   #extdata_d <- extdata_d |> mutate(time=year-1987)
+#   
+#   return(list(extdata_y = extdata_y, extdata_q = extdata_q, extdata_m = extdata_m, extdata_d = extdata_d, dict = dict))
+#   
+# }
+# 
+# 
+# importFilledData <- function(data_fname, data_d_fname) {
+#   
+#   for (i in c("y", "q", "m")) {
+#     eval(parse(text = glue("ncols <- length(read_excel(data_fname, sheet = '{i}', col_names = T, skip=0, n_max = 0))") ))
+#     eval(parse(text = glue("extdata_{i} <- read_excel(data_fname, sheet = '{i}', col_names = T, skip=0, \\
+#                             col_types = c('text', 'text', rep('numeric', ncols-2)))") ))
+#   }
+#   
+#   ncols <- length(read_excel(data_d_fname, sheet = "d", col_names = T, skip=0, n_max = 0))
+#   extdata_d <- read_excel(data_d_fname, sheet = "d", col_names = T, skip=0,
+#                           col_types = c("text", "text", "date", rep("numeric", ncols-3)))
+#   
+#   extdata_y <- extdata_y |> mutate(time=year-1987)
+#   extdata_q <- extdata_q |> mutate(time=(year-1987)*4+quarter)
+#   extdata_m <- extdata_m |> mutate(time=(year-1987)*12+month)
+#   #extdata_d <- extdata_d |> mutate(time=as.Date(glue("{day}.{month}.{year}"), "%d.%m.%Y"))
+#   
+#   ncols <- length(read_excel(data_fname, sheet = "dict", col_names = T, skip=0, n_max = 0))
+#   dict <- read_excel(data_fname, sheet = "dict", col_names = T, skip=0, col_types = rep("text", ncols))
+#   dict_d <- read_excel(data_d_fname, sheet = "dict_d", col_names = T, skip=0, col_types = rep("text", ncols))
+#   dict <- rbind(dict, dict_d)
+#   
+#   return(list(extdata_y = extdata_y, extdata_q = extdata_q, extdata_m = extdata_m, extdata_d = extdata_d, dict = dict))
+#   
+# }
 
 
 ####### Function to get country's codes and the codes of its peers
@@ -879,8 +879,8 @@ barYearComparison <- function(data, graph_params, country_iso2c, peers_iso2c, ve
   
   data_all <- reshape2::melt(data$extdata, id.vars=c("country", "country_id", "year"), variable.name="variable", value.name="value")
   data_all <- data_all |> filter(variable %in% indicators, year %in% time_fix, country_id == country_iso2c, !is.na(value)) |> 
-    mutate(variable = fct_relevel(variable, indicators))
-
+    mutate(variable = fct_relevel(variable, indicators), value = as.numeric(value))
+  
   dict_temp <- data$dict |> filter(indicator_code %in% indicators, source_frequency == data_frequency) |> 
     arrange(factor(indicator_code, levels = indicators)) |> select(indicator)
   x_lab <- unname(unlist(dict_temp))

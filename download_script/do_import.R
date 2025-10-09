@@ -13,8 +13,8 @@ sheet_keys <- c(y = "y", q = "q", m = "m")
 ##### Where is import schedule saved? What are the data files?
 here::i_am("download_script/do_import.R")
 
-if (test == 0) {param_fname <- "0_database_params.xlsx"; data_fname <- "Imported_DB.xlsx";
-data_d_fname <- "Imported_d_DB.xlsx"; filled_fname <- "Filled_DB.xlsx"; filled_d_fname <- "Filled_d_DB.xlsx"} else {
+if (test == 0) {param_fname <- "0_database_params.xlsx"; data_fname <- "Imported_DB.rds";
+data_d_fname <- "Imported_DB_d.rds"; filled_fname <- "Filled_DB.xlsx"; filled_d_fname <- "Filled_d_DB.xlsx"} else {
   param_fname <- "0_database_params_test.xlsx"; data_fname <- "Temp.xlsx"; data_d_fname <- "Temp_d.xlsx";
   filled_fname <- "Temp_filled.xlsx"; filled_d_fname <- "Temp_filled_d.xlsx"}
 
@@ -40,9 +40,9 @@ if (is.null(dim(error_report)[1]) | is.na(dim(error_report)[1]) | (dim(error_rep
     
     ##### New import sequence starts
     if (update_mode == 0) { 
-        D <- generateDataContainers(from = year_first, to = year_final) 
+        D <- generateDataContainers(from = year_first, to = year_final, d_start  = as.Date("2019-01-01"), d_end = as.Date("2026-12-31")) 
     } else {
-        D <- importOldData(here("assets", "_DB", data_fname), here("assets", "_DB", data_d_fname), sheet_keys = sheet_keys)
+        D <- importData(yqm_file = here("assets", "_DB", data_fname), d_file = here("assets", "_DB", data_d_fname), sheet_keys = sheet_keys, format = "auto")
     }
     
     data_dim <- captureDimensions(extdata_y = D$extdata_y, extdata_q = D$extdata_q, extdata_m = D$extdata_m, extdata_d = D$extdata_d)
@@ -67,7 +67,7 @@ if (is.null(dim(error_report)[1]) | is.na(dim(error_report)[1]) | (dim(error_rep
     
     ##### Export data
     D <- preExport(saveplan = saveplan, extdata_y = D$extdata_y, extdata_q = D$extdata_q, extdata_m = D$extdata_m, extdata_d = D$extdata_d)
-    writeDatafiles(data_fname = here("assets", "_DB", data_fname), data_d_fname = here("assets", "_DB", data_d_fname), extdata_y = D$extdata_y, extdata_q = D$extdata_q, extdata_m = D$extdata_m, extdata_d = D$extdata_d, dict = D$dict, dict_d = D$dict_d)
-
+    writeDatafiles(y = D$extdata_y, q = D$extdata_q, m = D$extdata_m, d = D$extdata_d, dict = D$dict, dict_d = D$dict_d, 
+                   dir = here("assets", "_DB"))
     
 }  else {print("Errors found"); print(error_report)}

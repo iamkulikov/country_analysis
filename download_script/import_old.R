@@ -14,8 +14,8 @@ here::i_am("download_script/import.R")
 source(here("download_script","imf_tool.R"))
 
 ## ------ Set parameters
-# d_container_start <- as.Date("2019-01-01")
-# d_container_end <- as.Date("2026-12-31")  # it's easier to expand container manually without using update=0 mode
+d_container_start <- "2019-01-01"
+d_container_end <- "2026-12-31"  # it's easier to expand container manually without using update=0 mode
 
 ## ------- Function to set import/update schedule
 
@@ -102,205 +102,58 @@ readSeriesSheet <- function(path, sheet = "Sheet1", fixed_types = c("text", "tex
 
 ##### Function to import previously downloaded data
 
-#' @param yqm_file Путь к файлу с Y/Q/M (RDS или XLSX)
-#' @param d_file   Путь к файлу с D (RDS или XLSX)
-#' @param sheet_keys Имена листов/ключей для Y/Q/M; по умолчанию c(y="y", q="q", m="m")
-#' @param format   "auto" | "rds" | "xlsx"; auto смотрит на расширение yqm_file
-#' @param add_time Логический флаг: добавлять ли time для Y/Q/M (FALSE по умолчанию)
-#'
-#' @return list(extdata_y, extdata_q, extdata_m, extdata_d, dict)
+#' @param yqm_file   Path to the *year‑quarter‑month* file
+#' @param d_file     Path to the *daily* file
+#' @param sheet_keys Named character vector mapping bundle names (e.g. c(y = "y", q = "q", m = "m")) – used only for Excel.
+#' @param format     "rds" (default) or "xlsx". If "auto", pick by file extension.
+#' @return           Named list with elements extdata_y, extdata_q, …, extdata_d
 #' @export
 
-importData <- function(yqm_file, d_file, sheet_keys  = c(y = "y", q = "q", m = "m"),
-    format = c("auto", "rds", "xlsx"), add_time    = FALSE) {
+importData <- function(yqm_file, d_file, sheet_keys  = c(y = "y", q = "q", m = "m"), format = c("auto", "rds", "xlsx")) {
   
-  # --- 0. Валидация и определение формата ------------------------------------
-  format <- rlang::arg_match(format)
+  format <- match.arg(format)
   if (format == "auto") {
     ext <- tools::file_ext(yqm_file)
     format <- if (tolower(ext) == "rds") "rds" else "xlsx"
   }
   
-  # --- Вспомогательные функции (локальный скоуп) ------------------------------
-  .read_dict_from_rds_exact <- function(bundle, name, origin_label) {
-    if (is.null(bundle[[name]])) {
-      cli::cli_warn("В {origin_label} не найден объект словаря с именем '{name}'. Продолжаю без него.")
-      return(NULL)
-    }
-    bundle[[name]]
-  }
-  
-  .read_dict_from_xlsx_exact <- function(path, sheet, origin_label) {
-    if (!file.exists(path)) {
-      cli::cli_warn("Файл {.path {path}} ({origin_label}) не найден для чтения словаря '{sheet}'. Продолжаю без него.")
-      return(NULL)
-    }
-    sheets <- tryCatch(readxl::excel_sheets(path), error = function(e) character())
-    if (!(sheet %in% sheets)) {
-      cli::cli_warn("В {origin_label} не найден лист словаря '{sheet}'. Продолжаю без него.")
-      return(NULL)
-    }
-    ncols <- ncol(readxl::read_excel(path, sheet = sheet, n_max = 0))
-    if (is.na(ncols) || ncols == 0) {
-      cli::cli_warn("Лист словаря '{sheet}' в {origin_label} пуст. Продолжаю без него.")
-      return(NULL)
-    }
-    readxl::read_excel(
-      path,
-      sheet     = sheet,
-      col_names = TRUE,
-      col_types = rep("text", ncols)
-    ) |>
-      tibble::as_tibble()
-  }
-  
-  .maybe_add_time <- function(out, add_time_flag) {
-    if (!isTRUE(add_time_flag)) return(out)
-    out$extdata_y <- .add_time_safe_y(out$extdata_y)
-    out$extdata_q <- .add_time_safe_q(out$extdata_q)
-    out$extdata_m <- .add_time_safe_m(out$extdata_m)
-    # extdata_d не трогаем
-    out
-  }
-  
-  .add_time_safe_y <- function(df) {
-    if (is.null(df)) return(df)
-    if (!all(c("year") %in% names(df))) {
-      cli::cli_warn("Для Y не удалось добавить 'time': отсутствует колонка 'year'.")
-      return(df)
-    }
-    dplyr::mutate(df, time = .data$year - 1987L)
-  }
-  
-  .add_time_safe_q <- function(df) {
-    if (is.null(df)) return(df)
-    req <- c("year", "quarter")
-    if (!all(req %in% names(df))) {
-      cli::cli_warn("Для Q не удалось добавить 'time': нет колонок {setdiff(req, names(df))}.")
-      return(df)
-    }
-    dplyr::mutate(df, time = (.data$year - 1987L) * 4L + .data$quarter)
-  }
-  
-  .add_time_safe_m <- function(df) {
-    if (is.null(df)) return(df)
-    req <- c("year", "month")
-    if (!all(req %in% names(df))) {
-      cli::cli_warn("Для M не удалось добавить 'time': нет колонок {setdiff(req, names(df))}.")
-      return(df)
-    }
-    dplyr::mutate(df, time = (.data$year - 1987L) * 12L + .data$month)
-  }
-  
-  .bind_dicts <- function(d1, d2) {
-    dicts <- purrr::compact(list(d1, d2))
-    if (length(dicts) == 0) return(NULL)
-    dplyr::bind_rows(dicts)
-  }
-  
-  # --- 1. RDS path ------------------------------------------------------------
+  # ---- 1. RDS path ----------------------------------------------------------
   if (format == "rds") {
-    # 1.1 читаем оба бандла
-    yqm_bundle <- readRDS(yqm_file)   # ожидаем list(y, q, m, dict, ...)
-    d_bundle   <- readRDS(d_file)     # ожидаем list(d, dict_d, ...)
     
-    # 1.2 собираем extdata_* из Y/Q/M и D (как в исходной функции)
-    out <- purrr::map(
-      sheet_keys,
-      ~ yqm_bundle[[.x]]
-    ) |>
+    ## 1.1  read the bundles ---------------------------------------------------
+    yqm_bundle <- readRDS(yqm_file)   # list(y = ..., q = ..., m = ..., dict = ...)
+    d_bundle   <- readRDS(d_file)     # list(d = ..., dict_d = ...)
+    
+    ## 1.2  assemble return list ----------------------------------------------
+    out <- purrr::map(sheet_keys, ~ yqm_bundle[[.x]]) |>
       purrr::set_names(paste0("extdata_", names(sheet_keys)))
     
     out$extdata_d <- d_bundle[["d"]]
     
-    # 1.3 словари: строго по именам "dict" и "dict_d"
-    dict_yqm <- .read_dict_from_rds_exact(yqm_bundle, "dict",   origin_label = "файле Y/Q/M (RDS)")
-    dict_d   <- .read_dict_from_rds_exact(d_bundle,   "dict_d", origin_label = "файле D (RDS)")
-    out$dict <- .bind_dicts(dict_yqm, dict_d)
-    
-    # 1.4 опционально добавляем time
-    out <- .maybe_add_time(out, add_time)
-    
     return(out)
   }
   
-  # --- 2. XLSX path -----------------------------------------------------------
+  # ---- 2. XLSX path ---------------------------------------------------------
   if (format == "xlsx") {
-    # 2.1 читаем Y/Q/M через ваш помощник
-    out <- purrr::map(
-      sheet_keys,
-      ~ readSeriesSheet(yqm_file, sheet = .x)
-    ) |>
+    
+    ## 2.1  read Y/Q/M sheets --------------------------------------------------
+    out <- purrr::map(sheet_keys,
+                      ~ read_series_sheet(yqm_file, sheet = .x)) |>
       purrr::set_names(paste0("extdata_", names(sheet_keys)))
     
-    # 2.2 читаем D через ваш помощник (с фиксированными типами)
-    out$extdata_d <- readSeriesSheet(
+    ## 2.2  read daily sheet ---------------------------------------------------
+    out$extdata_d <- read_series_sheet(
       d_file,
-      sheet       = "d",
-      fixed_types = c("text", "text", "date")
+      sheet        = "d",
+      fixed_types  = c("text", "text", "date")
     )
-    
-    # 2.3 словари: строго по листам "dict" (в YQM) и "dict_d" (в D)
-    dict_yqm <- .read_dict_from_xlsx_exact(yqm_file, sheet = "dict",   origin_label = "файле Y/Q/M (XLSX)")
-    dict_d   <- .read_dict_from_xlsx_exact(d_file,   sheet = "dict_d", origin_label = "файле D (XLSX)")
-    out$dict <- .bind_dicts(dict_yqm, dict_d)
-    
-    # 2.4 опционально добавляем time
-    out <- .maybe_add_time(out, add_time)
     
     return(out)
   }
   
-  # --- 3. Defensive fallback --------------------------------------------------
+  # ---- 3. Defensive fallback -------------------------------------------------
   rlang::abort("Unsupported format – choose 'rds', 'xlsx', or 'auto'.")
 }
-
-
-#' importData <- function(yqm_file, d_file, sheet_keys  = c(y = "y", q = "q", m = "m"), format = c("auto", "rds", "xlsx")) {
-#'   
-#'   format <- match.arg(format)
-#'   if (format == "auto") {
-#'     ext <- tools::file_ext(yqm_file)
-#'     format <- if (tolower(ext) == "rds") "rds" else "xlsx"
-#'   }
-#'   
-#'   # ---- 1. RDS path ----------------------------------------------------------
-#'   if (format == "rds") {
-#'     
-#'     ## 1.1  read the bundles ---------------------------------------------------
-#'     yqm_bundle <- readRDS(yqm_file)   # list(y = ..., q = ..., m = ..., dict = ...)
-#'     d_bundle   <- readRDS(d_file)     # list(d = ..., dict_d = ...)
-#'     
-#'     ## 1.2  assemble return list ----------------------------------------------
-#'     out <- purrr::map(sheet_keys, ~ yqm_bundle[[.x]]) |>
-#'       purrr::set_names(paste0("extdata_", names(sheet_keys)))
-#'     
-#'     out$extdata_d <- d_bundle[["d"]]
-#'     
-#'     return(out)
-#'   }
-#'   
-#'   # ---- 2. XLSX path ---------------------------------------------------------
-#'   if (format == "xlsx") {
-#'     
-#'     ## 2.1  read Y/Q/M sheets --------------------------------------------------
-#'     out <- purrr::map(sheet_keys,
-#'                       ~ read_series_sheet(yqm_file, sheet = .x)) |>
-#'       purrr::set_names(paste0("extdata_", names(sheet_keys)))
-#'     
-#'     ## 2.2  read daily sheet ---------------------------------------------------
-#'     out$extdata_d <- read_series_sheet(
-#'       d_file,
-#'       sheet        = "d",
-#'       fixed_types  = c("text", "text", "date")
-#'     )
-#'     
-#'     return(out)
-#'   }
-#'   
-#'   # ---- 3. Defensive fallback -------------------------------------------------
-#'   rlang::abort("Unsupported format – choose 'rds', 'xlsx', or 'auto'.")
-#' }
 
 # importOldData <- function(data_fname, data_d_fname, sheet_keys) {
 #   
@@ -529,28 +382,25 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
       
       if (length(imfy_names)>0 & all(!is.na(imfy_names))) {
         
-        message("IMF-Y")
-        
+        print("IMF-Y")
         imf_data_in <- NULL
-        
         for (i in seq_along(imfy_codes)) {
-          message(imfy_codes[i])
           
-          new_data <- imfTool(database = imfy_dbnames[i], code = imfy_codes[i], freq = "y", 
-                              start = year_first, end = year_final) |>
-            dplyr::select(iso2, year, value) |> dplyr::rename(!!imfy_codes[i] := value)
+          print(imfy_codes[i])
+          new_data <- imfTool(database = imfy_dbnames[i], code = imfy_codes[i], freq = 'A',
+                               start = year_first , end = year_final)
           
-          imf_data_in <-
-            if (is.null(imf_data_in)) new_data
-            else dplyr::full_join(imf_data_in, new_data, by = c("iso2", "year"))
-        }
+          if (i==1) {imf_data_in <- new_data} else {
+            imf_data_in <- imf_data_in |> full_join(new_data, by=c('iso2c'='iso2c', 'time'='time'), suffix=c("","_old"))}
         
-        imf_data_in <- imf_data_in |> dplyr::rename(country_id = iso2) |>
-          dplyr::rename_with(.cols = dplyr::any_of(imfy_codes), .fn = ~ imfy_names)
+          }
         
-        extdata_y <- extdata_y |> dplyr::left_join(imf_data_in, by = c("country_id", "year"))
-        
-        message("+")
+        imf_data_in <- imf_data_in |> rename(country_id = 'iso2c') |> rename_at(vars(any_of(imfy_codes)), ~imfy_names)  |> 
+          mutate(year = as.numeric(substr(time, 1, 4))) |> select(-c("time"))
+            
+        extdata_y |> left_join(imf_data_in, by = c("country_id" = "country_id", "year"="year"),
+                                suffix=c("","_old")) -> extdata_y
+        print("+")
         
       }
     
@@ -567,29 +417,24 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
       
       if (length(imfq_names)>0 & all(!is.na(imfq_names))) {
       
-        message("IMF-Q")
-        
+        print("IMF-Q")
         imf_data_in <- NULL
-        
         for (i in seq_along(imfq_codes)) {
           
-          message(imfq_codes[i])
+          print(imfq_codes[i])
+          new_data <- imfTool(database = imfq_dbnames[i], code = imfq_codes[i], freq = 'Q',
+                               start = ifelse(imfq_dbnames[i]=='BOP', 2011, year_first), end = year_final)
           
-          new_data <- imfTool(database = imfq_dbnames[i], code = imfq_codes[i], freq = "q",
-              start = ifelse(imfq_dbnames[i] == "BOP", 2011, year_first), end = year_final) |>
-            dplyr::select(iso2, year, quarter, value) |> dplyr::rename(!!imfq_codes[i] := value)
-            
-          imf_data_in <-
-            if (is.null(imf_data_in)) new_data
-            else dplyr::full_join(imf_data_in, new_data, by = c("iso2", "year", "quarter"))
+          if (i==1) {imf_data_in <- new_data} else {imf_data_in <- imf_data_in |> 
+                          full_join(new_data, by=c('iso2c'='iso2c', 'time'='time'), suffix=c("","_old"))}
         }
         
-        imf_data_in <- imf_data_in |> dplyr::rename(country_id = iso2) |>
-          dplyr::rename_with(.cols = dplyr::any_of(imfq_codes), .fn = ~ imfq_names)
+        imf_data_in <- imf_data_in |> rename(country_id = 'iso2c') |> rename_at(vars(any_of(imfq_codes)), ~imfq_names) |> 
+          mutate(year=as.numeric(substr(time,1,4)), quarter=as.numeric(substr(time,7,7))) |> select(-c(time)) 
         
-        extdata_q <- extdata_q |> dplyr::left_join(imf_data_in, by = c("country_id", "year", "quarter"))
-        
-        message("+")
+        extdata_q |> left_join(imf_data_in, by = c("country_id" = "country_id", "year"="year", "quarter"="quarter"),
+                                suffix=c("","_old")) -> extdata_q
+        print("+")
         
       }  
     
@@ -606,28 +451,24 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
       
       if (length(imfm_names)>0 & all(!is.na(imfm_names))) {
         
-        message("IMF-M")
-        
+        print("IMF-M")
         imf_data_in <- NULL
-        
         for (i in seq_along(imfm_codes)) {
-          message(imfm_codes[i])
           
-          new_data <- imfTool(database = imfm_dbnames[i], code = imfm_codes[i], freq = "m",
-              start = ifelse(imfm_dbnames[i] == "BOP", 2011, year_first), end = year_final) |>
-            dplyr::select(iso2, year, month, value) |> dplyr::rename(!!imfm_codes[i] := value)
+          print(imfm_codes[i])
+          new_data <- imfTool(database = imfm_dbnames[i], code = imfm_codes[i], freq = 'M',
+                          start = ifelse(imfm_dbnames[i]=='BOP', 2011, year_first) , end = year_final)
           
-          imf_data_in <-
-            if (is.null(imf_data_in)) new_data
-            else dplyr::full_join(imf_data_in, new_data, by = c("iso2", "year", "month"))
+          if (i==1) {imf_data_in <- new_data} else {imf_data_in <- imf_data_in |> 
+                    full_join(new_data, by=c('iso2c'='iso2c', 'time'='time'), suffix=c("","_old"))}
         }
         
-        imf_data_in <- imf_data_in |> dplyr::rename(country_id = iso2) |>
-          dplyr::rename_with(.cols = dplyr::any_of(imfm_codes), .fn = ~ imfm_names)
+        imf_data_in <- imf_data_in |> rename(country_id = 'iso2c') |> rename_at(vars(any_of(imfm_codes)), ~imfm_names) |> 
+          mutate(year=as.numeric(substr(time,1,4)), month=as.numeric(substr(time,6,7))) |> select(-c(time)) 
         
-        extdata_m <- extdata_m |> dplyr::left_join(imf_data_in, by = c("country_id", "year", "month"))
-        
-        message("+")
+        extdata_m |> left_join(imf_data_in, by = c("country_id" = "country_id", "year"="year", "month"="month"),
+                                suffix=c("","_old")) -> extdata_m
+        print("+")
         
       }
     
@@ -1310,7 +1151,6 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
         print("CPI targets")
         cpt_raw <- read_excel(cpt_fname, sheet = cpt_sheet, skip = 0, col_names  = T,  .name_repair = "minimal")
         cpt_raw <- cpt_raw |> mutate(year = as.numeric(year)) |> 
-          mutate(across(starts_with("cpi_target"), as.numeric)) |>
           rename_at(vars(cpt_codes), ~new_codes) |> select("country_id", "year", all_of(new_codes))
         
         extdata_y <- extdata_y |> left_join(cpt_raw, by = c("country_id", "year"), suffix = c("", "_old"))

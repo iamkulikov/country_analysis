@@ -33,11 +33,14 @@ mode_online <- 1
 # Import all the necessary assets except data
 here::i_am("app.R")
 source(here("plot.R"))
+
 peers_fname <- here("1_peers_params.xlsx")
+data_fname <- here("Filled_DB.rds")
+data_d_fname <- here("Filled_DB_d.rds")
+sheet_keys <- c(y = "y", q = "q", m = "m")
 
 # Import data
-D <- importData(data_y_fname = "extdata_y.csv", data_q_fname = "extdata_q.csv", data_m_fname = "extdata_m.csv", 
-                 data_d_fname = "extdata_d.csv", dict_fname = "dict.csv", path = here())
+D <- importData(yqm_file = data_fname, d_file = data_d_fname, sheet_keys = sheet_keys, format = "auto", add_time = T)
 
 # Menu lists
 graph_types <- c("scatter_dynamic", "scatter_country_comparison", "structure_dynamic", "structure_country_comparison",
@@ -400,10 +403,10 @@ server <- function(input, output, session) {
                                     "structure_country_comparison_norm", "bar_country_comparison", "bar_country_comparison_norm") & input$time_fix == "") {
           
           a <- case_when(
-            input$data_frequency == "y" ~ "2021",
-            input$data_frequency == "q" ~ "2022q4",
-            input$data_frequency == "m" ~ "2023m6",
-            TRUE ~ "2021"
+            input$data_frequency == "y" ~ "2023",
+            input$data_frequency == "q" ~ "2024q4",
+            input$data_frequency == "m" ~ "2025m6",
+            TRUE ~ "2023"
           )
           
           updateTextInput(session, "time_fix", label = "Time fix", value = a)
@@ -428,10 +431,10 @@ server <- function(input, output, session) {
                                     "lines_indicator_comparison", "distribution_dynamic") & input$x_max == "") {
           
           a <- case_when(
-            input$data_frequency == "y" ~ c("2022"),
-            input$data_frequency == "q" ~ c("2023q1"),
-            input$data_frequency == "m" ~ c("2023m7"),
-            TRUE ~ "2022"
+            input$data_frequency == "y" ~ c("2023"),
+            input$data_frequency == "q" ~ c("2024q4"),
+            input$data_frequency == "m" ~ c("2025m7"),
+            TRUE ~ "2023"
           )            
           
           updateTextInput(session, "x_max", "X max", value = a)
@@ -439,7 +442,7 @@ server <- function(input, output, session) {
         
         ##### Fill multiple time fix
         if (input$graph_type == "bar_year_comparison") {
-          updateTextInput(session, "time_fix", label = "Time fix", value = "2005, 2014, 2021") }
+          updateTextInput(session, "time_fix", label = "Time fix", value = "2005, 2014, 2023") }
   
     })
   

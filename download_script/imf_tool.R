@@ -39,12 +39,16 @@ imfTool <- function(database, code, freq,
   if (!is.null(start)) df <- dplyr::filter(df, .data$year >= start)
   if (!is.null(end))   df <- dplyr::filter(df, .data$year <= end)
   
+  has_agg <- grepl("\\(aggregate\\)", trimws(database), ignore.case = TRUE, perl = TRUE)
+  if (has_agg) df <- df |> mutate(iso2 = "1W")
   df
 }
 
 # imfTool("IMF.STA/QNEA", "B1GQ.V.NSA.XDC", "q", start = 2020)
 # imfTool("IMF.STA:GFS_SOO ", "S13.G1.G1_T.POGDP_PT", "y", end = 2023)
-# imfTool("IMF.STA/CPI", "CPI._T.IX", "m", start = 2010, end = 2012)
+# imfTool("IMF.RES/WEO (aggregate)", "G110.NGDP_RPCH", "y", end = 2030)
+# imfTool("IMF.RES/WEO", "NGDP", "y", end = 2030)
+# imfTool("IMF.RES/CPI", "CPI._T.IX", "m", start = 2010, end = 2012)
 
 #' Fetch IMF SDMX data (URL already constructed) via rsdmx transport
 #'
@@ -230,11 +234,12 @@ imf_fetch_simple <- function(request_url,
 #' @return A length-1 character URL
 
 imf_build_url <- function(database, code, freq) {
+  
   stopifnot(is.character(database), length(database) == 1L, nzchar(database))
   stopifnot(is.character(code),     length(code)     == 1L, nzchar(code))
   stopifnot(is.character(freq),     length(freq)     == 1L, nzchar(freq))
   
-  # map freq -> IMF suffix
+  # map freq -> IMF suffix A|Q|M
   f <- tolower(freq)
   f <- if (f %in% c("m","monthly")) "M"
   else if (f %in% c("q","quarterly")) "Q"
@@ -242,23 +247,53 @@ imf_build_url <- function(database, code, freq) {
   else if (toupper(freq) %in% c("A","Q","M")) toupper(freq)
   else stop("freq must be one of: m/q/y (or monthly/quarterly/annual).")
   
-  # normalize database: trim, ':' -> '/', remove leading/trailing '/', collapse runs of '/'
+  # normalize database: trim, ':' -> '/', collapse slashes, trim '/', drop '(aggregate)'
   db <- trimws(database)
-  db <- gsub(":", "/", db, fixed = FALSE)
+  has_agg <- grepl("\\(aggregate\\)", db, ignore.case = TRUE, perl = TRUE)
+  db <- gsub(" \\(aggregate\\)", "", db, ignore.case = TRUE, perl = TRUE)
+  db <- gsub(":", "/", db)
   db <- gsub("/{2,}", "/", db)
   db <- sub("^/+","", db)
   db <- sub("/+$","", db)
   
-  # normalize code: trim spaces, drop leading dots, enforce trailing .[A|Q|M]
-  cd <- gsub("\\s+", "", trimws(code))
-  cd <- sub("^\\.+", "", cd)
-  if (grepl("\\.(A|Q|M)$", cd, perl = TRUE)) {
-    cd <- sub("\\.(A|Q|M)$", paste0(".", f), cd, perl = TRUE)
+  # normalize code: trim spaces, drop leading dots
+  raw_cd <- gsub("\\s+", "", trimws(code))
+  raw_cd <- sub("^\\.+", "", raw_cd)
+  
+  # split code on first dot
+  dot_pos <- regexpr("\\.", raw_cd, perl = TRUE)[1]
+  if (dot_pos > 0) {
+    lhs <- substr(raw_cd, 1L, dot_pos - 1L)      # часть до первой точки
+    rhs <- substr(raw_cd, dot_pos + 1L, nchar(raw_cd))  # часть после первой точки
   } else {
-    cd <- paste0(cd, ".", f)
+    lhs <- raw_cd
+    rhs <- ""
   }
   
-  paste0("https://api.imf.org/external/sdmx/3.0/data/dataflow/", db, "/%2B/*.", cd)
+  # choose which part becomes the "code" after the placeholder
+  # - if aggregate: use RHS (must exist), and replace '*.' with 'lhs.'
+  # - else: use the full raw code, and keep '*.' as is
+  if (has_agg) {
+    if (!nzchar(rhs)) {
+      stop("When database contains '(aggregate)', `code` must contain at least one '.' to provide a right-hand part.")
+    }
+    cd_base <- rhs
+    placeholder <- paste0(lhs, ".")
+  } else {
+    cd_base <- raw_cd
+    placeholder <- "*."
+  }
+  
+  # enforce trailing .A/.Q/.M based on freq
+  if (grepl("\\.(A|Q|M)$", cd_base, perl = TRUE)) {
+    cd <- sub("\\.(A|Q|M)$", paste0(".", f), cd_base, perl = TRUE)
+  } else {
+    cd <- paste0(cd_base, ".", f)
+  }
+  
+  paste0("https://api.imf.org/external/sdmx/3.0/data/dataflow/", db, "/%2B/", placeholder, cd)
 }
  
 # imf_build_url("IMF.STA/CPI", "CPI._T.IX.M", "m")
+# imf_build_url("IMF.RES/WEO (aggregate)", "G001.NGDP_RPCH", "y")
+# result: https://api.imf.org/external/sdmx/3.0/data/dataflow/IMF.RES/WEO/%2B/G001.NGDP_RPCH.A

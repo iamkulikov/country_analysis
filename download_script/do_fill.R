@@ -8,13 +8,14 @@ here::i_am("download_script/do_fill.R")
 test <- 0
 
 countries <- c("Armenia", "Belarus", "Brazil", "Bulgaria", "Greece", "China", "India", "Kazakhstan", "Kyrgyz Republic", "Mongolia",
-               "Romania", "Russian Federation", "Slovak Republic", "South Africa", "Switzerland", "Turkiye", "Ukraine",
+               "Romania", "Russian Federation", "Slovak Republic", "South Africa", "Switzerland", "Tajikistan", "Turkiye", "Ukraine",
                 "Uzbekistan", "United Arab Emirates", "Ethiopia")
 # "Iran, Islamic Rep." - что делать с этой точкой на конце? так папка называться не может, но название 
 # в базе именно такое (дропнуть изначально при кодировке базы все точки на концах?)
 formula_words <- c("lag", "lead", "rollsum", "rollavg", "rollvol", "mean", "last", "first", "min", "pmin", "max", "pmax", 
                    "sum", "coalesce", "share", "exp", "fromto", "year", "na_if", "cummax", "cummin", "cumsum", "ceiling",
                    "letterize")
+change_freq_words <- c("mean", "last", "demean", "desum", "spline")
 sheet_keys <- c(y = "y", q = "q", m = "m")
 
 if (test == 0) {param_fname <- "0_database_params.xlsx"; data_fname <- "Imported_DB.rds";
@@ -36,9 +37,13 @@ fillplan <- readFillParams(param_fname = here("assets", "_DB", param_fname))
 ##### Check integrity of the plans
 fillplan <- checkNames(fillplan = fillplan, formula_words = formula_words)
 fillplan <- checkUnique(fillplan = fillplan)
-fillplan <- checkAvailability(fillplan = fillplan, impplan = impplan) |> mutate(checks = check_names*check_unique*check_availability)
-error_report <- fillplan |> filter(checks == 0)
-#error_report$formula
+fillplan <- checkAvailability(fillplan = fillplan, impplan = impplan, formula_words = formula_words)
+fillplan <- checkAggr(fillplan = fillplan, change_freq_words = change_freq_words)
+fillplan <- checkFreq(fillplan = fillplan, change_freq_words = change_freq_words) |>
+  dplyr::mutate(checks = check_names * check_unique * check_availability * check_aggr * check_freq)
+error_report <- fillplan |> dplyr::filter(checks == 0L)
+
+
 
 if (is.null(dim(error_report)[1]) | is.na(dim(error_report)[1]) | (dim(error_report)[1] == 0)) {
   
@@ -67,11 +72,9 @@ if (is.null(dim(error_report)[1]) | is.na(dim(error_report)[1]) | (dim(error_rep
       paths <- writeDatafiles(y = FD$extdata_y, q = FD$extdata_q, m = FD$extdata_m, d = FD$extdata_d, dict = FD$dict, dict_d = FD$dict_d, 
                      dir = here("assets", "_DB"), stem = "Filled_DB")
       replicateSavedFiles(src_paths   = unname(paths[c("rds_yqm", "rds_d")]), target_dirs = app_dirs, method = "copy")
-      # writeDatafilesCsv(datalist = FD, path = here("download_script", "country_data_download_app"))
-      # writeDatafilesCsv(datalist = FD, path = here("graph_script", "graph_plotter_app"))
       
       ### Single countries
       writeCountryFile(countries = countries, datalist = FD)
       writeCountryModelFile(countries = countries, extdata_y = FD$extdata_y, saveplan = saveplan)
   
-  } else {print("Errors found"); print(error_report)}
+  } else {explain_fill_errors(error_report)}

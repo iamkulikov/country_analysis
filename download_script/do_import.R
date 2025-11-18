@@ -55,7 +55,8 @@ if (is.null(dim(error_report)[1]) | is.na(dim(error_report)[1]) | (dim(error_rep
       print(glue("Downloading attempt {t} of {n_attempts}"))
       if ( dim(impplan_temp)[1] == 0 ) {print("Nothing left to import"); break}
       D <- dropDataToUpdate(impplan = impplan_temp, extdata_y = D$extdata_y, extdata_q = D$extdata_q, extdata_m = D$extdata_m, extdata_d = D$extdata_d)
-      D <- tryImport(impplan = impplan_temp, extdata_y = D$extdata_y, extdata_q = D$extdata_q, extdata_m = D$extdata_m, extdata_d = D$extdata_d)
+      D <- tryImport(impplan = impplan_temp, extdata_y = D$extdata_y, extdata_q = D$extdata_q, extdata_m = D$extdata_m, 
+                     extdata_d = D$extdata_d, impparams = imp_params)
       impplan_temp <- updateImportPlan(impplan = impplan_temp, extdata_y = D$extdata_y, extdata_q = D$extdata_q, extdata_m = D$extdata_m, extdata_d = D$extdata_d)
       
     }

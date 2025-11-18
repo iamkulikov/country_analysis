@@ -21,14 +21,20 @@ source(here("download_script","imf_tool.R"))
 
 readImportParams <- function (param_fname, update_mode) {
   
+  param_fname <- here("assets", "_DB", "0_database_params.xlsx")
   impplan <- read_excel(param_fname, sheet = "import", col_names = T, skip=1)
   parameters <- read_excel(param_fname, sheet = "scope", col_names = T, skip=1, n_max=1)
+  locals <- read_excel(param_fname, sheet = "scope", col_names = T, skip=6)
+  local_countries <- locals |> filter(active == 1) |> pull(country)
+  local_iso2 <- locals |> filter(active == 1) |> pull(country_id)
+  local_fnames <- here("assets", local_countries, "Data", glue("{local_countries}_local.xlsx"))
   year_first <- parameters$start
   year_final <- parameters$end
   saveplan <- impplan |> filter(active == 1)
   if (update_mode == 1) {impplan <- impplan |> filter(update == 1)}
   impplan <- impplan |> filter(active == 1)
-  return(list(year_first = year_first, year_final = year_final, saveplan = saveplan, impplan = impplan))
+  return(list(year_first = year_first, year_final = year_final, saveplan = saveplan, impplan = impplan, 
+              local_countries = local_countries, local_iso2 = local_iso2, local_fnames = local_fnames))
   
 }
 
@@ -226,14 +232,14 @@ importData <- function(yqm_file, d_file, sheet_keys  = c(y = "y", q = "q", m = "
   
   # --- 2. XLSX path -----------------------------------------------------------
   if (format == "xlsx") {
-    # 2.1 читаем Y/Q/M через ваш помощник
+    # 2.1 читаем Y/Q/M через помощник
     out <- purrr::map(
       sheet_keys,
       ~ readSeriesSheet(yqm_file, sheet = .x)
     ) |>
       purrr::set_names(paste0("extdata_", names(sheet_keys)))
     
-    # 2.2 читаем D через ваш помощник (с фиксированными типами)
+    # 2.2 читаем D через помощник (с фиксированными типами)
     out$extdata_d <- readSeriesSheet(
       d_file,
       sheet       = "d",
@@ -401,7 +407,7 @@ checkFileExistence <- function(impplan, extdata_folder) {
 
 ##### Main import function for APIs and local files 
 
-tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
+tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d, impparams) {
       
     ##### Import WDI yearly
     try({
@@ -987,7 +993,7 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
       }
     
     })
-
+  
   ##### Import WEO outlook for aggregates
   try({
     
@@ -1253,7 +1259,6 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
     
   })
   
-  
   ##### Import data from the Conference Board
   
   try({
@@ -1293,7 +1298,6 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
       }
     }
   })
- 
 
   ##### Import data on CPI targets
   
@@ -1311,7 +1315,7 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
         cpt_raw <- read_excel(cpt_fname, sheet = cpt_sheet, skip = 0, col_names  = T,  .name_repair = "minimal")
         cpt_raw <- cpt_raw |> mutate(year = as.numeric(year)) |> 
           mutate(across(starts_with("cpi_target"), as.numeric)) |>
-          rename_at(vars(cpt_codes), ~new_codes) |> select("country_id", "year", all_of(new_codes))
+          rename_with(~ new_codes, all_of(cpt_codes)) |> select("country_id", "year", all_of(new_codes))
         
         extdata_y <- extdata_y |> left_join(cpt_raw, by = c("country_id", "year"), suffix = c("", "_old"))
         
@@ -1320,6 +1324,54 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
         
   })
   
+  ##### Import data on CDS 
+  
+  try({
+    
+    cds_impplan <- impplan |> filter(active == 1, database_name == "CDS", retrieve_type == "file", source_frequency == "d")
+    new_codes <- cds_impplan |> pull(indicator_code)
+    cds_fname <- here("assets", "_DB", "_extsources", cds_impplan$file_name[1])
+    cds_sheet <- cds_impplan$sheet_name[1]
+    
+    if (length(new_codes) > 0 && all(!is.na(new_codes))) {
+      
+      print("CDS")
+      cds_raw <- read_excel(cds_fname, sheet = cds_sheet, skip = 1, col_names = T, .name_repair = "minimal")
+      cds_final <- cds_raw |> mutate(date = as.Date(date)) |>
+        pivot_longer(cols = -date, names_to = "country_id", values_to = new_codes) |>
+        mutate(country_id = as.character(country_id), "{new_codes}" := as.numeric(.data[[new_codes]])) |>
+        arrange(date, country_id) |> as_tibble()
+      
+      extdata_d <- extdata_d |> left_join(cds_final, by = c("country_id", "date"), suffix = c("", "_old"))
+      
+      print("+") 
+    }
+    
+  })
+  
+  ##### Import data on neutral real rates
+  
+  try({
+    
+    nrate_impplan <- impplan |> filter(active == 1, database_name == "Neutral rates", retrieve_type == "file", source_frequency == "y")
+    nrate_codes <- nrate_impplan |> pull(retrieve_code)
+    new_codes <- nrate_impplan |> pull(indicator_code)
+    nrate_fname <- here("assets", "_DB", "_extsources", nrate_impplan$file_name[1])
+    nrate_sheet <- nrate_impplan$sheet_name[1]
+    
+    if (length(nrate_codes) > 0 && all(!is.na(nrate_codes))) {
+      
+      print("Neutral rates")
+      nrate_raw <- read_excel(nrate_fname, sheet = nrate_sheet, skip = 0, col_names  = T,  .name_repair = "minimal")
+      nrate_raw <- nrate_raw |> mutate(year = as.numeric(year)) |> 
+        mutate(across(contains("neutral_rate"), as.numeric)) |>
+        rename_with(~ new_codes, all_of(nrate_codes)) |> select("country_id", "year", all_of(new_codes))
+      extdata_y <- extdata_y |> left_join(nrate_raw, by = c("country_id", "year"), suffix = c("", "_old"))
+      
+      print("+") 
+    }
+    
+  })
   
   ##### Import BIS debt data
   
@@ -1469,9 +1521,10 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
       }
       
       extdata_y <- extdata_y |> left_join(gcd_tidy, by = c("country_id", "year"), suffix = c("", "_old")) |>
-        mutate(across(all_of(new_codes), ~ replace_na(.x, 0))) }
+        mutate(across(all_of(new_codes), ~ replace_na(.x, 0))) 
       
       print("+") 
+      }
     
     })
   
@@ -1518,10 +1571,11 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
         
         extdata_y <- extdata_y |> left_join(hrt_tidy, by = c("country_id", "year"), suffix = c("", "_old")) |>
           mutate(across(all_of(new_codes[i]), ~ replace_na(.x, 0))) }
+      
+      print("+")
+      
       }
-    
-    print("+") 
-    
+     
   })
   
   
@@ -1551,9 +1605,10 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
       }
       
       extdata_y <- extdata_y |> left_join(ct_tidy, by = c("country_id", "year"), suffix = c("", "_old")) |>
-        mutate(across(all_of(new_codes), ~ replace_na(.x, 0))) }
+        mutate(across(all_of(new_codes), ~ replace_na(.x, 0))) 
     
     print("+") 
+    }
     
   })
   
@@ -1577,6 +1632,242 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d) {
       
       extdata_y <- extdata_y |> left_join(mod_tidy, by = c("country_id", "year"), suffix = c("", "_old"))
     
+      print("+") 
+    }
+    
+  })
+  
+  ##### Import and build WEO forecast vintages
+  
+  try({
+  
+      weov_impplan <- impplan |> filter(active == 1, database_name == "WEO vintages", retrieve_type == "file", source_frequency == "y")
+      weov_codes <- weov_impplan |> pull(retrieve_code)
+      new_codes <- weov_impplan |> pull(indicator_code)
+      weov_dir    <- here::here("assets", "_DB", "_extsources", "WEO_vintages")
+      weov_files  <- fs::dir_ls(weov_dir, regexp = "\\d{4}-[12]\\.xls[x]?$", type = "file")
+      forecast_h <- 1L                     # горизонт прогноза (в годах вперёд)
+      
+      if (length(weov_codes) > 0 && all(!is.na(weov_codes))) {
+        
+        print("WEO vintages")
+      
+      safe_read_weov <- \(path) {
+        tryCatch(
+          readxl::read_excel(path, sheet = 1, .name_repair = "unique", na = c("n/a", "N/A", "..", ".", "-", "—", "–", "")),
+          error = \(e) { warning(glue("Не прочитан файл: {basename(path)}; {e$message}")); tibble() }
+        )
+      }
+      
+      parse_pub <- \(fname) {
+        m <- str_match(basename(fname), "^(\\d{4})-([12])\\.xls[x]?$")
+        tibble(pub_year = as.integer(m[,2]), issue = as.integer(m[,3]))
+      }
+      
+      first_present <- \(nm, candidates) {
+        cand <- candidates[candidates %in% nm]
+        if (length(cand)) cand[[1]] else NA_character_
+      }
+      
+      weov_long <- map(weov_files, \(f) {
+        pub <- parse_pub(f)
+        raw <- safe_read_weov(f)
+        if (nrow(raw) == 0) return(tibble())
+        
+        nm <- names(raw)
+        
+        subj_col <- first_present(nm, c("WEO Subject Code","WEO.Subject.Code","Subject Code","Subject.Code","subject_code"))
+        iso2_col <- first_present(nm, c("ISO2","ISO2 Code","ISO2.Code","iso2"))
+        iso3_col <- first_present(nm, c("ISO","ISO Code","ISO.Code","WEO Country Code","WEO.Country.Code","iso"))
+        
+        # валидация служебных колонок
+        if (is.na(subj_col)) {
+          warning(glue("Файл {basename(f)}: не найден столбец с кодом показателя — файл пропущен"))
+          return(tibble())
+        }
+        if (is.na(iso2_col) && is.na(iso3_col)) {
+          warning(glue("Файл {basename(f)}: не найден ISO2/ISO3 — файл пропущен"))
+          return(tibble())
+        }
+        
+        # кандидаты годовых колонок
+        year_cols <- nm[str_detect(nm, "^\\d{4}$|^X\\d{4}$")]
+        if (!length(year_cols)) {
+          warning(glue("Файл {basename(f)}: не найдены годовые колонки — файл пропущен"))
+          return(tibble())
+        }
+        
+        # целевой год прогноза для этого файла
+        target_year <- pub$pub_year + forecast_h
+        target_name_candidates <- c(as.character(target_year), paste0("X", target_year))
+        has_target <- any(target_name_candidates %in% year_cols)
+        if (!has_target) {
+          warning(glue("Файл {basename(f)}: отсутствует колонка целевого года {target_year} — пропущен"))
+          return(tibble())
+        }
+        
+        keep <- c(subj_col, iso2_col, iso3_col, year_cols) |> discard(is.na)
+        keep <- keep[!is.na(keep)]           
+        keep <- intersect(keep, names(raw)) 
+        df <- raw |> select(any_of(keep))
+        
+        # country_id (предпочтительно ISO2)
+        df <- df |>
+          mutate(
+            country_id = coalesce(
+              if (!is.na(iso2_col)) .data[[iso2_col]] else NA_character_,
+              if (!is.na(iso3_col)) .data[[iso3_col]] else NA_character_
+            ),
+            .before = 1
+          )
+        
+        # удаляем ISO-колонки (если они реально есть)
+        rm_cols <- c(iso2_col, iso3_col)
+        rm_cols <- rm_cols[!is.na(rm_cols)]         
+        rm_cols <- intersect(rm_cols, names(df))    
+        df <- df |> select(-any_of(rm_cols))
+        
+        # валидация country_id
+        n_missing_id <- sum(is.na(df$country_id))
+        if (n_missing_id > 0) {
+          warning(glue("Файл {basename(f)}: отсутствует country_id у {n_missing_id} строк — они будут отброшены"))
+          df <- df |> filter(!is.na(country_id))
+        }
+        
+        # валидация наличия нужных кодов в этом файле
+        found_codes <- sort(unique(df[[subj_col]]))
+        missing_codes <- setdiff(weov_codes, found_codes)
+        if (length(missing_codes) > 0) {
+          warning(glue("Файл {basename(f)}: не найдены коды {toString(missing_codes)}"))
+        }
+        
+        # длинная форма + выбор только целевого года
+        df_long <- df |>
+          pivot_longer(cols = matches("^\\d{4}$|^X\\d{4}$"),
+                       names_to = "year_chr", values_to = "value") |>
+          mutate(
+            year = as.integer(str_remove(year_chr, "^X")),
+            subject_code = .data[[subj_col]],
+            .keep = "unused"
+          ) |>
+          mutate(
+            value = dplyr::na_if(value, "n/a"),
+            value = dplyr::na_if(value, "N/A"),
+            value = dplyr::na_if(value, ".."),
+            value = dplyr::na_if(value, "-"),
+            value = dplyr::na_if(value, "—"),
+            value = dplyr::na_if(value, "–"),
+            value = readr::parse_number(as.character(value),
+                                        locale = readr::locale(decimal_mark = ".", grouping_mark = ",")) 
+          ) |>
+          filter(year == target_year, subject_code %in% weov_codes) |>
+          mutate(pub_year = pub$pub_year, issue = pub$issue, .after = year) |>
+          select(country_id, subject_code, year, pub_year, issue, value)
+        
+        # валидация «пустого после фильтра» (например, все нужные коды отсутствуют)
+        if (nrow(df_long) == 0) {
+          warning(glue("Файл {basename(f)}: после отбора целевого года {target_year} и кодов {toString(weo_codes)} данные отсутствуют"))
+        }
+        
+        df_long
+      }) |> list_rbind()
+      
+      if (nrow(weov_long) == 0) {
+        weo_vintage_y <- tibble(country_id = character(), year = integer())
+      } else {
+        # усредняем по выпускам (-1 и -2) в рамках одного pub_year для каждого target_year
+        weov_mean <- weov_long |>
+          summarise(value = mean(value, na.rm = TRUE), .by = c(country_id, pub_year, subject_code))
+        
+        weov_wide <- weov_mean |>
+          mutate(subject_code = factor(subject_code, levels = weov_codes)) |>
+          pivot_wider(names_from = subject_code, values_from = value)
+        
+        keep_cols <- c("country_id", "pub_year", weov_codes)
+        weo_vintage_y <- weov_wide |> select(any_of(keep_cols))
+        
+        # переименование кодов → новые имена
+        rename_map <- set_names(weov_codes, new_codes)   # new := old
+        weo_vintage_y <- weo_vintage_y |> rename(!!!rename_map)
+        
+        # типы
+        weo_vintage_y <- weo_vintage_y |> mutate(year = suppressWarnings(as.integer(pub_year)),
+            country_id = countrycode(country_id, origin = 'iso3c', destination = 'iso2c', 
+            custom_match = c('ROM' = 'RO','ADO' = 'AD','ANT' = 'AN', 'KSV' = 'XK','TMP' = 'TL','WBG' = 'PS','ZAR' = 'CD'), warn = F)) |>
+            select(-c(pub_year))
+      }
+      
+      extdata_y <- extdata_y |> left_join(weo_vintage_y, by = c("country_id", "year"), suffix = c("", "_old"))
+      print("+") 
+      }
+      
+  })
+      
+  ##### Import local data
+  
+  try({
+    
+    local_impplan <- impplan |> filter(active == 1, retrieve_type == "local")
+    local_codes <- local_impplan |> pull(retrieve_code)
+    
+    if (length(local_codes) > 0 && all(!is.na(local_codes))) {
+      
+      print("Local data")
+      
+      # соответствия кодов и частот из плана импорта
+      impplan_tbl <- local_impplan |> transmute(retrieve_code, indicator_code, source_frequency)
+      
+      # какие временные столбцы нужны для каждой частоты
+      time_vars_map <- list(d = c("date"), m = c("year", "month"), q = c("year", "quarter"), y = c("year"))
+      
+      # вектор частот, которые действительно встречаются в плане
+      freqs <- intersect(c("d", "m", "q", "y"), unique(impplan_tbl$source_frequency))
+      
+      # читаем аккуратно: если файла/листа нет, возвращаем пустой tibble
+      safe_read <- possibly(
+        .f = \(path, sheet)
+        readxl::read_excel(path, sheet = sheet, skip = 1, .name_repair = "unique"),
+        otherwise = tibble()
+      )
+      
+      # список тиблов по всем частотам
+      freq_tables <- map(freqs, \(f) {
+        
+          codes_f <- impplan_tbl |> filter(source_frequency == f)
+          old_codes <- codes_f$retrieve_code
+          new_codes <- codes_f$indicator_code
+          rename_map <- rlang::set_names(old_codes, new_codes)
+          time_vars <- time_vars_map[[f]]
+          
+          # читаем все страны, добавляем country_id и склеиваем
+          df_f <- map2(impparams$local_fnames, impparams$local_iso2, \(fname, iso2) {
+            safe_read(fname, sheet = f) |>
+              mutate(country_id = iso2, .before = 1)
+          }) |> list_rbind()
+          
+          # выбираем служебные + нужные коды именно этой частоты
+          keep_cols <- c("country_id", time_vars, old_codes)
+          
+          # переименовываем retrieve_code -> indicator_code
+          df_f |> select(any_of(keep_cols)) |> rename(!!!rename_map)
+          
+      })
+      
+      # разложим результат в именованные объекты по частотам
+      names(freq_tables) <- freqs
+      
+      # создаём четыре tibble-объекта; если частоты нет в плане — делаем пустой tibble с нужными служебными колонками
+      local_d <- if ("d" %in% names(freq_tables)) freq_tables[["d"]] else tibble(country_id = character(), date = as.POSIXct(character()))
+      local_m <- if ("m" %in% names(freq_tables)) freq_tables[["m"]] else tibble(country_id = character(), year = integer(), month = integer())
+      local_q <- if ("q" %in% names(freq_tables)) freq_tables[["q"]] else tibble(country_id = character(), year = integer(), quarter = integer())
+      local_y <- if ("y" %in% names(freq_tables)) freq_tables[["y"]] else tibble(country_id = character(), year = integer())
+      
+      # грузим в базу
+      extdata_y <- extdata_y |> left_join(local_y, by = c("country_id", "year"), suffix = c("", "_old"))
+      extdata_q <- extdata_q |> left_join(local_q, by = c("country_id", "year", "quarter"), suffix = c("", "_old")) 
+      extdata_m <- extdata_m |> left_join(local_m, by = c("country_id", "year", "month"), suffix = c("", "_old")) 
+      extdata_d <- extdata_d |> left_join(local_d, by = c("country_id", "date"), suffix = c("", "_old")) 
+      
       print("+") 
     }
     

@@ -2,7 +2,8 @@
 library_names <- c("dplyr","reshape2","ggplot2","ggthemes","countrycode","readxl","tidyr","data.table","writexl","unikn",
                    "ggtext","svglite","stringr","directlabels","fanplot", "forcats",
                    "ggfan",  # проверять, не вернулся ли на CRAN
-                   "hrbrthemes","glue","readr", "showtext")
+                   #"hrbrthemes",
+                   "glue","readr", "showtext")
 
 #devtools::install_github("jasonhilton/ggfan")
 

@@ -21,7 +21,7 @@ source(here("download_script","imf_tool.R"))
 
 readImportParams <- function (param_fname, update_mode) {
   
-  param_fname <- here("assets", "_DB", "0_database_params.xlsx")
+  #param_fname <- here("assets", "_DB", "0_database_params.xlsx")
   impplan <- read_excel(param_fname, sheet = "import", col_names = T, skip=1)
   parameters <- read_excel(param_fname, sheet = "scope", col_names = T, skip=1, n_max=1)
   locals <- read_excel(param_fname, sheet = "scope", col_names = T, skip=6)

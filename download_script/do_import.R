@@ -7,7 +7,7 @@ update_mode <- 1    # 0 if all the data and containers should be new, 1 if only 
 n_attempts <- 15    # how many times should we ping API's for needed data
 formula_words <- c("lag", "lead", "rollsum", "rollavg", "rollvol", "mean", "last", "first", "min", "pmin", "max", "pmax", 
                    "sum", "coalesce", "share", "exp", "fromto", "year", "na_if", "cummax", "cummin", "cumsum", "ceiling", 
-                   "letterize")
+                   "letterize", "indexize")
 sheet_keys <- c(y = "y", q = "q", m = "m")
 
 ##### Where is import schedule saved? What are the data files?

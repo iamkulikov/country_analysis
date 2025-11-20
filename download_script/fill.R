@@ -95,6 +95,19 @@ extractIndicators <- function(formula, formula_words) {
     return(character(0))
   }
   
+  # 0. Специальный случай indexize(): исключаем второй аргумент из индикаторов
+  if (stringr::str_detect(formula, "indexize")) {
+    # вытащим первый аргумент (имя индикатора), игнорируя второй
+    m <- stringr::str_match(
+      formula,
+      "indexize\\s*\\(\\s*([A-Za-z0-9_]+)\\s*,"
+    )
+    if (!all(is.na(m))) {
+      # set tokens = only the first arg and function name
+      return(m[2])
+    }
+  }
+  
   # Split formula 
   tokens <- stringr::str_split(string = formula, pattern = "\\/|\\(|\\)|\\+|\\-|\\*|\\=|\\^|\\,|\\s+|>|<|==|!=", 
                                simplify = TRUE)
@@ -311,6 +324,91 @@ captureDimensions <- function(extdata_y, extdata_q, extdata_m, extdata_d) {
   
 }
 
+##### Parse textual base period like "2014", "2014Q2", "2014M07", "2014-05-31", "31.05.2014"
+
+parse_base_period <- function(base_expr) {
+  # base_expr может быть чем угодно: 2014, "2014Q2", 2014M07, 2014-05-31, 31.05.2014 ...
+  
+  if (is.null(base_expr) || is.na(base_expr) || base_expr == "") {
+    return(NA_Date_)
+  }
+  
+  base_str <- as.character(base_expr) |> stringr::str_trim()
+  # убираем кавычки на всякий случай
+  base_str <- stringr::str_replace_all(base_str, "^['\"]|['\"]$", "")
+  
+  # 1) Только год: 2014
+  if (stringr::str_detect(base_str, "^\\d{4}$")) {
+    year <- as.integer(base_str)
+    return(lubridate::make_date(year = year, month = 1L, day = 1L))
+  }
+  
+  # 2) Квартал: 2014Q2
+  if (stringr::str_detect(base_str, "^(\\d{4})[Qq](0?[1-4])$")) {
+    m <- stringr::str_match(base_str, "^(\\d{4})[Qq](0?[1-4])$")
+    year <- as.integer(m[, 2])
+    q    <- as.integer(m[, 3])
+    month <- 3L * (q - 1L) + 1L
+    return(lubridate::make_date(year = year, month = month, day = 1L))
+  }
+  
+  # 3) Месяц: 2014M07
+  if (stringr::str_detect(base_str, "^(\\d{4})[Mm](0?[1-9]|1[0-2])$")) {
+    m <- stringr::str_match(base_str, "^(\\d{4})[Mm](0?[1-9]|1[0-2])$")
+    year  <- as.integer(m[, 2])
+    month <- as.integer(m[, 3])
+    return(lubridate::make_date(year = year, month = month, day = 1L))
+  }
+  
+  # 4) ISO-дата: 2014-05-31
+  date_ymd <- suppressWarnings(lubridate::ymd(base_str))
+  if (!is.na(date_ymd)) {
+    return(date_ymd)
+  }
+  
+  # 5) Европейский формат: 31.05.2014
+  date_dmy <- suppressWarnings(lubridate::dmy(base_str))
+  if (!is.na(date_dmy)) {
+    return(date_dmy)
+  }
+  
+  warning(glue::glue("parse_base_period(): cannot parse base period '{base_str}'"))
+  NA_Date_
+}
+
+# parse_base_period("2014M03")
+
+##### Universal indexizer: 100 at base period, works for any freq (y/q/m/d)
+
+indexize_anyfreq <- function(x, date, base_expr) {
+  # x    — числовой ряд
+  # date — вектор Date (у тебя уже есть в extdata_* после createDateColumns())
+  # base_expr — текстовое задание базового периода: 2014, 2014Q2, 2014M07, 2014-05-31, ...
+  
+  if (all(is.na(x))) {
+    return(rep(NA_real_, length(x)))
+  }
+  
+  date <- as.Date(date)
+  
+  base_date <- parse_base_period(base_expr) |> as.Date()
+  if (is.na(base_date)) {
+    return(rep(NA_real_, length(x)))
+  }
+  
+  # ищем наблюдение, наиболее близкое к базовой дате
+  dist <- abs(as.numeric(date - base_date))
+  idx  <- which.min(dist)
+  
+  x_base <- x[idx]
+  
+  if (is.na(x_base) || x_base == 0) {
+    return(rep(NA_real_, length(x)))
+  }
+  
+  100 * x / x_base
+}
+
 
 ##### Function to recode score into rating
 
@@ -361,10 +459,11 @@ fill <- function(fillplan, extdata_y, extdata_q, extdata_m, extdata_d) {
     
     try({
       
-      #### 1. Simple formulas, same freq ####
+      #### 1a. Simple formulas, same freq ####
       
       if (oldfreq == newfreq && active == 1L && !stringr::str_detect(formula, "roll") &&
-          !stringr::str_detect(formula, "fromto") && formula != "share") {
+          !stringr::str_detect(formula, "fromto") && formula != "share" &&
+          !stringr::str_detect(formula, "indexize")) {
         
         df   <- extdata[[oldfreq]]
         expr <- rlang::parse_expr(formula)
@@ -374,6 +473,59 @@ fill <- function(fillplan, extdata_y, extdata_q, extdata_m, extdata_d) {
         
         extdata[[oldfreq]] <- df
         print(glue::glue("i={i}: same-freq formula, new var '{newcode}' at freq '{oldfreq}'"))
+      }
+      
+      #### 1b. Indexize: base = 100 at given period (any freq) ####
+      
+      if (oldfreq == newfreq && active == 1L &&
+          stringr::str_detect(formula, "indexize")) {
+        
+        # Ожидаемый синтаксис в fillplan:
+        # indexize(usdlc_av, 2014)
+        # indexize(cpi_m, 2014Q2)
+        # indexize(cpi_m, 2014M07)
+        # indexize(oil_price_d, 2014-05-31)
+        # indexize(oil_price_d, 31.05.2014)
+        
+        m <- stringr::str_match(
+          formula,
+          "indexize\\s*\\(\\s*([A-Za-z0-9_]+)\\s*,\\s*([^\\)]+)\\)"
+        )
+        print(m)
+        if (any(is.na(m))) {
+          warning(glue::glue(
+            "i={i}: cannot parse indexize() formula '{formula}'. ",
+            "Expected something like indexize(code, 2014Q2)"
+          ))
+        } else {
+          base_var   <- stringr::str_trim(m[, 2])
+          base_expr  <- stringr::str_trim(m[, 3])
+          print(base_var)
+          print(base_expr)
+          # если oldcode пустой, считаем, что первый аргумент indexize() и есть oldcode
+          if (is.na(oldcode) || oldcode == "") {
+            oldcode <- base_var
+          }
+          
+          df <- extdata[[oldfreq]]
+          new_sym <- rlang::sym(newcode)
+          
+          df <- df |>
+            dplyr::group_by(country_id) |>
+            dplyr::mutate(
+              !!new_sym := indexize_anyfreq(
+                x         = .data[[oldcode]],
+                date      = .data$date,
+                base_expr = base_expr
+              )
+            ) |>
+            dplyr::ungroup()
+          
+          extdata[[oldfreq]] <- df
+          print(glue::glue(
+            "i={i}: indexize() '{oldcode}' with base='{base_expr}' -> '{newcode}' at freq '{oldfreq}'"
+          ))
+        }
       }
       
       #### 2. Rolling-indicators, same freq ####

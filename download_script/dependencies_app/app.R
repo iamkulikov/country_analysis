@@ -593,7 +593,11 @@ plot_indicator_graph_interactive <- function(dep_graph,
     height_svg = 6,
     options = list(
       ggiraph::opts_hover(css = "stroke-width: 2;"),
-      ggiraph::opts_tooltip(opacity = 0.9)
+      ggiraph::opts_tooltip(opacity = 0.9),
+      ggiraph::opts_selection(
+        type       = "single",   # одна выбранная сущность
+        only_shiny = TRUE        # выбор передаётся в Shiny
+      )
     )
   )
 }
@@ -688,6 +692,18 @@ server <- function(input, output, session) {
       inputId = "indicator",
       choices = choices,
       server  = TRUE
+    )
+  })
+  
+  observeEvent(input$graph_selected, {
+    clicked_id <- input$graph_selected
+    if (is.null(clicked_id) || length(clicked_id) == 0) return()
+    if (!clicked_id %in% indicator_catalog$node_id) return()
+    
+    updateSelectizeInput(
+      session,
+      inputId  = "indicator",
+      selected = clicked_id
     )
   })
   

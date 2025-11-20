@@ -9,6 +9,7 @@ library(ggraph)
 library(ggplot2)
 library(ggiraph)
 library(glue)
+library(here)
 
 ### From import.R
 
@@ -106,7 +107,8 @@ build_dependency_edges <- function(impplan,
                     .data$source_code, .data$formula) |>
     dplyr::left_join(
       known_nodes,
-      by = dplyr::join_by(source_code == indicator_code)
+      by = dplyr::join_by(source_code == indicator_code),
+      relationship = "many-to-many"
     ) |>
     dplyr::filter(
       !is.na(.data$frequency),
@@ -167,21 +169,43 @@ build_dependency_nodes <- function(impplan, fillplan) {
     TRUE ~ NA_character_
   )
   
+  # --- новые: определяем, где лежат названия индикаторов ---
+  name_cols_imp  <- c("indicator",
+                      "indicator_name", "name", "var_name", "indicator_label",
+                      "label_ru", "label_en")
+  
+  name_cols_fill <- c("new_indicator",
+                      "new_indicator_name", "indicator_name", "name", "var_name",
+                      "indicator_label", "label_ru", "label_en")
+  
+  name_col_imp  <- name_cols_imp[name_cols_imp %in% names(impplan)] |> 
+    purrr::pluck(1, .default = NA_character_)
+  name_col_fill <- name_cols_fill[name_cols_fill %in% names(fillplan)] |> 
+    purrr::pluck(1, .default = NA_character_)
+  
   nodes_imp <- impplan |>
     dplyr::filter(.data$active == 1L) |>
+    dplyr::mutate(
+      indicator_name = if (!is.na(name_col_imp)) .data[[name_col_imp]] else NA_character_
+    ) |>
     dplyr::transmute(
       indicator_code = .data$indicator_code,
       frequency      = .data$source_frequency,
       db_name        = if (!is.na(db_col)) .data[[db_col]] else NA_character_,
+      indicator_name = .data$indicator_name,
       type           = "imported"
     )
   
   nodes_fill <- fillplan |>
     dplyr::filter(.data$active1 == 1L) |>
+    dplyr::mutate(
+      indicator_name = if (!is.na(name_col_fill)) .data[[name_col_fill]] else NA_character_
+    ) |>
     dplyr::transmute(
       indicator_code = .data$new_indicator_code,
       frequency      = .data$new_frequency,
       db_name        = NA_character_,
+      indicator_name = .data$indicator_name,
       type           = "computed"
     )
   
@@ -226,7 +250,8 @@ build_dependency_graph <- function(impplan,
       frequency      = .data$frequency,
       db_name        = .data$db_name,
       type           = .data$type,
-      label          = .data$label
+      label          = .data$label,
+      indicator_name = .data$indicator_name
     )
   
   g <- igraph::graph_from_data_frame(
@@ -235,11 +260,12 @@ build_dependency_graph <- function(impplan,
     directed = TRUE
   )
   
-  igraph::V(g)$indicator_code <- nodes_df$indicator_code[match(igraph::V(g)$name, nodes_df$name)]
-  igraph::V(g)$freq           <- nodes_df$frequency[match(igraph::V(g)$name, nodes_df$name)]
-  igraph::V(g)$label          <- nodes_df$label[match(igraph::V(g)$name, nodes_df$name)]
-  igraph::V(g)$type           <- nodes_df$type[match(igraph::V(g)$name, nodes_df$name)]
-  igraph::V(g)$db             <- nodes_df$db_name[match(igraph::V(g)$name, nodes_df$name)]
+  igraph::V(g)$indicator_code  <- nodes_df$indicator_code[match(igraph::V(g)$name, nodes_df$name)]
+  igraph::V(g)$freq            <- nodes_df$frequency[match(igraph::V(g)$name, nodes_df$name)]
+  igraph::V(g)$label           <- nodes_df$label[match(igraph::V(g)$name, nodes_df$name)]
+  igraph::V(g)$type            <- nodes_df$type[match(igraph::V(g)$name, nodes_df$name)]
+  igraph::V(g)$db              <- nodes_df$db_name[match(igraph::V(g)$name, nodes_df$name)]
+  igraph::V(g)$indicator_name  <- nodes_df$indicator_name[match(igraph::V(g)$name, nodes_df$name)]
   
   list(
     graph = g,
@@ -316,9 +342,11 @@ get_indicator_subgraph <- function(dep_graph,
 
 build_indicator_catalog <- function(impplan, fillplan) {
   
-  name_cols_imp  <- c("indicator_name", "name", "var_name", "indicator_label",
+  name_cols_imp  <- c("indicator",       # <-- добавили
+                      "indicator_name", "name", "var_name", "indicator_label",
                       "label_ru", "label_en")
-  name_cols_fill <- c("new_indicator_name", "indicator_name", "name", "var_name",
+  name_cols_fill <- c("new_indicator",   # <-- добавили
+                      "new_indicator_name", "indicator_name", "name", "var_name",
                       "indicator_label", "label_ru", "label_en")
   
   name_col_imp  <- name_cols_imp[name_cols_imp %in% names(impplan)] |> purrr::pluck(1, .default = NA_character_)
@@ -419,21 +447,27 @@ plot_indicator_graph_interactive <- function(dep_graph,
   layout <- ggraph::create_layout(g_sub, layout = "sugiyama")
   
   # узлы
-  nodes_df <- layout |> tibble::as_tibble()
+  nodes_df <- layout |> 
+    tibble::as_tibble() |>
+    dplyr::mutate(
+      # всплывающая подсказка: код + человеко-читаемое название
+      tooltip = dplyr::case_when(
+        !is.na(.data$indicator_name) & .data$indicator_name != "" ~ 
+          glue::glue("{indicator_code} — {indicator_name}"),
+        TRUE ~ indicator_code
+      )
+    )
   
   # рёбра: данные из igraph + координаты узлов
   edges_tbl <- igraph::as_data_frame(g_sub, what = "edges") |>
     tibble::as_tibble()
-  # здесь уже должны быть: from, to, edge_id, formula_short и т.п.
   
   edges_df <- edges_tbl |>
-    # координаты начальных узлов
     dplyr::left_join(
       nodes_df |>
         dplyr::select(name, x_from = .data$x, y_from = .data$y),
       by = dplyr::join_by(from == name)
     ) |>
-    # координаты конечных узлов
     dplyr::left_join(
       nodes_df |>
         dplyr::select(name, x_to = .data$x, y_to = .data$y),
@@ -451,7 +485,7 @@ plot_indicator_graph_interactive <- function(dep_graph,
   # -------- сам ggplot --------
   p <- ggplot2::ggplot() +
     
-    # Рёбра как интерактивные сегменты
+    # 1) Невидимый, но толстый интерактивный слой рёбер — большая зона попадания
     ggiraph::geom_segment_interactive(
       data = edges_df,
       ggplot2::aes(
@@ -462,15 +496,31 @@ plot_indicator_graph_interactive <- function(dep_graph,
         tooltip = .data$tooltip,
         data_id = .data$edge_id
       ),
+      linewidth   = 4,       # толстый hitbox
+      alpha       = 0,       # полностью прозрачный
+      lineend     = "round",
+      show.legend = FALSE
+    ) +
+    
+    # 2) Тонкие видимые рёбра поверх
+    ggplot2::geom_segment(
+      data = edges_df,
+      ggplot2::aes(
+        x    = .data$x,
+        y    = .data$y,
+        xend = .data$xend,
+        yend = .data$yend
+      ),
       colour  = "#A0A0A0",
       arrow   = grid::arrow(length = grid::unit(3, "mm")),
       lineend = "round",
       alpha   = 0.7,
+      linewidth = 0.6,
       show.legend = FALSE
     ) +
     
-    # Все узлы
-    ggraph::geom_node_label(
+    # Все узлы — интерактивные подписи
+    ggiraph::geom_label_interactive(
       data = nodes_df,
       ggplot2::aes(
         x        = .data$x,
@@ -478,7 +528,9 @@ plot_indicator_graph_interactive <- function(dep_graph,
         label    = .data$label,
         fill     = .data$type,
         colour   = "normal",
-        fontface = ifelse(.data$is_focus, "bold", "plain")
+        fontface = ifelse(.data$is_focus, "bold", "plain"),
+        tooltip  = .data$tooltip,
+        data_id  = .data$name
       ),
       label.size    = 0.3,
       label.r       = grid::unit(3, "pt"),
@@ -487,23 +539,32 @@ plot_indicator_graph_interactive <- function(dep_graph,
       show.legend   = FALSE
     ) +
     
-    # Фокусный узел поверх
-    ggraph::geom_node_label(
-      data = nodes_df |> dplyr::filter(.data$is_focus),
-      ggplot2::aes(
-        x     = .data$x,
-        y     = .data$y,
-        label = .data$label
-      ),
-      fill          = focus_fill,
-      colour        = stroke_palette["normal"],
-      fontface      = "bold",
-      label.size    = 0.3,
-      label.r       = grid::unit(3, "pt"),
-      label.padding = grid::unit(3, "pt"),
-      size          = 3.2,
-      show.legend   = FALSE
-    ) +
+    # Фокусный узел поверх (тоже интерактивен)
+    {
+      nodes_focus_df <- nodes_df |> dplyr::filter(.data$is_focus)
+      if (nrow(nodes_focus_df) > 0) {
+        ggiraph::geom_label_interactive(
+          data = nodes_focus_df,
+          ggplot2::aes(
+            x       = .data$x,
+            y       = .data$y,
+            label   = .data$label,
+            tooltip = .data$tooltip,
+            data_id = .data$name
+          ),
+          fill          = focus_fill,
+          colour        = stroke_palette["normal"],
+          fontface      = "bold",
+          label.size    = 0.3,
+          label.r       = grid::unit(3, "pt"),
+          label.padding = grid::unit(3, "pt"),
+          size          = 3.2,
+          show.legend   = FALSE
+        )
+      } else {
+        ggplot2::geom_blank()
+      }
+    } +
     
     ggplot2::scale_fill_manual(values = fill_palette, na.value = "#E0E0E0") +
     ggplot2::scale_colour_manual(values = stroke_palette, guide = "none") +

@@ -2,7 +2,7 @@
 
 ## ------  Load libraries
 library_names <- c("dplyr","reshape2","WDI","countrycode","readxl","readr","tidyr","data.table","writexl","stringr",
-                   "gsubfn","jsonlite","Rilostat","glue","httr","here","zoo","rlang","purrr")
+                   "gsubfn","jsonlite","Rilostat","glue","httr","here","zoo","rlang","purrr", "rsdmx")
 # ,"rlist"
 
 for (library_name in library_names) {
@@ -541,7 +541,7 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d, imppa
         
         for (i in seq_along(imfy_codes)) {
           message(imfy_codes[i])
-          
+
           new_data <- imfTool(database = imfy_dbnames[i], code = imfy_codes[i], freq = "y", 
                               start = year_first, end = year_final) |>
             dplyr::select(iso2, year, value) |> dplyr::rename(!!imfy_codes[i] := value)

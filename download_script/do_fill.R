@@ -6,6 +6,8 @@ library(here)
 ##### Where is the filling schedule saved? What are the data files?
 here::i_am("download_script/do_fill.R")
 test <- 0
+fill_from <- NULL
+# fill_from <- "neutral_rate_nom_lr"
 
 countries <- c("Armenia", "Belarus", "Brazil", "Bulgaria", "Greece", "China", "India", "Kazakhstan", "Kyrgyz Republic", "Mongolia",
                "Romania", "Russian Federation", "Slovak Republic", "South Africa", "Switzerland", "Tajikistan", "Turkiye", "Ukraine",
@@ -14,12 +16,12 @@ countries <- c("Armenia", "Belarus", "Brazil", "Bulgaria", "Greece", "China", "I
 # в базе именно такое (дропнуть изначально при кодировке базы все точки на концах?)
 formula_words <- c("lag", "lead", "rollsum", "rollavg", "rollvol", "mean", "last", "first", "min", "pmin", "max", "pmax", 
                    "sum", "coalesce", "share", "exp", "fromto", "year", "na_if", "cummax", "cummin", "cumsum", "ceiling",
-                   "letterize", "indexize")
-change_freq_words <- c("mean", "last", "demean", "desum", "spline")
+                   "letterize", "indexize", "demean_fix", "desum_fix", "impute_fix", "impute_linear")
+change_freq_words <- c("mean", "last", "demean_fix", "desum_fix", "spline")
 sheet_keys <- c(y = "y", q = "q", m = "m")
 
 if (test == 0) {param_fname <- "0_database_params.xlsx"; data_fname <- "Imported_DB.rds";
-data_d_fname <- "Imported_DB_d.rds"; filled_fname <- "Filled_DB.xlsx"; filled_d_fname <- "Filled_d_DB.xlsx"} else {
+data_d_fname <- "Imported_DB_d.rds"; filled_fname <- "Filled_DB.rds"; filled_d_fname <- "Filled_DB_d.rds"} else {
   param_fname <- "0_database_params_test.xlsx"; data_fname <- "Temp.xlsx"; data_d_fname <- "Temp_d.xlsx";
   filled_fname <- "Temp_filled.xlsx"; filled_d_fname <- "Temp_filled_d.xlsx"}
 
@@ -44,20 +46,27 @@ fillplan <- checkFreq(fillplan = fillplan, change_freq_words = change_freq_words
 error_report <- fillplan |> dplyr::filter(checks == 0L)
 
 
-
 if (is.null(dim(error_report)[1]) | is.na(dim(error_report)[1]) | (dim(error_report)[1] == 0)) {
   
       print("Checks passed")
       
       ##### The filling sequence
-      D <- importData(yqm_file = here("assets", "_DB", data_fname), d_file = here("assets", "_DB", data_d_fname), sheet_keys = sheet_keys, format = "auto")
+  
+      if (is.null(fill_from)) {
+        message("do_fill: full recomputation from Imported_DB.*")
+        D <- importData(yqm_file = here("assets", "_DB", data_fname), d_file = here("assets", "_DB", data_d_fname), sheet_keys = sheet_keys, format = "auto")
+      } else {
+        message(glue::glue("do_fill: partial recalculation from indicator '{fill_from}' using Filled_DB_* as input"))
+        D <- importData(yqm_file = here("assets", "_DB", filled_fname), d_file = here("assets", "_DB", filled_d_fname), sheet_keys = sheet_keys, format = "auto")
+      }
+      
       data_dim <- captureDimensions(extdata_y = D$extdata_y, extdata_q = D$extdata_q, extdata_m = D$extdata_m, extdata_d = D$extdata_d)
       print("Filling started")
       D <- createDateColumns(extdata_y = D$extdata_y, extdata_q = D$extdata_q, extdata_m = D$extdata_m, extdata_d = D$extdata_d)
-      FD <- fill(fillplan = fillplan, extdata_y = D$extdata_y, extdata_q = D$extdata_q, extdata_m = D$extdata_m, extdata_d = D$extdata_d)
+      FD <- fill(fillplan = fillplan, extdata_y = D$extdata_y, extdata_q = D$extdata_q, extdata_m = D$extdata_m, extdata_d = D$extdata_d, fill_from = fill_from)
       remove(D)  
       FD <- dropDateColumns(extdata_y = FD$extdata_y, extdata_q = FD$extdata_q, extdata_m = FD$extdata_m, extdata_d = FD$extdata_d)
-      
+      # FD$extdata_y |> select (year, country_id, e2_0_reserve_cur) |> filter(year>2019, country_id=="US")
       ##### Check whether data container was broken in the process
       if (all(captureDimensions(extdata_y = FD$extdata_y, extdata_q = FD$extdata_q, extdata_m = FD$extdata_m, extdata_d = FD$extdata_d) == data_dim)) {
         print("Dimensions were preserved")} else {

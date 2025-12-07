@@ -437,13 +437,108 @@ letterize <- function(score, mode = 1, invalid = NA_character_) {
   out
 }
 
+##### Functions to impute data inside gaps
+
+# 1) Fill gaps with last observed value inside
+
+impute_fix_vec <- function(x) {
+  # x is a numeric vector, may contain NA
+  
+  n <- length(x)
+  if (n == 0L) return(x)
+  
+  idx_non_na <- which(!is.na(x))
+  # If <2 non-NA points, nothing to interpolate/fill inside
+  if (length(idx_non_na) <= 1L) return(x)
+  
+  res <- x
+  
+  # Walk over consecutive non-NA points and fill interior gaps
+  for (k in seq_len(length(idx_non_na) - 1L)) {
+    i <- idx_non_na[k]
+    j <- idx_non_na[k + 1L]
+    
+    # There is a gap only if j > i + 1
+    if (j > i + 1L) {
+      # fill positions (i+1) : (j-1) with last observed value x[i]
+      res[(i + 1L):(j - 1L)] <- x[i]
+    }
+  }
+  
+  res
+}
+
+# 2) Linear interpolation inside gaps, edges untouched
+impute_linear_vec <- function(x) {
+  # x is a numeric vector, may contain NA
+  
+  n <- length(x)
+  if (n == 0L) return(x)
+  
+  idx_non_na <- which(!is.na(x))
+  # If <2 non-NA points, impossible to interpolate
+  if (length(idx_non_na) <= 1L) return(x)
+  
+  res <- x
+  
+  for (k in seq_len(length(idx_non_na) - 1L)) {
+    i <- idx_non_na[k]
+    j <- idx_non_na[k + 1L]
+    
+    gap_len <- j - i - 1L
+    if (gap_len >= 1L) {
+      y0 <- x[i]
+      y1 <- x[j]
+      
+      # На всякий случай: если вдруг один из концов NA, просто пропускаем
+      if (is.na(y0) || is.na(y1)) next
+      
+      # шаг изменения на один индекс
+      step <- (y1 - y0) / (j - i)
+      # позиции внутри (i, j)
+      res[(i + 1L):(j - 1L)] <- y0 + step * seq_len(gap_len)
+    }
+  }
+  
+  res
+}
+
 ##### Function for the filling cycle
 
-fill <- function(fillplan, extdata_y, extdata_q, extdata_m, extdata_d) {
+fill <- function(fillplan, extdata_y, extdata_q, extdata_m, extdata_d, fill_from = NULL) {
 
+  # Optional: partial recalculation starting from a given indicator
+  if (!is.null(fill_from)) {
+    
+    if (!"new_indicator_code" %in% names(fillplan)) {
+      stop("fill(): 'fill_from' is only supported when 'new_indicator_code' is present in fillplan.")
+    }
+    
+    if (!fill_from %in% fillplan$new_indicator_code) {
+      stop(glue::glue("fill(): 'fill_from' = '{fill_from}' not found in fillplan$new_indicator_code."))
+    }
+    
+    # Take the *first* occurrence of this indicator and drop all previous rows
+    start_idx <- which(fillplan$new_indicator_code == fill_from)[1L]
+    
+    message(glue::glue(
+      "fill(): partial recalculation from row {start_idx} / {nrow(fillplan)}, indicator '{fill_from}'"
+    ))
+    
+    fillplan <- fillplan[start_idx:nrow(fillplan), , drop = FALSE]
+  }
+  
   extdata <- list(y = extdata_y, q = extdata_q, m = extdata_m, d = extdata_d)
   freq_long <- c(y = "year", q = "quarter", m = "month", d = "date")
   n_rows <- nrow(fillplan)
+  
+  # For disaggregation (low freq -> high freq)
+  # Which columns in the high-frequency data define the parent period
+  group_cols_map <- list(
+    y = c("year"),              # год → все кварталы/месяцы/дни этого года
+    q = c("year", "quarter"),   # квартал → все месяцы/дни этого квартала
+    m = c("year", "month")      # месяц → все дни этого месяца
+  )
   
   for (i in seq_len(n_rows)) {
     
@@ -463,7 +558,7 @@ fill <- function(fillplan, extdata_y, extdata_q, extdata_m, extdata_d) {
       
       if (oldfreq == newfreq && active == 1L && !stringr::str_detect(formula, "roll") &&
           !stringr::str_detect(formula, "fromto") && formula != "share" &&
-          !stringr::str_detect(formula, "indexize")) {
+          !stringr::str_detect(formula, "indexize") && !formula %in% c("impute_fix", "impute_linear")) {
         
         df   <- extdata[[oldfreq]]
         expr <- rlang::parse_expr(formula)
@@ -480,18 +575,11 @@ fill <- function(fillplan, extdata_y, extdata_q, extdata_m, extdata_d) {
       if (oldfreq == newfreq && active == 1L &&
           stringr::str_detect(formula, "indexize")) {
         
-        # Ожидаемый синтаксис в fillplan:
-        # indexize(usdlc_av, 2014)
-        # indexize(cpi_m, 2014Q2)
-        # indexize(cpi_m, 2014M07)
-        # indexize(oil_price_d, 2014-05-31)
-        # indexize(oil_price_d, 31.05.2014)
-        
         m <- stringr::str_match(
           formula,
           "indexize\\s*\\(\\s*([A-Za-z0-9_]+)\\s*,\\s*([^\\)]+)\\)"
         )
-        print(m)
+        
         if (any(is.na(m))) {
           warning(glue::glue(
             "i={i}: cannot parse indexize() formula '{formula}'. ",
@@ -500,12 +588,8 @@ fill <- function(fillplan, extdata_y, extdata_q, extdata_m, extdata_d) {
         } else {
           base_var   <- stringr::str_trim(m[, 2])
           base_expr  <- stringr::str_trim(m[, 3])
-          print(base_var)
-          print(base_expr)
-          # если oldcode пустой, считаем, что первый аргумент indexize() и есть oldcode
-          if (is.na(oldcode) || oldcode == "") {
-            oldcode <- base_var
-          }
+
+          if (is.na(oldcode) || oldcode == "") {oldcode <- base_var}
           
           df <- extdata[[oldfreq]]
           new_sym <- rlang::sym(newcode)
@@ -526,6 +610,31 @@ fill <- function(fillplan, extdata_y, extdata_q, extdata_m, extdata_d) {
             "i={i}: indexize() '{oldcode}' with base='{base_expr}' -> '{newcode}' at freq '{oldfreq}'"
           ))
         }
+      }
+      
+      #### 1c. Imputation inside gaps (impute_fix / impute_linear), same freq ####
+      
+      if (oldfreq == newfreq && active == 1L && formula %in% c("impute_fix", "impute_linear")) {
+        
+        df <- extdata[[oldfreq]]
+        old_sym <- rlang::sym(oldcode)
+        new_sym <- rlang::sym(newcode)
+        
+        if (!is.numeric(df[[oldcode]]) && !is.integer(df[[oldcode]])) {
+          warning(glue::glue(
+            "i={i}: imputation requested for non-numeric variable '{oldcode}' at freq '{oldfreq}'. ",
+            "Result may be meaningless."
+          ))
+        }
+        
+        impute_fun <- if (formula == "impute_fix") impute_fix_vec else impute_linear_vec
+        
+        df <- df |> dplyr::arrange(country_id, date) |>
+          dplyr::mutate(!!new_sym := impute_fun(.data[[oldcode]]), .by = country_id)
+        
+        extdata[[oldfreq]] <- df
+        
+        print(glue::glue("i={i}: {formula} for '{oldcode}' -> '{newcode}' at freq '{oldfreq}' (gaps only, edges kept NA)"))
       }
       
       #### 2. Rolling-indicators, same freq ####
@@ -586,13 +695,98 @@ fill <- function(fillplan, extdata_y, extdata_q, extdata_m, extdata_d) {
         
         df_to <- extdata[[newfreq]]
         
-        df_to <- df_to |> dplyr::left_join(aggreg, by = c("country_id" = "country_id", "date" = "date"))
+        df_to <- df_to |> dplyr::select(-dplyr::any_of(newcode))
+        df_to <- df_to |> dplyr::left_join(aggreg, dplyr::join_by(country_id, date))
+        # df_to <- df_to |> dplyr::left_join(aggreg, by = c("country_id" = "country_id", "date" = "date"))
         
         extdata[[newfreq]] <- df_to
         print(glue::glue("i={i}: aggregate '{oldcode}' ({oldfreq}->{newfreq}), func='{formula}'"))
       }
       
-      #### 4. Share of world number or country sum ####
+      #### 4. Disaggregate to higher freq (y < q < m < d) ####
+      # desum_fix  : равномерно "размазываем" сумму по подинтервалам, так что сумма новых значений = старое значение
+      # demean_fix : просто копируем среднее на все подинтервалы, так что среднее по подинтервалам = старое значение
+      
+      if (oldfreq > newfreq && active == 1L && formula %in% c("desum_fix", "demean_fix")) {
+        
+        # Parent columns
+        group_cols <- group_cols_map[[oldfreq]]
+        
+        if (is.null(group_cols)) {
+          warning(glue::glue(
+            "i={i}: disaggregation {oldfreq}->{newfreq} not supported (no group_cols_map entry)"
+          ))
+        } else {
+          
+          df_from <- extdata[[oldfreq]]
+          df_to   <- extdata[[newfreq]]
+          
+          old_sym <- rlang::sym(oldcode)
+          new_sym <- rlang::sym(newcode)
+
+          # На всякий случай добавим year/quarter/month из date, если их нет
+          add_calendar_cols <- function(df, needed) {
+            if (!"date" %in% names(df)) {
+              return(df)
+            }
+            if ("year" %in% needed && !"year" %in% names(df)) {
+              df <- df |> dplyr::mutate(year = lubridate::year(.data$date))
+            }
+            if ("quarter" %in% needed && !"quarter" %in% names(df)) {
+              df <- df |> dplyr::mutate(quarter = lubridate::quarter(.data$date))
+            }
+            if ("month" %in% needed && !"month" %in% names(df)) {
+              df <- df |> dplyr::mutate(month = lubridate::month(.data$date))
+            }
+            df
+          }
+          
+          df_from <- add_calendar_cols(df_from, group_cols)
+          df_to   <- add_calendar_cols(df_to,   group_cols)
+          
+          # Берём старшее значение и переименовываем его, чтобы не конфликтовало
+          df_from_subset <- df_from |>
+            dplyr::select(country_id, dplyr::all_of(group_cols), !!old_sym) |>
+            dplyr::rename(old_value = !!old_sym)
+          
+          # join_by(country_id, year, quarter, ...) depending on the grouping cols
+          by_cols <- c("country_id", group_cols)
+          
+          df_joined <- df_to |>
+            dplyr::left_join(df_from_subset, by = dplyr::join_by(!!!rlang::syms(by_cols)))
+          
+          if (formula == "desum_fix") {
+            df_new <- df_joined |>
+              dplyr::group_by(country_id, dplyr::across(dplyr::all_of(group_cols))) |>
+              dplyr::mutate(
+                n_sub = dplyr::n(),
+                !!new_sym := dplyr::if_else(
+                  is.na(.data$old_value),
+                  NA_real_,
+                  .data$old_value / .data$n_sub
+                )
+              ) |>
+              dplyr::ungroup() |>
+              dplyr::select(-old_value, -n_sub)
+            extdata[[newfreq]] <- df_new
+          } else if (formula == "demean_fix") {
+            df_new <- df_joined |>
+              dplyr::group_by(country_id, dplyr::across(dplyr::all_of(group_cols))) |>
+              dplyr::mutate(
+                !!new_sym := dplyr::if_else(
+                  is.na(.data$old_value),
+                  NA_real_,
+                  .data$old_value
+                )
+              ) |>
+              dplyr::ungroup() |>
+              dplyr::select(-old_value)
+            extdata[[newfreq]] <- df_new
+          }
+        }
+      }
+      
+      #### 5. Share of world number or country sum ####
       
       if (oldfreq == newfreq && active == 1L && identical(fillplan$formula[i], "share")) {
         
@@ -618,7 +812,7 @@ fill <- function(fillplan, extdata_y, extdata_q, extdata_m, extdata_d) {
         print(glue::glue("i={i}: share for '{oldcode}' -> '{newcode}' at freq '{oldfreq}'"))
       }
       
-      #### 5. fromto: copy indicator values from one country into others ####
+      #### 6. fromto: copy indicator values from one country into others ####
       
       if (oldfreq == newfreq && active == 1L && stringr::str_detect(formula, "fromto")) {
         
@@ -663,6 +857,7 @@ fill <- function(fillplan, extdata_y, extdata_q, extdata_m, extdata_d) {
           tidyr::crossing(country_id = countries_to)
         
         df_dest <- extdata[[newfreq]]
+        df_dest <- df_dest |> dplyr::select(-dplyr::any_of(newcode))
         
         df_dest <- df_dest |>
           dplyr::left_join(
@@ -674,7 +869,7 @@ fill <- function(fillplan, extdata_y, extdata_q, extdata_m, extdata_d) {
         print(glue::glue("i={i}: fromto '{oldcode}' from {country_from} to {toString(countries_to)}"))
       }
       
-      #### 6. Control memory and object size ####
+      #### 7. Control memory and object size ####
       
       if (i %% 10 == 0L) { gc(verbose = TRUE) }
       

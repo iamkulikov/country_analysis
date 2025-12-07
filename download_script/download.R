@@ -145,6 +145,13 @@ download.file(url, dest, mode="wb")
 
 ### Update defaults_DB.xlsx in extsources manually!!! Check in source manually
 
+### Update CDS_cbonds.xlsx in extsources manually!!! Find data on cbonds.ru
+
+### Update Neutral_rates.xlsx in extsources manually!!! Only use it for world and countries which we do not need,
+### otherwise keep the same locally
+
+### Download new WEO database using bulk download in excel - place in WEO_vintages folder. Rename accordingly.
+
 ### Download BoC–BoE Sovereign Default Database manually
 ### Find new link somewhere here by analogy: https://www.bankofcanada.ca/2024/07/staff-analytical-note-2024-19/
 url <- "https://www.bankofcanada.ca/wp-content/uploads/2024/07/BoC-BoE-Database-2024.xlsx"

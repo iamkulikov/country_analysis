@@ -7,6 +7,7 @@ library("glue")
 library("here")
 library("lubridate")
 library("purrr")
+library("openxlsx")
 
 ##### Function to import previously downloaded data
 
@@ -310,5 +311,114 @@ transposeDatalist <- function(countrydata) {
     pivot_wider(names_from = date, values_from = value)
   
   return(countrydata)
+    
+}
+
+#' Function to write XLSX with per-sheet formatting (freeze panes + column widths)
+#'
+#' @param sheets list of data.frames/tibbles. Names are sheet names.
+#' @param path output .xlsx path
+#' @param freeze_by_sheet named list. Each element: list(cell = "E2") or list(row = 2, col = 5)
+#' @param col_widths_by_sheet named list. Each element: numeric vector of widths for columns 1..k
+
+write_xlsx_formatted <- function(
+    sheets,
+    path,
+    freeze_by_sheet = NULL,
+    col_widths_by_sheet = NULL
+) {
+  stopifnot(is.list(sheets), length(sheets) > 0)
   
+  # Ensure all sheets have names (required by openxlsx)
+  if (is.null(names(sheets)) || any(names(sheets) == "")) {
+    names(sheets) <- paste0("sheet_", seq_along(sheets))
+  }
+  
+  wb <- openxlsx::createWorkbook()
+  
+  header_style <- openxlsx::createStyle(
+    textDecoration = "bold"
+  )
+  
+  parse_cell <- function(cell) {
+    # "E2" -> list(row = 2, col = 5)
+    stopifnot(is.character(cell), length(cell) == 1)
+    m <- regmatches(cell, regexec("^([A-Za-z]+)([0-9]+)$", cell))[[1]]
+    if (length(m) != 3) stop("Bad cell format: ", cell)
+    
+    col_letters <- toupper(m[[2]])
+    row <- as.integer(m[[3]])
+    
+    # Convert letters to number (A=1, Z=26, AA=27...)
+    letters <- strsplit(col_letters, "")[[1]]
+    col <- 0L
+    for (ch in letters) {
+      col <- col * 26L + (utf8ToInt(ch) - utf8ToInt("A") + 1L)
+    }
+    
+    list(row = row, col = col)
+  }
+  
+  for (nm in names(sheets)) {
+    df <- sheets[[nm]]
+    if (!inherits(df, c("data.frame", "tbl"))) {
+      next
+    }
+    
+    openxlsx::addWorksheet(wb, nm)
+    
+    openxlsx::writeData(
+      wb,
+      sheet = nm,
+      x = df,
+      withFilter = TRUE
+    )
+    
+    # Bold header row (row 1)
+    openxlsx::addStyle(
+      wb,
+      sheet = nm,
+      style = header_style,
+      rows = 1,
+      cols = seq_len(ncol(df)),
+      gridExpand = TRUE,
+      stack = TRUE
+    )
+    
+    # Freeze panes
+    if (!is.null(freeze_by_sheet) && !is.null(freeze_by_sheet[[nm]])) {
+      fr <- freeze_by_sheet[[nm]]
+      
+      if (!is.null(fr$cell)) {
+        rc <- parse_cell(fr$cell)
+        fr$row <- rc$row
+        fr$col <- rc$col
+      }
+      
+      # Excel freeze logic:
+      # firstActiveRow = row, firstActiveCol = col
+      # E2 => row=2 col=5, freezes row 1 and cols A:D
+      openxlsx::freezePane(
+        wb,
+        sheet = nm,
+        firstActiveRow = fr$row,
+        firstActiveCol = fr$col
+      )
+    }
+    
+    # Column widths for first columns
+    if (!is.null(col_widths_by_sheet) && !is.null(col_widths_by_sheet[[nm]])) {
+      w <- col_widths_by_sheet[[nm]]
+      if (length(w) > 0) {
+        openxlsx::setColWidths(
+          wb,
+          sheet = nm,
+          cols = seq_along(w),
+          widths = w
+        )
+      }
+    }
+  }
+  
+  openxlsx::saveWorkbook(wb, file = path, overwrite = TRUE)
 }

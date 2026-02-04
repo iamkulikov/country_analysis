@@ -165,7 +165,51 @@ server <- function(input, output, session) {
       
       tryCatch(
         {
-          writexl::write_xlsx(dat, path = file)
+          # Настройки форматирования зависят от типа выгрузки
+          fmt <- switch(
+            input$file_structure,
+            
+            "Model" = list(
+              freeze = list(
+                y = list(cell = "E2")
+              ),
+              widths = list(
+                y = c(30, 15, 12, 12)
+              )
+            ),
+            
+            "All data (vertical)" = list(
+              freeze = list(
+                y    = list(cell = "B2"),
+                q    = list(cell = "C2"),
+                m    = list(cell = "D2"),
+                d    = list(cell = "B2"),
+                dict = list(row = 2, col = 1) # "первая строчка": активная строка 2, столбец 1
+              ),
+              widths = list(
+                d    = c(22),
+                dict = c(41, 14, 20, 7, 22, 3, 3, 10, 10, 10, 10)
+              )
+            ),
+            
+            "All data (horizontal)" = list(
+              freeze = list(),
+              widths = list()
+            ),
+            
+            list(freeze = list(), widths = list())
+          )
+          
+          # Применяем только к реально существующим листам
+          fmt$freeze <- fmt$freeze[names(dat)]
+          fmt$widths <- fmt$widths[names(dat)]
+          
+          write_xlsx_formatted(
+            sheets = dat,
+            path = file,
+            freeze_by_sheet = fmt$freeze,
+            col_widths_by_sheet = fmt$widths
+          )
         },
         error = function(e) {
           # Ошибка будет и в консоли, и всплывашкой в UI

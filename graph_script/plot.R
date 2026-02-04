@@ -11,6 +11,25 @@ for (library_name in library_names) {
   library(library_name, character.only = TRUE)
 }
 
+# ---- Theme ipsum: use hrbrthemes if available, otherwise fallback ----
+theme_ipsum_safe <- function(base_size = 12, base_family = "Nunito Sans") {
+  if (requireNamespace("hrbrthemes", quietly = TRUE)) {
+    return(hrbrthemes::theme_ipsum(base_size = base_size, base_family = base_family))
+  }
+  
+  # Fallback: close enough to keep layouts readable
+  ggplot2::theme_minimal(base_size = base_size, base_family = base_family) +
+    ggplot2::theme(
+      panel.grid.minor = ggplot2::element_blank(),
+      panel.grid.major.x = ggplot2::element_blank(),
+      axis.ticks = ggplot2::element_line(linewidth = 0.3),
+      plot.title.position = "plot"
+    )
+}
+
+theme_ipsum <- theme_ipsum_safe
+
+
 font_add_google("Nunito Sans", regular.wt = 400, bold.wt = 700)
 showtext_opts(dpi = 150)
 showtext_auto()
@@ -297,28 +316,28 @@ explainErrors <- function(error_report) {
       print(glue("{counter <- counter + 1; counter}. Duplicating graph names:   {error_report %>% filter(check_unique == 0) %>% pull(graph_name) %>% paste(., collapse = ', ')}")) }
     
     if (dim({error_report |> filter(check_availability == 0)})[1] > 0) {
-      print(glue("{counter <- counter + 1; counter}. Some indicators are not available in the database. Check their codenames in:   {error_report |> filter(check_availability == 0) |> pull(graph_name) |> paste(., collapse = ', ')}")) }
+      print(glue("{counter <- counter + 1; counter}. Some indicators are not available in the database. Check their codenames in:   {error_report %>% filter(check_availability == 0) %>% pull(graph_name) %>% paste(., collapse = ', ')}")) }
  
     if (dim({error_report |> filter(check_peers == 0)})[1] > 0) {
-      print(glue("{counter <- counter + 1; counter}. Unknown peers in:   {error_report |> filter(check_peers == 0) |> pull(graph_name) |> paste(., collapse = ', ')}")) }
+      print(glue("{counter <- counter + 1; counter}. Unknown peers in:   {error_report %>% filter(check_peers == 0) %>% pull(graph_name) %>% paste(., collapse = ', ')}")) }
     
     if (dim({error_report |> filter(check_times == 0)})[1] > 0) {
-      print(glue("{counter <- counter + 1; counter}. Unknown bounds or time formats. Check x_min, x_max or time_fix in:   {error_report |> filter(check_times == 0) |> pull(graph_name) |> paste(., collapse = ', ')}")) }
+      print(glue("{counter <- counter + 1; counter}. Unknown bounds or time formats. Check x_min, x_max or time_fix in:   {error_report %>% filter(check_times == 0) %>% pull(graph_name) %>% paste(., collapse = ', ')}")) }
     
     if (dim({error_report |> filter(check_binary == 0)})[1] > 0) {
-      print(glue("{counter <- counter + 1; counter}. Non-binary parameters. Check all, x_log, y_log, index, recession, swap_axis, long_legend, vert_lab, short_names, show_title and active in:   {error_report |> filter(check_binary == 0) |> pull(graph_name) |> paste(., collapse = ', ')}")) }   
+      print(glue("{counter <- counter + 1; counter}. Non-binary parameters. Check all, x_log, y_log, index, recession, swap_axis, long_legend, vert_lab, short_names, show_title and active in:   {error_report %>% filter(check_binary == 0) %>% pull(graph_name) %>% paste(., collapse = ', ')}")) }   
     
     if (dim({error_report |> filter(check_num == 0)})[1] > 0) {
-      print(glue("{counter <- counter + 1; counter}. Non-numeric parameters. Check y_min and y_max in:   {error_report |> filter(check_num == 0) |> pull(graph_name) |> paste(., collapse = ', ')}")) }   
+      print(glue("{counter <- counter + 1; counter}. Non-numeric parameters. Check y_min and y_max in:   {error_report %>% filter(check_num == 0) %>% pull(graph_name) %>% paste(., collapse = ', ')}")) }   
     
     if (dim({error_report |> filter(check_trend == 0)})[1] > 0) {
-      print(glue("{counter <- counter + 1; counter}. Unknown trend types in:   {error_report |> filter(check_trend == 0) |> pull(graph_name) |> paste(., collapse = ', ')}")) }   
+      print(glue("{counter <- counter + 1; counter}. Unknown trend types in:   {error_report %>% filter(check_trend == 0) %>% pull(graph_name) %>% paste(., collapse = ', ')}")) }   
     
     if (dim({error_report |> filter(check_theme == 0)})[1] > 0) {
-      print(glue("Unknown theme types in:   {error_report |> filter(check_theme == 0) |> pull(graph_name) |> paste(., collapse = ', ')}")) }   
+      print(glue("Unknown theme types in:   {error_report %>% filter(check_theme == 0) %>% pull(graph_name) %>% paste(., collapse = ', ')}")) }   
     
     if (dim({error_report |> filter(check_orient == 0)})[1] > 0) {
-      print(glue("{counter <- counter + 1; counter}. Unknown orientation in:   {error_report |> filter(check_orient == 0) |> pull(graph_name) |> paste(., collapse = ', ')}")) }   
+      print(glue("{counter <- counter + 1; counter}. Unknown orientation in:   {error_report %>% filter(check_orient == 0) %>% pull(graph_name) %>% paste(., collapse = ', ')}")) }   
 
   }
 }

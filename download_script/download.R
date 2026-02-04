@@ -7,10 +7,10 @@ here::i_am("download_script/download.R")
 datafolder <- "_extsources"
 
 ### Download WGIs
-url <- "https://www.worldbank.org/content/dam/sites/govindicators/doc/wgidataset_excel.zip"
-dest <- here("assets", "_DB", datafolder, "wgidataset_excel.zip")
+url <- "https://www.worldbank.org/content/dam/sites/govindicators/doc/wgidataset_with_sourcedata-2025.xlsx"
+dest <- here("assets", "_DB", datafolder, "wgidataset.xlsx")
 download.file(url, dest, mode="wb")
-unzip(zipfile = dest, exdir = here("assets", "_DB", datafolder))
+# unzip(zipfile = dest, exdir = here("assets", "_DB", datafolder))
 
 ### Download BIS daily and monthly data on nominal exchange rates
 #url <- "https://www.bis.org/statistics/full_xru_d_csv_row.zip"
@@ -98,7 +98,7 @@ download.file(url, dest, mode="wb")
 
 ### Download UNPD population projections, aggregates (links should be updated manually!!!!!)
 ### from here https://population.un.org/wpp/Download/Standard/CSV/
-url <- "https://population.un.org/wpp/Download/Files/1_Indicator%20(Standard)/CSV_FILES/WPP2024_Demographic_Indicators_Medium.csv.gz"
+url <- "https://population.un.org/wpp/assets/Excel%20Files/1_Indicator%20(Standard)/CSV_FILES/WPP2024_Demographic_Indicators_Medium.csv.gz"
 dest <- here("assets", "_DB", datafolder, "UNDP_aggregates.gz")
 final_dest <- here("assets", "_DB", datafolder, "UNDP_aggregates.csv")
 download.file(url, dest)
@@ -106,7 +106,7 @@ gzfile <- gzfile(dest, 'rt')
 writeLines(readLines(gzfile), final_dest)
 close(gzfile)
 
-url <- "https://population.un.org/wpp/Download/Files/1_Indicator%20(Standard)/CSV_FILES/WPP2024_PopulationByAge5GroupSex_Medium.csv.gz"
+url <- "https://population.un.org/wpp/assets/Excel%20Files/1_Indicator%20(Standard)/CSV_FILES/WPP2024_PopulationByAge5GroupSex_Medium.csv.gz"
 dest <- here("assets", "_DB", datafolder, "UNDP_5yr.gz")
 final_dest <- here("assets", "_DB", datafolder, "UNDP_5yr.csv")
 download.file(url, dest)
@@ -117,16 +117,16 @@ close(gzfile)
 ### Download macroprudential database iMaPP (link should be updated manually!!!!!)
 ### https://www.elibrary-areaer.imf.org/Macroprudential/Pages/iMaPPDatabase.aspx
 
-url <- "https://www.elibrary-areaer.imf.org/Macroprudential/Documents/iMaPP_database-2024-12-02.zip"
-dest <- here("assets", "_DB", datafolder, "iMaPP_database-2024-12-02.zip")
+url <- "https://www.elibrary-areaer.imf.org/Macroprudential/Documents/iMaPP_database-2025-09-29.zip"
+dest <- here("assets", "_DB", datafolder, "iMaPP_database-2025-09-29.zip")
 download.file(url, dest)
 unzip(zipfile = dest, exdir = here("assets", "_DB", datafolder))
-file.rename(from=here("assets", "_DB", datafolder, 'iMaPP_database-2024-12-2.xlsx'), to=here("assets", "_DB", datafolder, 'iMaPP_database.xlsx'))
+file.rename(from=here("assets", "_DB", datafolder, 'iMaPP_database-2025-9-29.xlsx'), to=here("assets", "_DB", datafolder, 'iMaPP_database.xlsx'))
 
-### Download NBFI markey data from Financial Stability Board (link should be updated manually!!!!!)
-### https://www.fsb.org/2024/12/global-monitoring-report-on-non-bank-financial-intermediation-2024/
+### Download NBFI market data from Financial Stability Board (link should be updated manually!!!!!)
+### https://www.fsb.org/2025/12/global-monitoring-report-on-nonbank-financial-intermediation-2025/
 
-url <- "https://www.fsb.org/wp-content/uploads/Monitoring-Dataset-2024.xlsx"
+url <- "https://www.fsb.org/uploads/2025-monitoring-dataset.xlsx"
 dest <- here("assets", "_DB", datafolder, "NBFI_FSB.xlsx")
 download.file(url, dest, mode="wb")
 

@@ -1,13 +1,13 @@
 ######## Call the sequence of import functions
 library(here)
 
-##### Choose import mode
+##### Choose import model
 test <- 0
 update_mode <- 1    # 0 if all the data and containers should be new, 1 if only update
 n_attempts <- 15    # how many times should we ping API's for needed data
 formula_words <- c("lag", "lead", "rollsum", "rollavg", "rollvol", "mean", "last", "first", "min", "pmin", "max", "pmax", 
                    "sum", "coalesce", "share", "exp", "fromto", "year", "na_if", "cummax", "cummin", "cumsum", "ceiling", 
-                   "letterize", "indexize", "demean_fix", "desum_fix", "impute_fix", "impute_linear")
+                   "letterize", "indexize", "demean_fix", "desum_fix", "impute_fix", "impute_linear", "seas_adj")
 sheet_keys <- c(y = "y", q = "q", m = "m")
 
 ##### Where is import schedule saved? What are the data files?

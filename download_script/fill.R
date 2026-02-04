@@ -95,7 +95,16 @@ extractIndicators <- function(formula, formula_words) {
     return(character(0))
   }
   
-  # 0. Специальный случай indexize(): исключаем второй аргумент из индикаторов
+  # 1. Special case: seasonal adjustment
+  if (stringr::str_detect(formula, "seas_adj")) {
+    sa_args <- parse_seas_adj_formula(formula)
+    # нам нужны только индикаторы-рядов: wd и breaks
+    ind <- c(sa_args$wd_vars, sa_args$breaks_vars)
+    ind <- ind[ind != "" & !is.na(ind)]
+    return(unique(ind))
+  }
+  
+  # 2. Special case: indexize(); dropping second argument from indicators
   if (stringr::str_detect(formula, "indexize")) {
     # вытащим первый аргумент (имя индикатора), игнорируя второй
     m <- stringr::str_match(
@@ -108,7 +117,60 @@ extractIndicators <- function(formula, formula_words) {
     }
   }
   
-  # Split formula 
+  # 3. Special case: userat(a, b, c, overlap_n=..., method=..., ...)
+  #     -> dependencies are ONLY series names (positional args), no keyword args.
+  if (stringr::str_detect(formula, "^\\s*userat\\s*\\(")) {
+    
+    inner <- stringr::str_match(formula, "^\\s*userat\\s*\\((.*)\\)\\s*$")[, 2]
+    
+    if (is.na(inner) || stringr::str_trim(inner) == "") {
+      return(character(0))
+    }
+    
+    parts <- inner |>
+      stringr::str_split(",", simplify = FALSE) |>
+      purrr::pluck(1) |>
+      stringr::str_trim()
+    
+    # positional args = series names; keyword args contain '='
+    vars <- parts[!stringr::str_detect(parts, "=")] |>
+      stringr::str_replace_all("^['\"]|['\"]$", "") |>
+      stringr::str_trim()
+    
+    vars <- vars[vars != "" & !is.na(vars)]
+    
+    # defensively drop any accidental function words if user passes something weird
+    vars <- vars[!(vars %in% formula_words)]
+    
+    return(unique(vars))
+  }
+  
+  # 4. Special case: usedyn(a, b, c, side=..., method=..., ...)
+  #     -> dependencies are ONLY series names (positional args), no keyword args.
+  if (stringr::str_detect(formula, "^\\s*usedyn\\s*\\(")) {
+    
+    inner <- stringr::str_match(formula, "^\\s*usedyn\\s*\\((.*)\\)\\s*$")[, 2]
+    
+    if (is.na(inner) || stringr::str_trim(inner) == "") {
+      return(character(0))
+    }
+    
+    parts <- inner |>
+      stringr::str_split(",", simplify = FALSE) |>
+      purrr::pluck(1) |>
+      stringr::str_trim()
+    
+    vars <- parts[!stringr::str_detect(parts, "=")] |>
+      stringr::str_replace_all("^['\"]|['\"]$", "") |>
+      stringr::str_trim()
+    
+    vars <- vars[vars != "" & !is.na(vars)]
+    vars <- vars[!(vars %in% formula_words)]
+    
+    return(unique(vars))
+  }
+  
+  # 5. Normal formula (split it)
   tokens <- stringr::str_split(string = formula, pattern = "\\/|\\(|\\)|\\+|\\-|\\*|\\=|\\^|\\,|\\s+|>|<|==|!=", 
                                simplify = TRUE)
   tokens <- tokens[tokens != ""]
@@ -503,6 +565,864 @@ impute_linear_vec <- function(x) {
   res
 }
 
+
+##### Helper: parse seas_adj(...) formula into a list of options
+
+parse_seas_adj_formula <- function(formula_str) {
+  # Expected patterns:
+  # seas_adj()
+  # seas_adj(type = 'mult', smooth = 'smooth', component = 'sa', method = 'auto', wd = 'wd_m', breaks = 'br_dummy')
+  
+  out <- list(
+    method       = "auto",    # "auto", "x13", "stl"
+    type         = "auto",    # "auto", "add", "mult"
+    smooth       = "default", # "default", "less", "smooth", "very_smooth"
+    component    = "sa",      # "sa", "trend"
+    wd_vars      = character(0),
+    breaks_vars  = character(0)
+  )
+  
+  if (is.na(formula_str) || !stringr::str_detect(formula_str, "seas_adj")) {return(out)}
+  
+  # Cut everything from inside of the brackets
+  inner <- stringr::str_match(formula_str, "seas_adj\\s*\\((.*)\\)")[, 2]
+  if (is.na(inner) || stringr::str_trim(inner) == "") {return(out)}
+  
+  # Break by commas of the upper level (works for easy cases)
+  args_raw <- inner |> stringr::str_split(",", simplify = FALSE) |> purrr::pluck(1) |> stringr::str_trim()
+  strip_quotes <- function(x) {x |> stringr::str_replace_all("^['\"]|['\"]$", "") |> stringr::str_trim()}
+  
+  # вспомогательная функция для разборки списков имён
+  parse_name_list <- function(value_raw) {
+    if (is.na(value_raw) || value_raw == "") return(character(0))
+    value_raw |> strip_quotes() |> stringr::str_split("\\+", simplify = FALSE) |> purrr::pluck(1) |>
+      stringr::str_trim() |> (\(v) v[v != ""])()}
+  
+  for (arg in args_raw) {
+    if (!stringr::str_detect(arg, "=")) next
+    
+    kv <- stringr::str_split_fixed(arg, "=", 2)
+    name <- kv[, 1] |> stringr::str_trim()
+    value_raw <- kv[, 2] |> stringr::str_trim()
+    value_str <- strip_quotes(value_raw)
+    
+    name_lc <- tolower(name)
+    value_lc <- tolower(value_str)
+    
+    if (name_lc == "method") {
+      if (value_lc %in% c("auto", "x13", "stl")) {
+        out$method <- value_lc
+      }
+    } else if (name_lc == "type") {
+      if (value_lc %in% c("auto", "add", "mult")) {
+        out$type <- value_lc
+      }
+    } else if (name_lc == "smooth") {
+      if (value_lc %in% c("default", "less", "smooth", "very_smooth")) {
+        out$smooth <- value_lc
+      }
+    } else if (name_lc == "component") {
+      if (value_lc %in% c("sa", "trend")) {
+        out$component <- value_lc
+      }
+    } else if (name_lc %in% c("wd", "wd_var", "wd_vars")) {
+      out$wd_vars <- parse_name_list(value_raw)
+    } else if (name_lc %in% c("breaks", "br", "brs")) {
+      out$breaks_vars <- parse_name_list(value_raw)
+    }
+  }
+  
+  out
+}
+
+
+##### Core seasonal & calendar adjustment helpers 
+
+# 0. Map frequency code to seasonal period
+get_seasonal_period <- function(freq) {
+  dplyr::case_when(freq == "m" ~ 12L, freq == "q" ~ 4L, freq == "d" ~ 7L, TRUE  ~ 1L)
+}
+
+# 1. X-13 backend (monthly / quarterly only)
+seas_adjust_x13_vec <- function(y, date, freq = c("m", "q"), type = c("auto", "add", "mult"),
+    component = c("sa", "trend"), xreg = NULL) {
+  
+  freq  <- match.arg(freq)
+  type  <- match.arg(type)
+  component <- match.arg(component)
+  
+  if (!requireNamespace("seasonal", quietly = TRUE)) {
+    stop("seas_adjust_x13_vec(): package 'seasonal' is not installed.")
+  }
+  
+  n <- length(y)
+  if (n == 0L) return(y)
+  if (all(is.na(y))) return(y)
+  
+  if (anyNA(y)) {
+    stop("seas_adjust_x13_vec(): series contains NA; please impute before seasonal adjustment.")
+  }
+  
+  if (!is.null(xreg)) {
+    if (any(purrr::map_lgl(xreg, anyNA))) {
+      stop("seas_adjust_x13_vec(): regressors (wd/breaks) contain NA; please impute them.")
+    }
+  }
+  
+  # трансформация: add / mult / auto
+  if (type == "mult") {
+    if (any(y <= 0, na.rm = TRUE)) {
+      warning("seas_adjust_x13_vec(): non-positive values in 'y' for type='mult'; falling back to additive.")
+      y_trans <- y
+      type_used <- "add"
+    } else {
+      y_trans <- log(y)
+      type_used <- "mult"
+    }
+  } else if (type == "add") {
+    y_trans <- y
+    type_used <- "add"
+  } else { # auto
+    if (all(y > 0, na.rm = TRUE)) {
+      y_trans <- log(y)
+      type_used <- "mult"
+    } else {
+      y_trans <- y
+      type_used <- "add"
+    }
+  }
+  
+  # ts-объект
+  first_date <- min(as.Date(date), na.rm = TRUE)
+  start_year <- lubridate::year(first_date)
+  start_sub  <- if (freq == "m") lubridate::month(first_date) else lubridate::quarter(first_date)
+  period     <- if (freq == "m") 12L else 4L
+  
+  ts_y <- stats::ts(y_trans, frequency = period, start = c(start_year, start_sub))
+  
+  xreg_mat <- NULL
+  if (!is.null(xreg) && ncol(xreg) > 0L) { xreg_mat <- as.matrix(xreg) }
+  
+  # Пытаемся построить модель X-13
+  fit <- seasonal::seas(x = ts_y, transform.function = "none", regression.aictest = c("td", "easter"), xreg = xreg_mat)
+  
+  ts_out <- if (component == "sa") {seasonal::final(fit)} else {seasonal::trendcycle(fit)}
+  y_out_trans <- as.numeric(ts_out)
+  
+  if (type_used == "mult") {y_out <- exp(y_out_trans)} else {y_out <- y_out_trans}
+  
+  # Страховка: X-13 должен вернуть столько же наблюдений, сколько было
+  if (length(y_out) == 0L) {
+    stop("seas_adjust_x13_vec(): empty result from X-13.")
+  }
+  
+  if (length(y_out) != n) {
+    stop(glue::glue(
+      "seas_adjust_x13_vec(): unexpected length of result ({length(y_out)}) ",
+      "for input of length {n}."
+    ))
+  }
+  
+  y_out
+}
+
+# 2. STL backend (m/q/d)
+
+seas_adjust_stl_vec <- function(y, date, freq = c("m", "q", "d"), type = c("auto", "add", "mult"),
+    smooth = c("default", "less", "smooth", "very_smooth"), component = c("sa", "trend"), xreg = NULL) {
+  
+  freq     <- match.arg(freq)
+  type     <- match.arg(type)
+  smooth   <- match.arg(smooth)
+  component <- match.arg(component)
+  
+  n <- length(y)
+  if (n == 0L) return(y)
+  
+  # all-NA → возвращаем как есть
+  if (all(is.na(y))) return(y)
+  
+  if (anyNA(y)) {stop("seas_adjust_stl_vec(): series contains NA; please impute before seasonal adjustment.") }
+  
+  if (!is.null(xreg)) {
+    if (any(purrr::map_lgl(xreg, anyNA))) {
+      stop("seas_adjust_stl_vec(): regressors (wd/breaks) contain NA; please impute them.")
+    }
+  }
+  
+  period <- get_seasonal_period(freq)
+  if (period <= 1L) {
+    # Нет сезонности → просто возвращаем ряд (но уже после регрессии на xreg)
+    # Всё равно сделаем pre-treatment на xreg, чтобы убрать календарь/брейки.
+  }
+  
+  # 2.1 Трансформация
+  if (type == "mult") {
+    if (any(y <= 0, na.rm = TRUE)) {
+      warning("seas_adjust_stl_vec(): non-positive values in 'y' for type='mult'; falling back to additive.")
+      y_trans <- y
+      type_used <- "add"
+    } else {
+      y_trans <- log(y)
+      type_used <- "mult"
+    }
+  } else if (type == "add") {
+    y_trans <- y
+    type_used <- "add"
+  } else { # auto
+    if (all(y > 0, na.rm = TRUE)) {
+      y_trans <- log(y)
+      type_used <- "mult"
+    } else {
+      y_trans <- y
+      type_used <- "add"
+    }
+  }
+  
+  # 2.2 Регрессионный pre-treatment на xreg
+  if (!is.null(xreg) && ncol(xreg) > 0L) {
+    reg_df <- dplyr::as_tibble(xreg)
+    reg_df$y_trans <- y_trans
+    mod <- stats::lm(y_trans ~ ., data = reg_df)
+    fit_reg   <- stats::fitted(mod)
+    resid_reg <- stats::resid(mod)
+  } else {
+    fit_reg   <- rep(0, n)
+    resid_reg <- y_trans
+  }
+  
+  # Если нет сезонности (freq="y" или period<=1), то сразу решаем, что:
+  # sa: y_trans без сезонности (просто y_trans), trend: сглаживание можно добавить отдельно.
+  # В нашем кейсе seas_adj для "y" мы вообще не будем вызывать; это запасной вариант.
+  if (period <= 1L) {
+    if (component == "sa") {
+      y_out_trans <- fit_reg + resid_reg
+    } else { # "trend" — тут можно теоретически добавить сглаживание, но оставим как есть
+      y_out_trans <- fit_reg + resid_reg
+    }
+    if (type_used == "mult") {
+      return(exp(y_out_trans))
+    } else {
+      return(y_out_trans)
+    }
+  }
+  
+  if (n < 2L * period) {
+    warning("seas_adjust_stl_vec(): series too short for STL; returning original series.")
+    if (type_used == "mult") {
+      return(y)
+    } else {
+      return(y)
+    }
+  }
+  
+  first_date <- min(as.Date(date), na.rm = TRUE)
+  start_year <- lubridate::year(first_date)
+  
+  start_sub  <- dplyr::case_when(
+    freq == "m" ~ lubridate::month(first_date),
+    freq == "q" ~ lubridate::quarter(first_date),
+    freq == "d" ~ as.integer(format(first_date, "%j")), # день года, но для STL это не критично
+    TRUE        ~ 1L
+  )
+  
+  ts_res <- stats::ts(resid_reg, frequency = period, start = c(start_year, start_sub))
+  
+  # Окна сглаживания для STL
+  if (smooth == "default") {
+    # "periodic" — специальный режим, без явного окна
+    s_window <- "periodic"
+  } else if (smooth == "less") {
+    s_window <- max(7L, period * 1L)
+  } else if (smooth == "smooth") {
+    s_window <- max(7L, period * 2L)
+  } else if (smooth == "very_smooth") {
+    s_window <- max(7L, period * 3L)
+  } else {
+    s_window <- "periodic"
+  }
+  
+  t_window <- as.integer(max(7L, period * 2L))
+  if (t_window %% 2L == 0L) t_window <- t_window + 1L
+  
+  stl_fit <- stats::stl(ts_res, s.window = s_window, t.window = t_window, robust = TRUE)
+  
+  seasonal_comp <- as.numeric(stl_fit$time.series[, "seasonal"])
+  trend_comp    <- as.numeric(stl_fit$time.series[, "trend"])
+  remainder     <- as.numeric(stl_fit$time.series[, "remainder"])
+  
+  if (component == "sa") {
+    # SA = fitted_reg + (trend + remainder)
+    sa_trans <- fit_reg + trend_comp + remainder
+    y_out_trans <- sa_trans
+  } else { # "trend"
+    # Trend = fitted_reg + trend_comp
+    trend_trans <- fit_reg + trend_comp
+    y_out_trans <- trend_trans
+  }
+  
+  if (type_used == "mult") {y_out <- exp(y_out_trans)} else {y_out <- y_out_trans}
+  y_out
+  
+}
+
+# 3. Универсальная оболочка: выбирает метод и делает проверки
+
+seas_adjust_series <- function(
+    y,
+    date,
+    freq,
+    method   = c("auto", "x13", "stl"),
+    type     = c("auto", "add", "mult"),
+    smooth   = c("default", "less", "smooth", "very_smooth"),
+    component = c("sa", "trend"),
+    xreg     = NULL,
+    var_name = "variable"
+) {
+  method    <- match.arg(method)
+  type      <- match.arg(type)
+  smooth    <- match.arg(smooth)
+  component <- match.arg(component)
+  
+  n <- length(y)
+  if (n == 0L) return(y)
+  
+  # Годовая частота – вообще ничего не делаем
+  if (freq == "y") {
+    return(y)
+  }
+  
+  # all-NA → возвращаем как есть
+  if (all(is.na(y))) return(y)
+  
+  # --- Разрешаем NA по краям, но не внутри ядра ---
+  non_na_idx <- which(!is.na(y))
+  if (length(non_na_idx) == 0L) {
+    # на всякий случай, но до сюда мы уже отфильтровали all(is.na(y))
+    return(y)
+  }
+  
+  i1 <- min(non_na_idx)
+  i2 <- max(non_na_idx)
+  
+  # проверка внутренних NA
+  if (any(is.na(y[i1:i2]))) {
+    stop(glue::glue(
+      "seas_adj(): variable '{var_name}' has internal NA between first and last non-NA; ",
+      "please impute internal gaps before seasonal adjustment."
+    ))
+  }
+  
+  # Проверка регрессоров: также не допускаем внутренних NA
+  if (!is.null(xreg)) {
+    xreg_core_check <- xreg[i1:i2, , drop = FALSE]
+    if (any(purrr::map_lgl(xreg_core_check, anyNA))) {
+      stop(glue::glue(
+        "seas_adj(): regressors (wd/breaks) for '{var_name}' have internal NA in the data span; ",
+        "please impute them before seasonal adjustment."
+      ))
+    }
+  }
+  
+  # ядро ряда
+  y_core    <- y[i1:i2]
+  date_core <- date[i1:i2]
+  xreg_core <- if (is.null(xreg)) NULL else xreg[i1:i2, , drop = FALSE]
+  
+  # заготовка итогового вектора: пока копия исходного
+  out_full <- y
+  
+  # --- Определяем эффективный метод ---
+  method_eff <- method
+  
+  # auto: для m/q -> x13 (если есть seasonal), иначе stl
+  if (method_eff == "auto") {
+    if (freq %in% c("m", "q") && requireNamespace("seasonal", quietly = TRUE)) {
+      method_eff <- "x13"
+    } else {
+      method_eff <- "stl"
+    }
+  }
+  
+  # Для daily мы не используем X-13
+  if (freq == "d" && method_eff == "x13") {
+    warning("seas_adj(): X-13 is not used for daily data; falling back to STL.")
+    method_eff <- "stl"
+  }
+  
+  # Если явно попросили x13, но seasonal не установлен
+  if (method_eff == "x13" && !requireNamespace("seasonal", quietly = TRUE)) {
+    warning("seas_adj(): package 'seasonal' not available; falling back to STL.")
+    method_eff <- "stl"
+  }
+  
+  # --- Вызываем backend на ядре ---
+  out_core <- NULL
+  
+  if (method_eff == "x13") {
+    # только m/q
+    if (!freq %in% c("m", "q")) {
+      warning("seas_adj(): X-13 is only supported for m/q; falling back to STL.")
+      out_core <- seas_adjust_stl_vec(
+        y         = y_core,
+        date      = date_core,
+        freq      = freq,
+        type      = type,
+        smooth    = smooth,
+        component = component,
+        xreg      = xreg_core
+      )
+    } else {
+      # Пытаемся X-13, если ошибка — fallback на STL
+      out_core_try <- try(
+        seas_adjust_x13_vec(
+          y         = y_core,
+          date      = date_core,
+          freq      = freq,
+          type      = type,
+          component = component,
+          xreg      = xreg_core
+        ),
+        silent = TRUE
+      )
+      
+      if (inherits(out_core_try, "try-error")) {
+        warning(glue::glue(
+          "seas_adj(): X-13 failed for '{var_name}' (freq='{freq}'); falling back to STL."
+        ))
+        out_core <- seas_adjust_stl_vec(
+          y         = y_core,
+          date      = date_core,
+          freq      = freq,
+          type      = type,
+          smooth    = smooth,
+          component = component,
+          xreg      = xreg_core
+        )
+      } else {
+        out_core <- out_core_try
+      }
+    }
+  } else {
+    # STL backend
+    out_core <- seas_adjust_stl_vec(
+      y         = y_core,
+      date      = date_core,
+      freq      = freq,
+      type      = type,
+      smooth    = smooth,
+      component = component,
+      xreg      = xreg_core
+    )
+  }
+  
+  # --- Страховка: backend обязан вернуть вектор длины length(y_core) ---
+  if (is.null(out_core) || length(out_core) == 0L) {
+    stop(glue::glue(
+      "seas_adj(): backend returned empty result for '{var_name}' (freq='{freq}')."
+    ))
+  }
+  
+  if (length(out_core) != length(y_core)) {
+    stop(glue::glue(
+      "seas_adj(): backend returned length {length(out_core)} for '{var_name}', ",
+      "expected {length(y_core)}."
+    ))
+  }
+  
+  # вставляем ядро обратно
+  out_full[i1:i2] <- out_core
+  
+  out_full
+}
+
+##### Function to glue series using growth rates
+
+usedyn_vec <- function(anchor,
+                       candidate,
+                       side = c("left", "right", "both"),
+                       method = c("ratio", "diff"),
+                       fill_internal = FALSE,
+                       allow_nonpositive_ratio = FALSE) {
+  side   <- match.arg(side)
+  method <- match.arg(method)
+  
+  if (length(anchor) != length(candidate)) {
+    stop("usedyn_vec(): anchor and candidate must have the same length (aligned by date already).")
+  }
+  
+  n <- length(anchor)
+  if (n == 0L) return(anchor)
+  
+  out <- anchor
+  
+  anchor_non_na <- which(!is.na(anchor))
+  if (length(anchor_non_na) == 0L) {
+    # нечего якорить: без единой опорной точки протяжка темпами невозможна
+    return(out)
+  }
+  
+  i_left  <- min(anchor_non_na) # первая точка якоря
+  i_right <- max(anchor_non_na) # последняя точка якоря
+  
+  # --- helpers: safe growth computations --------------------------------------
+  ratio_step <- function(x_next, x_prev) {
+    # growth = x_next / x_prev
+    if (is.na(x_next) || is.na(x_prev)) return(NA_real_)
+    if (!is.finite(x_next) || !is.finite(x_prev)) return(NA_real_)
+    if (!allow_nonpositive_ratio && (x_next <= 0 || x_prev <= 0)) return(NA_real_)
+    if (x_prev == 0) return(NA_real_)
+    x_next / x_prev
+  }
+  
+  diff_step <- function(x_next, x_prev) {
+    # growth = x_next - x_prev
+    if (is.na(x_next) || is.na(x_prev)) return(NA_real_)
+    if (!is.finite(x_next) || !is.finite(x_prev)) return(NA_real_)
+    x_next - x_prev
+  }
+  
+  get_step <- if (method == "ratio") ratio_step else diff_step
+  
+  # --- 1) Fill LEFT tail (backcast) -------------------------------------------
+  # Заполняем только позиции < i_left, где у anchor NA, используя темпы candidate.
+  # Рекурсия:
+  #   ratio: out[t-1] = out[t] / (cand[t] / cand[t-1])
+  #   diff : out[t-1] = out[t] - (cand[t] - cand[t-1])
+  if (side %in% c("left", "both") && i_left > 1L) {
+    # идем назад от i_left к 2, чтобы уметь смотреть t-1
+    for (t in seq(from = i_left, to = 2L, by = -1L)) {
+      # заполняем только если это левее начала якоря и anchor там NA
+      if (!is.na(anchor[t - 1L])) next
+      if (!is.na(out[t - 1L])) next
+      
+      step <- get_step(candidate[t], candidate[t - 1L])
+      if (is.na(step)) {
+        # темп не посчитать -> дальше назад идти бессмысленно
+        break
+      }
+      
+      if (method == "ratio") {
+        if (step == 0 || !is.finite(step)) break
+        out[t - 1L] <- out[t] / step
+      } else {
+        out[t - 1L] <- out[t] - step
+      }
+    }
+  }
+  
+  # --- 2) Fill RIGHT tail (forecast) ------------------------------------------
+  # Заполняем только позиции > i_right, где у anchor NA, используя темпы candidate.
+  # Рекурсия:
+  #   ratio: out[t+1] = out[t] * (cand[t+1] / cand[t])
+  #   diff : out[t+1] = out[t] + (cand[t+1] - cand[t])
+  if (side %in% c("right", "both") && i_right < n) {
+    for (t in seq(from = i_right, to = n - 1L, by = 1L)) {
+      if (!is.na(anchor[t + 1L])) next
+      if (!is.na(out[t + 1L])) next
+      
+      step <- get_step(candidate[t + 1L], candidate[t])
+      if (is.na(step)) {
+        # темп не посчитать -> дальше вперед идти бессмысленно
+        break
+      }
+      
+      if (method == "ratio") {
+        out[t + 1L] <- out[t] * step
+      } else {
+        out[t + 1L] <- out[t] + step
+      }
+    }
+  }
+  
+  # --- 3) (optional) Fill internal gaps ---------------------------------------
+  # По умолчанию выключено: пользователь сказал, что внутренние дырки редки
+  # и будут закрываться другими методами.
+  if (isTRUE(fill_internal)) {
+    # Заполняем NA внутри [i_left, i_right], где у anchor NA,
+    # используя темпы candidate и ближайшую слева заполненную точку out.
+    # Это простой "forward carry via growth" и не гарантирует стыковку с правым якорем.
+    for (t in seq(from = i_left + 1L, to = i_right, by = 1L)) {
+      if (!is.na(anchor[t])) next
+      if (!is.na(out[t])) next
+      
+      step <- get_step(candidate[t], candidate[t - 1L])
+      if (is.na(step)) next
+      
+      if (method == "ratio") {
+        out[t] <- out[t - 1L] * step
+      } else {
+        out[t] <- out[t - 1L] + step
+      }
+    }
+  }
+  
+  out
+}
+
+##### Function to glue multiple series using growth rate
+
+usedyn_many_vec <- function(series_list,
+                            side = c("left", "right", "both"),
+                            method = c("ratio", "diff"),
+                            fill_internal = FALSE,
+                            allow_nonpositive_ratio = FALSE) {
+  side   <- match.arg(side)
+  method <- match.arg(method)
+  
+  if (length(series_list) < 1L) {
+    stop("usedyn_many_vec(): need at least 1 series.")
+  }
+  
+  out <- series_list[[1L]]
+  if (length(series_list) == 1L) return(out)
+  
+  for (k in 2:length(series_list)) {
+    out <- usedyn_vec(
+      anchor = out,
+      candidate = series_list[[k]],
+      side = side,
+      method = method,
+      fill_internal = fill_internal,
+      allow_nonpositive_ratio = allow_nonpositive_ratio
+    )
+  }
+  
+  out
+}
+
+
+##### Function to parse usedyn formula
+
+parse_usedyn_formula <- function(formula_str) {
+  if (is.na(formula_str) || !stringr::str_detect(formula_str, "^\\s*usedyn\\s*\\(")) {
+    return(NULL)
+  }
+  
+  inner <- stringr::str_match(formula_str, "^\\s*usedyn\\s*\\((.*)\\)\\s*$")[, 2]
+  if (is.na(inner) || stringr::str_trim(inner) == "") {
+    stop("parse_usedyn_formula(): empty usedyn().")
+  }
+  
+  parts <- inner |>
+    stringr::str_split(",", simplify = FALSE) |>
+    purrr::pluck(1) |>
+    stringr::str_trim()
+  
+  is_kw <- stringr::str_detect(parts, "=")
+  
+  vars <- parts[!is_kw] |>
+    stringr::str_replace_all("^['\"]|['\"]$", "") |>
+    stringr::str_trim()
+  vars <- vars[vars != ""]
+  
+  if (length(vars) < 1L) stop("parse_usedyn_formula(): no series provided in usedyn().")
+  
+  # defaults (под твою задачу: края, без внутренних дырок)
+  args <- list(
+    side = "both",                 # left | right | both
+    method = "ratio",              # ratio | diff
+    fill_internal = FALSE,         # по умолчанию не трогаем внутренние дырки
+    allow_nonpositive_ratio = FALSE
+  )
+  
+  strip_quotes <- function(x) {
+    x |>
+      stringr::str_replace_all("^['\"]|['\"]$", "") |>
+      stringr::str_trim()
+  }
+  
+  for (p in parts[is_kw]) {
+    kv <- stringr::str_split_fixed(p, "=", 2)
+    key <- stringr::str_trim(kv[, 1])
+    val_raw <- stringr::str_trim(kv[, 2])
+    val <- strip_quotes(val_raw)
+    
+    key_lc <- tolower(key)
+    val_lc <- tolower(val)
+    
+    if (key_lc == "side") {
+      args$side <- val_lc
+    } else if (key_lc == "method") {
+      args$method <- val_lc
+    } else if (key_lc == "fill_internal") {
+      args$fill_internal <- val_lc %in% c("true", "t", "1")
+    } else if (key_lc == "allow_nonpositive_ratio") {
+      args$allow_nonpositive_ratio <- val_lc %in% c("true", "t", "1")
+    }
+  }
+  
+  if (!args$side %in% c("left", "right", "both")) args$side <- "both"
+  if (!args$method %in% c("ratio", "diff")) args$method <- "ratio"
+  
+  list(vars = vars, args = args)
+}
+
+
+##### Function to glue series using the relation in the overlap
+
+userat_vec <- function(anchor, candidate, overlap_n = 1L,
+                       method = c("ratio", "diff"),
+                       robust = c("median", "mean"),
+                       min_overlap = 3L,
+                       allow_negative_ratio = FALSE) {
+  method <- match.arg(method)
+  robust <- match.arg(robust)
+  
+  if (length(anchor) != length(candidate)) {
+    stop("userat_vec(): anchor and candidate must have the same length (aligned by date already).")
+  }
+  
+  # Где якорь (первый ряд) начинается слева?
+  anchor_non_na <- which(!is.na(anchor))
+  if (length(anchor_non_na) == 0L) return(anchor) # нечего якорить
+  
+  anchor_left_idx <- min(anchor_non_na)
+  
+  # Берём только прошлое кандидата (строго левее начала якоря)
+  cand_past_idx <- which(seq_along(candidate) < anchor_left_idx & !is.na(candidate))
+  if (length(cand_past_idx) == 0L) return(anchor)
+  
+  # Окно пересечения: даты, где оба не NA
+  overlap_idx <- which(!is.na(anchor) & !is.na(candidate))
+  if (length(overlap_idx) < min_overlap) return(anchor)
+  
+  # "Максимально близко к месту склейки": берём последние overlap_n точек пересечения
+  overlap_tail <- utils::tail(overlap_idx, overlap_n)
+  
+  if (method == "ratio") {
+    ratios <- anchor[overlap_tail] / candidate[overlap_tail]
+    ratios <- ratios[is.finite(ratios)]
+    if (!allow_negative_ratio) ratios <- ratios[ratios > 0]
+    
+    if (length(ratios) < min_overlap) return(anchor)
+    
+    coef <- if (robust == "median") stats::median(ratios) else mean(ratios)
+    cand_adj <- candidate * coef
+  } else {
+    diffs <- anchor[overlap_tail] - candidate[overlap_tail]
+    diffs <- diffs[is.finite(diffs)]
+    if (length(diffs) < min_overlap) return(anchor)
+    
+    coef <- if (robust == "median") stats::median(diffs) else mean(diffs)
+    cand_adj <- candidate + coef
+  }
+  
+  out <- anchor
+  # Заполняем только там, где у якоря NA (левее его начала),
+  # но кандидат там не NA
+  fill_idx <- which(is.na(out) & !is.na(cand_adj) & seq_along(out) < anchor_left_idx)
+  out[fill_idx] <- cand_adj[fill_idx]
+  
+  out
+}
+
+
+##### Function to glue multiple series using ratio
+
+userat_many_vec <- function(series_list, overlap_n = 1L,
+                            method = c("ratio", "diff"),
+                            robust = c("median", "mean"),
+                            min_overlap = 3L,
+                            allow_negative_ratio = FALSE) {
+  method <- match.arg(method)
+  robust <- match.arg(robust)
+  
+  if (length(series_list) < 1L) {
+    stop("userat_many_vec(): need at least 1 series.")
+  }
+  
+  out <- series_list[[1L]]
+  if (length(series_list) == 1L) return(out)
+  
+  for (k in 2:length(series_list)) {
+    out <- userat_vec(
+      anchor = out,
+      candidate = series_list[[k]],
+      overlap_n = overlap_n,
+      method = method,
+      robust = robust,
+      min_overlap = min_overlap,
+      allow_negative_ratio = allow_negative_ratio
+    )
+  }
+  
+  out
+}
+
+##### Function to interpret the splicing formula
+
+parse_userat_formula <- function(formula_str) {
+  if (is.na(formula_str) || !stringr::str_detect(formula_str, "^\\s*userat\\s*\\(")) {
+    return(NULL)
+  }
+  
+  inner <- stringr::str_match(formula_str, "^\\s*userat\\s*\\((.*)\\)\\s*$")[, 2]
+  if (is.na(inner) || stringr::str_trim(inner) == "") {
+    stop("parse_userat_formula(): empty userat).")
+  }
+  
+  # Разбиваем по запятым на верхнем уровне (как и в ваших parse_* хелперах)
+  parts <- inner |>
+    stringr::str_split(",", simplify = FALSE) |>
+    purrr::pluck(1) |>
+    stringr::str_trim()
+  
+  is_kw <- stringr::str_detect(parts, "=")
+  
+  vars_raw <- parts[!is_kw]
+  vars <- vars_raw |>
+    stringr::str_replace_all("^['\"]|['\"]$", "") |>
+    stringr::str_trim()
+  vars <- vars[vars != ""]
+  
+  if (length(vars) < 1L) stop("parse_userat_formula(): no series provided in userat().")
+  
+  # defaults
+  args <- list(
+    overlap_n = 12L,
+    method = "ratio",
+    robust = "median",
+    min_overlap = 3L,
+    allow_negative_ratio = FALSE
+  )
+  
+  strip_quotes <- function(x) {
+    x |>
+      stringr::str_replace_all("^['\"]|['\"]$", "") |>
+      stringr::str_trim()
+  }
+  
+  for (p in parts[is_kw]) {
+    kv <- stringr::str_split_fixed(p, "=", 2)
+    key <- stringr::str_trim(kv[, 1])
+    val_raw <- stringr::str_trim(kv[, 2])
+    val <- strip_quotes(val_raw)
+    
+    key_lc <- tolower(key)
+    
+    if (key_lc == "overlap_n") {
+      args$overlap_n <- as.integer(val)
+    } else if (key_lc == "method") {
+      args$method <- tolower(val)
+    } else if (key_lc == "robust") {
+      args$robust <- tolower(val)
+    } else if (key_lc == "min_overlap") {
+      args$min_overlap <- as.integer(val)
+    } else if (key_lc == "allow_negative_ratio") {
+      args$allow_negative_ratio <- tolower(val) %in% c("true", "t", "1")
+    }
+  }
+  
+  if (!args$method %in% c("ratio", "diff")) args$method <- "ratio"
+  if (!args$robust %in% c("median", "mean")) args$robust <- "median"
+  if (is.na(args$overlap_n) || args$overlap_n < 1L) args$overlap_n <- 1L
+  if (is.na(args$min_overlap) || args$min_overlap < 1L) args$min_overlap <- 1L
+  
+  list(vars = vars, args = args)
+}
+
+
 ##### Function for the filling cycle
 
 fill <- function(fillplan, extdata_y, extdata_q, extdata_m, extdata_d, fill_from = NULL) {
@@ -557,8 +1477,10 @@ fill <- function(fillplan, extdata_y, extdata_q, extdata_m, extdata_d, fill_from
       #### 1a. Simple formulas, same freq ####
       
       if (oldfreq == newfreq && active == 1L && !stringr::str_detect(formula, "roll") &&
-          !stringr::str_detect(formula, "fromto") && formula != "share" &&
-          !stringr::str_detect(formula, "indexize") && !formula %in% c("impute_fix", "impute_linear")) {
+          !stringr::str_detect(formula, "fromto") && formula != "share" && !stringr::str_detect(formula, "seas_adj") &&
+          !stringr::str_detect(formula, "indexize") && !formula %in% c("impute_fix", "impute_linear") &&
+          !stringr::str_detect(formula, "^\\s*userat\\s*\\(") &&
+          !stringr::str_detect(formula, "^\\s*usedyn\\s*\\(")) {
         
         df   <- extdata[[oldfreq]]
         expr <- rlang::parse_expr(formula)
@@ -635,6 +1557,197 @@ fill <- function(fillplan, extdata_y, extdata_q, extdata_m, extdata_d, fill_from
         extdata[[oldfreq]] <- df
         
         print(glue::glue("i={i}: {formula} for '{oldcode}' -> '{newcode}' at freq '{oldfreq}' (gaps only, edges kept NA)"))
+      }
+      
+      #### 1d. Seasonal & calendar adjustment via seas_adj(...) ####
+      
+      if (oldfreq == newfreq && active == 1L && stringr::str_detect(formula, "seas_adj")) {
+        
+        df <- extdata[[oldfreq]]
+        
+        if (is.na(oldcode) || oldcode == "") {
+          stop(glue::glue(
+            "i={i}: 'seas_adj' requires 'old_indicator_code' to be specified."
+          ))
+        }
+        
+        if (!oldcode %in% names(df)) {
+          stop(glue::glue(
+            "i={i}: 'seas_adj' — variable '{oldcode}' not found in data at freq '{oldfreq}'."
+          ))
+        }
+        
+        # Разбираем параметры из формулы
+        sa_args <- parse_seas_adj_formula(formula)
+        
+        # Эффективный type: если auto и есть догадки, можно доработать позже;
+        # сейчас просто передаем, как есть.
+        type_eff     <- sa_args$type
+        if (!type_eff %in% c("auto", "add", "mult")) type_eff <- "auto"
+        
+        method_eff   <- sa_args$method
+        if (!method_eff %in% c("auto", "x13", "stl")) method_eff <- "auto"
+        
+        smooth_eff   <- sa_args$smooth
+        if (!smooth_eff %in% c("default", "less", "smooth", "very_smooth")) {
+          smooth_eff <- "default"
+        }
+        
+        component_eff <- sa_args$component
+        if (!component_eff %in% c("sa", "trend")) component_eff <- "sa"
+        
+        # Собираем имена регрессоров: рабочие дни + брейки
+        xreg_vars <- c(sa_args$wd_vars, sa_args$breaks_vars)
+        xreg_vars <- xreg_vars[xreg_vars != "" & !is.na(xreg_vars)]
+        
+        # Проверка наличия регрессоров в данных
+        if (length(xreg_vars) > 0L) {
+          missing_xreg <- xreg_vars[!(xreg_vars %in% names(df))]
+          if (length(missing_xreg) > 0L) {
+            warning(glue::glue(
+              "i={i}: 'seas_adj' refers to regressors {toString(missing_xreg)}, ",
+              "but they are not found in data at freq '{oldfreq}'. They will be ignored."
+            ))
+            xreg_vars <- setdiff(xreg_vars, missing_xreg)
+          }
+        }
+        
+        new_sym <- rlang::sym(newcode)
+        
+        # Частота: если "y" — просто копируем ряд
+        if (oldfreq == "y") {
+          df <- df |>
+            dplyr::mutate(!!new_sym := .data[[oldcode]])
+          
+          extdata[[oldfreq]] <- df
+          
+          print(glue::glue(
+            "i={i}: seas_adj requested for yearly freq; '{oldcode}' copied to '{newcode}' without adjustment."
+          ))
+        } else {
+          
+          df <- df |>
+            dplyr::arrange(country_id, date) |>
+            dplyr::mutate(
+              !!new_sym := seas_adjust_series(
+                y         = .data[[oldcode]],
+                date      = .data$date,
+                freq      = oldfreq,
+                method    = method_eff,
+                type      = type_eff,
+                smooth    = smooth_eff,
+                component = component_eff,
+                xreg      = if (length(xreg_vars) > 0L) dplyr::pick(dplyr::all_of(xreg_vars)) else NULL,
+                var_name  = oldcode
+              ),
+              .by = country_id
+            )
+          
+          extdata[[oldfreq]] <- df
+          
+          print(glue::glue(
+            "i={i}: seas_adj for '{oldcode}' -> '{newcode}' at freq '{oldfreq}' ",
+            "(method={method_eff}, type={type_eff}, smooth={smooth_eff}, component={component_eff})"
+          ))
+        }
+      }
+      
+      #### 1e. userat (right-anchored) multiple series: userat(a, b, c, overlap_n=..., method=...) ####
+      
+      if (oldfreq == newfreq && active == 1L && stringr::str_detect(formula, "^\\s*userat\\s*\\(")) {
+        
+        df <- extdata[[oldfreq]]
+        new_sym <- rlang::sym(newcode)
+        
+        sp <- parse_userat_formula(formula)
+        if (is.null(sp)) {
+          stop(glue::glue("i={i}: cannot parse userat() formula '{formula}'."))
+        }
+        
+        vars <- sp$vars
+        args <- sp$args
+        
+        missing_vars <- vars[!(vars %in% names(df))]
+        if (length(missing_vars) > 0L) {
+          stop(glue::glue(
+            "i={i}: userat() refers to missing variables at freq '{oldfreq}': {toString(missing_vars)}"
+          ))
+        }
+        
+        # Важно: выравнивание по дате внутри страны — значит сначала сортируем,
+        # и на уровне .by = country_id работаем с векторами одинаковой длины.
+        df <- df |>
+          dplyr::arrange(country_id, date) |>
+          dplyr::mutate(
+            !!new_sym := {
+              series_list <- dplyr::pick(dplyr::all_of(vars)) |> as.list()
+              
+              userat_many_vec(
+                series_list = series_list,
+                overlap_n = args$overlap_n,
+                method = args$method,
+                robust = args$robust,
+                min_overlap = args$min_overlap,
+                allow_negative_ratio = args$allow_negative_ratio
+              )
+            },
+            .by = country_id
+          )
+        
+        extdata[[oldfreq]] <- df
+        
+        print(glue::glue(
+          "i={i}: userat() vars={toString(vars)} -> '{newcode}' at freq '{oldfreq}' ",
+          "(overlap_n={args$overlap_n}, method={args$method}, robust={args$robust})"
+        ))
+      }
+      
+      #### 1f. usedyn 
+      
+      if (oldfreq == newfreq && active == 1L && stringr::str_detect(formula, "^\\s*usedyn\\s*\\(")) {
+        
+        df <- extdata[[oldfreq]]
+        new_sym <- rlang::sym(newcode)
+        
+        sp <- parse_usedyn_formula(formula)
+        if (is.null(sp)) {
+          stop(glue::glue("i={i}: cannot parse usedyn() formula '{formula}'."))
+        }
+        
+        vars <- sp$vars
+        args <- sp$args
+        
+        missing_vars <- vars[!(vars %in% names(df))]
+        if (length(missing_vars) > 0L) {
+          stop(glue::glue(
+            "i={i}: usedyn() refers to missing variables at freq '{oldfreq}': {toString(missing_vars)}"
+          ))
+        }
+        
+        df <- df |>
+          dplyr::arrange(country_id, date) |>
+          dplyr::mutate(
+            !!new_sym := {
+              # безопасно забираем векторы колонок в list
+              series_list <- dplyr::pick(dplyr::all_of(vars)) |> as.list()
+              
+              usedyn_many_vec(
+                series_list = series_list,
+                side = args$side,
+                method = args$method,
+                fill_internal = args$fill_internal,
+                allow_nonpositive_ratio = args$allow_nonpositive_ratio
+              )
+            },
+            .by = country_id
+          )
+        
+        extdata[[oldfreq]] <- df
+        
+        print(glue::glue(
+          "i={i}: usedyn() vars={toString(vars)} -> '{newcode}' at freq '{oldfreq}' ",
+          "(side={args$side}, method={args$method}, fill_internal={args$fill_internal})"
+        ))
       }
       
       #### 2. Rolling-indicators, same freq ####
@@ -1061,11 +2174,11 @@ writeCountryModelFile <- function(countries, extdata_y, saveplan) {
     "gg_debt_weo", "gg_rev_weo", "gg_debttorev", "gg_exns_int", "gg_inttorev",
     "gg_debt_conc_usd", "extdebt_conc_gdp", "gg_bal_weo", "gg_bal_gdp_weo",
     "extdebt_gg_usd", "extdebt_gg_gdp", "gg_debt_gdp_weo",
-    "gg_debt_fc_role_fsdb", "gg_debt_held_global_usd",
+    "gg_debt_fc_role_fsdb", "gg_debt_held_global_usd", "gg_debt_held_global_world_usd",
     "gg_debt_held_global_role", "gg_debt_maturity", "dpension2030",
     "ca_usd", "ca_gdp", "ex_gs_usd", "imp_gs_usd", "intres_usd",
     "intrestoimp", "niip_ex_ggcb_usd", "niip_ex_ggcb_gdp",
-    "ex_div", "neer_av", "usdlc_eop", "usdlc_av",
+    "ex_div", "neer_av_bis", "neer_av_ifs", "neer_av", "usdlc_eop", "usdlc_av",
     "remit_usd_wb", "remit_gdp_wb", "extdebt_usd", "intrestoextdebt",
     "wgi_va_est", "wgi_ps_est", "wgi1", "wgi_cc_est", "wgi_rl_est",
     "wgi_rq_est", "wgi_ge_est", "wgi2",

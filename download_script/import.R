@@ -2,7 +2,7 @@
 
 ## ------  Load libraries
 library_names <- c("dplyr","reshape2","WDI","countrycode","readxl","readr","tidyr","data.table","writexl","stringr",
-                   "gsubfn","jsonlite","Rilostat","glue","httr","here","zoo","rlang","purrr", "rsdmx")
+                   "gsubfn","jsonlite","Rilostat","glue","httr","here","zoo","rlang","purrr", "rsdmx", "janitor")
 # ,"rlist"
 
 for (library_name in library_names) {
@@ -104,6 +104,18 @@ readSeriesSheet <- function(path, sheet = "Sheet1", fixed_types = c("text", "tex
   ncols <- ncol(read_excel(path = path, sheet = sheet, n_max = 0))
   read_excel(path, sheet = sheet, col_types = c(fixed_types, rep("numeric", ncols - length(fixed_types))))
   
+}
+
+##### Helper functions to parse numbers safely
+
+parse_num_safe <- function(x) {
+  x |> as.character() |> str_replace_all("\u00A0", " ") |>   # NBSP -> пробел
+    str_squish() |> na_if("") |> readr::parse_number(locale = readr::locale(decimal_mark = ".", grouping_mark = ","))
+}
+
+first_non_na <- function(x) {
+  x <- x[!is.na(x)]
+  if (length(x) == 0) NA_real_ else x[[1]]
 }
 
 ##### Function to import previously downloaded data
@@ -463,38 +475,120 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d, imppa
     })
   
     ##### Import WGI
+    # try({
+    #   
+    #   wgi_impplan <- impplan |> filter(active==1, database_name=="WGI", retrieve_type=="file", source_frequency=="y") |>
+    #     mutate(wgi_type = unlist(strsplit(retrieve_code, "/"))[c(T,F)],  wgi_var = unlist(strsplit(retrieve_code, "/"))[c(F,T)])
+    #   wgi_names <- wgi_impplan$indicator_code
+    #   wgi_fname <- here("assets", "_DB", "_extsources", wgi_impplan$file_name[1])
+    #   wgi_sheets <- wgi_impplan$sheet_name
+    #   wgi_type <- wgi_impplan$wgi_type
+    #   wgi_var <- wgi_impplan$wgi_var
+    #   
+    #   if (length(wgi_names)>0 & all(!is.na(wgi_names))) {
+    #      
+    #     wgi_data_full <- read_excel(wgi_fname[1], sheet = wgi_sheets[1], col_names = T, na = "..", skip=0)
+    #      
+    #     print("WGI")
+    #     for (i in seq_along(wgi_names)) {
+    #         
+    #         wgi_data_full |> select(code, year, indicator, !!sym(wgi_type[i])) |> filter(indicator == wgi_var[i]) |>
+    #           mutate(country_id = countrycode(code, origin = 'iso3c', destination = 'iso2c',
+    #                                         custom_match = c('ROM' = 'RO','ADO' = 'AD','ANT' = 'AN',
+    #                                                          'KSV' = 'XK','TMP' = 'TL','WBG' = 'PS','ZAR' = 'CD'), warn = F)) |>
+    #           rename(!!sym(wgi_names[i]) := !!sym(wgi_type[i])) |> select(-c("code", "indicator")) -> wgi_data
+    #       
+    #         extdata_y |> left_join(wgi_data, by = c("country_id" = "country_id", "year"="year"), suffix = c("", "_wgi")) -> extdata_y
+    #         print("+")
+    #         
+    #       }
+    #   
+    #   }
+    # 
+    # })
+    
+    ##### Import WGI (new WGI file format: one sheet per dimension)
     try({
       
-      wgi_impplan <- impplan |> filter(active==1, database_name=="WGI", retrieve_type=="file", source_frequency=="y") |>
-        mutate(wgi_type = unlist(strsplit(retrieve_code, "/"))[c(T,F)],  wgi_var = unlist(strsplit(retrieve_code, "/"))[c(F,T)])
-      wgi_names <- wgi_impplan$indicator_code
-      wgi_fname <- here("assets", "_DB", "_extsources", wgi_impplan$file_name[1])
-      wgi_sheets <- wgi_impplan$sheet_name
-      wgi_type <- wgi_impplan$wgi_type
-      wgi_var <- wgi_impplan$wgi_var
+      wgi_impplan <- impplan |>
+        filter(
+          active == 1,
+          database_name == "WGI",
+          retrieve_type == "file",
+          source_frequency == "y"
+        ) |>
+        mutate(
+          wgi_type = str_split_fixed(retrieve_code, "/", 2)[, 1],
+          wgi_dim  = str_split_fixed(retrieve_code, "/", 2)[, 2]
+        )
       
-      if (length(wgi_names)>0 & all(!is.na(wgi_names))) {
-         
-        wgi_data_full <- read_excel(wgi_fname[1], sheet = wgi_sheets[1], col_names = T, na = "..", skip=0)
-         
-        print("WGI")
-        for (i in seq_along(wgi_names)) {
-            
-            wgi_data_full |> select(code, year, indicator, !!sym(wgi_type[i])) |> filter(indicator == wgi_var[i]) |>
-              mutate(country_id = countrycode(code, origin = 'iso3c', destination = 'iso2c',
-                                            custom_match = c('ROM' = 'RO','ADO' = 'AD','ANT' = 'AN',
-                                                             'KSV' = 'XK','TMP' = 'TL','WBG' = 'PS','ZAR' = 'CD'), warn = F)) |>
-              rename(!!sym(wgi_names[i]) := !!sym(wgi_type[i])) |> select(-c("code", "indicator")) -> wgi_data
+      if (nrow(wgi_impplan) > 0 && all(!is.na(wgi_impplan$indicator_code))) {
+        
+        wgi_fname <- here("assets", "_DB", "_extsources", wgi_impplan$file_name[1])
+        
+        # 1) Read each needed dimension sheet once (va/pv/ge/rq/rl/cc), cache in a named list
+        wgi_sheets_needed <- unique(wgi_impplan$wgi_dim)
+        
+        wgi_raw_by_dim <- set_names(wgi_sheets_needed) |>
+          map(\(sh) {
+            read_excel(
+              path = wgi_fname,
+              sheet = sh,
+              col_names = TRUE,
+              na = ".."
+            ) |>
+              janitor::clean_names() # makes column names stable (snake_case)
+          })
+        
+        # Helper: map "estimate" / "pctrank" to actual column names in the new file
+        wgi_value_col <- function(wgi_type) {
+          dplyr::case_when(
+            wgi_type == "estimate" ~ "governance_estimate_approx_2_5_to_2_5",
+            wgi_type == "pctrank"  ~ "governance_score_0_100",
+            TRUE ~ NA_character_
+          )
+        }
+        
+        # 2) Build each indicator series and join into extdata_y
+        for (i in seq_len(nrow(wgi_impplan))) {
           
-            extdata_y |> left_join(wgi_data, by = c("country_id" = "country_id", "year"="year"), suffix = c("", "_wgi")) -> extdata_y
-            print("+")
-            
-          }
-      
+          ind_code <- wgi_impplan$indicator_code[i]
+          dim      <- wgi_impplan$wgi_dim[i]
+          type     <- wgi_impplan$wgi_type[i]
+          val_col  <- wgi_value_col(type)
+          
+          if (is.na(val_col)) next
+          
+          wgi_data <- wgi_raw_by_dim[[dim]] |>
+            transmute(
+              year = as.integer(.data$year),
+              country_id = countrycode(
+                .data$economy_code,
+                origin = "iso3c",
+                destination = "iso2c",
+                custom_match = c(
+                  "ROM" = "RO", "ADO" = "AD", "ANT" = "AN",
+                  "KSV" = "XK", "TMP" = "TL", "WBG" = "PS", "ZAR" = "CD"
+                ),
+                warn = FALSE
+              ),
+              "{ind_code}" := as.double(.data[[val_col]])
+            ) |>
+            filter(!is.na(.data$country_id), !is.na(.data$year))
+          
+          extdata_y <- extdata_y |>
+            left_join(
+              wgi_data,
+              by = join_by(country_id == country_id, year == year)
+            )
+          
+          print("+")
+        }
+        
+        print("WGI")
       }
-    
     })
-    
+  
     ##### Import UNCTAD export diversification index
     try({
       
@@ -1150,7 +1244,8 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d, imppa
       
       fsdb_data <- eval(parse(text = glue("rename(fsdb_data,'{fsdb_names[i]}'='value')") ))
       
-      extdata_y <- extdata_y |> left_join(fsdb_data, by = c("country_id" = "country_id", "year"="year"), suffix=c("","_old"))
+      extdata_y <- extdata_y |> left_join(fsdb_data, by = c("country_id" = "country_id", "year"="year"), 
+                                          suffix=c("","_old"), relationship = "many-to-one")
       print("+")
       
       }
@@ -1212,15 +1307,29 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d, imppa
         old_codes <- fsb_impplan |> filter(sheet_name == fsb_sheet) |> pull(retrieve_code)
         new_codes <- fsb_impplan |> filter(sheet_name == fsb_sheet) |> pull(indicator_code)
         
-        fsb_data <- read_excel(fsb_fname, sheet = fsb_sheet, col_names = T, na = "") |>
-            rename_at(vars(c("Jurisdiction code", "Year", "Entity/Economic function", "Value, in USD trillions")),
-                      ~c("country_id", "year", "code", "value")) |> mutate(value = as.numeric(value))  |>
-          filter(Topic == i) |> select("country_id", "year", "code", "value") |> 
-          pivot_wider(id_cols = c("country_id", "year"), names_from = "code", values_from = "value") |>
-            rename_at(vars(old_codes), ~new_codes) |>
-            mutate(year = as.numeric(year))
+        fsb_data_raw <- read_excel(fsb_fname, sheet = fsb_sheet, col_names = TRUE, na = c("", "NA", "N/A")) |>
+          rename(country_id = `Jurisdiction code`, year = Year, code = `Entity/Economic function`,
+            value = `Value, in USD trillions`) |> mutate(year = suppressWarnings(as.integer(year)), value = parse_num_safe(value)) |>
+          filter(Topic == i) |> select(country_id, year, code, value)
+        
+        # --- Диагностика дублей и оповещение ---
+        dup_keys <- fsb_data_raw |> summarise(n = dplyr::n(), .by = c(country_id, year, code)) |> filter(n > 1L)
+        
+        if (nrow(dup_keys) > 0) {
+          dup_examples <- dup_keys |> left_join(fsb_data_raw, by = join_by(country_id, year, code)) |>
+            summarise(values = paste0(value, collapse = ", "), .by = c(country_id, year, code)) |> slice_head(n = 12)
           
-          extdata_y <- extdata_y |> left_join(fsb_data, by = c("country_id" = "country_id", "year"="year"), suffix=c("","_old"))
+          warning("FSB: найдены дубликаты по (country_id, year, code) для Topic = '", i, "'. ",
+            "Будет взято первое ненулевое (first_non_na). ", "Кол-во ключей с дублями: ", nrow(dup_keys), ".\n",
+            paste(capture.output(print(dup_examples)), collapse = "\n"), call. = FALSE)
+        }
+        
+        fsb_data <- fsb_data_raw |> pivot_wider(id_cols = c(country_id, year), names_from = code, values_from = value,
+            values_fn = first_non_na) |> rename_with(~ new_codes[match(.x, old_codes)], .cols = all_of(old_codes)) |>
+          mutate(year = as.numeric(year))
+          
+          extdata_y <- extdata_y |> left_join(fsb_data, by = c("country_id" = "country_id", "year"="year"), 
+                                              suffix=c("","_old"), relationship = "many-to-one")
           print("+")
       
       }  

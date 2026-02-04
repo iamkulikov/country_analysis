@@ -16,7 +16,7 @@ countries <- c("Armenia", "Belarus", "Brazil", "Bulgaria", "Greece", "China", "I
 # в базе именно такое (дропнуть изначально при кодировке базы все точки на концах?)
 formula_words <- c("lag", "lead", "rollsum", "rollavg", "rollvol", "mean", "last", "first", "min", "pmin", "max", "pmax", 
                    "sum", "coalesce", "share", "exp", "fromto", "year", "na_if", "cummax", "cummin", "cumsum", "ceiling",
-                   "letterize", "indexize", "demean_fix", "desum_fix", "impute_fix", "impute_linear")
+                   "letterize", "indexize", "demean_fix", "desum_fix", "impute_fix", "impute_linear", "seas_adj", "usedyn", "userat")
 change_freq_words <- c("mean", "last", "demean_fix", "desum_fix", "spline")
 sheet_keys <- c(y = "y", q = "q", m = "m")
 

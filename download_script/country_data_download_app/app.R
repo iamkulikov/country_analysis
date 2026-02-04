@@ -76,7 +76,7 @@ server <- function(input, output, session) {
   # Calculating a data subset for a chosen country
   data_subset <- reactive({
     req(input$country_choice)
-    subsetCountry(country = input$country_choice, datalist = FD)
+    subsetCountry(country_id = input$country_choice, datalist = FD)
   })
   
   dict_to_show <- reactive({

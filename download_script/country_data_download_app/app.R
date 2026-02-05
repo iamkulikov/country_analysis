@@ -65,7 +65,7 @@ indicator_catalog <- build_indicator_catalog_from_dict(FD$dict)
 # --------------------------- UI --------------------------------------------
 
 ui <- navbarPage(
-  title = "Data downloader",
+  title = "Country data downloader",
   theme = bslib::bs_theme(bootswatch = "flatly"),
   
   # -------- Tab 1: Country file ----------
@@ -84,7 +84,7 @@ ui <- navbarPage(
         selectInput(
           "file_structure",
           "Choose download format:",
-          choices = c("Model", "All data (vertical)", "All data (horizontal)")
+          choices = c("Model", "All data (vertical)")
         ),
         
         downloadButton("download_country", "Download")
@@ -95,7 +95,7 @@ ui <- navbarPage(
   
   # -------- Tab 2: Custom ----------
   tabPanel(
-    title = "Custom",
+    title = "Custom query",
     fluidRow(
       column(
         width = 12,
@@ -209,8 +209,7 @@ server <- function(input, output, session) {
     out <- switch(
       input$file_structure,
       "Model" = generateModelSheet(yearly_data = ds[["y"]], dict = ds[["dict"]]),
-      "All data (vertical)"   = ds,
-      "All data (horizontal)" = transposeDatalist(ds)
+      "All data (vertical)"   = ds
     )
     
     if (inherits(out, c("data.frame", "tbl"))) out <- list(data = out)
@@ -222,8 +221,7 @@ server <- function(input, output, session) {
     switch(
       input$file_structure,
       "Model"                 = "model",
-      "All data (vertical)"   = "filled_v",
-      "All data (horizontal)" = "filled_h"
+      "All data (vertical)"   = "filled_v"
     )
   })
   
@@ -236,8 +234,59 @@ server <- function(input, output, session) {
       dat <- data_to_download_country()
       shiny::validate(shiny::need(length(dat) > 0, "Нет данных для выгрузки."))
       
-      # форматирование можно оставить как у вас (или упростить)
-      write_xlsx_formatted(sheets = dat, path = file)
+      tryCatch(
+        {
+          # --- форматирование как в исходном country_data_download_app ---
+          fmt <- switch(
+            input$file_structure,
+            
+            "Model" = list(
+              freeze = list(
+                y = list(cell = "E2")
+              ),
+              widths = list(
+                y = c(30, 15, 12, 12)
+              )
+            ),
+            
+            "All data (vertical)" = list(
+              freeze = list(
+                y    = list(cell = "B2"),
+                q    = list(cell = "C2"),
+                m    = list(cell = "D2"),
+                d    = list(cell = "B2"),
+                dict = list(row = 2, col = 1)
+              ),
+              widths = list(
+                d    = c(22),
+                dict = c(41, 14, 20, 7, 22, 3, 3, 10, 10, 10, 10)
+              )
+            ),
+            
+            list(freeze = list(), widths = list())
+          )
+          
+          # применяем только к реально существующим листам
+          fmt$freeze <- fmt$freeze[names(dat)]
+          fmt$widths <- fmt$widths[names(dat)]
+          
+          write_xlsx_formatted(
+            sheets              = dat,
+            path                = file,
+            freeze_by_sheet     = fmt$freeze,
+            col_widths_by_sheet = fmt$widths
+          )
+        },
+        error = function(e) {
+          message("Download error: ", conditionMessage(e))
+          shiny::showNotification(
+            paste("Ошибка при формировании XLSX:", conditionMessage(e)),
+            type = "error",
+            duration = NULL
+          )
+          stop(e)
+        }
+      )
     }
   )
   
@@ -323,26 +372,48 @@ server <- function(input, output, session) {
   
   output$download_custom <- downloadHandler(
     filename = function() {
-      glue("custom_extract_{format(Sys.Date(), '%Y-%m-%d')}.xlsx")
+      glue("custom_extract_vertical_{format(Sys.Date(), '%Y-%m-%d')}.xlsx")
     },
     content = function(file) {
       req(input$custom_indicators)
       
-      wide_tbl <- build_custom_download_wide(
+      sheets <- build_custom_download_vertical(
         fd                = FD,
         selected_node_ids = input$custom_indicators,
-        country_ids       = input$custom_countries,
+        country_ids       = input$custom_countries,  # NULL/empty => все страны (внутри функции)
         year_from         = custom_year_from(),
         year_to           = custom_year_to()
       )
       
-      shiny::validate(shiny::need(nrow(wide_tbl) > 0, "Нет данных по выбранным фильтрам."))
+      shiny::validate(shiny::need(length(sheets) > 0, "Нет данных по выбранным фильтрам."))
+      
+      # ---- Форматирование как "All data (vertical)" с первой вкладки,
+      # ---- но freeze сдвинут на +2 столбца (country + country_id)
+      fmt <- list(
+        freeze = list(
+          y    = list(cell = "D2"), # было B2 -> стало D2
+          q    = list(cell = "E2"), # было C2 -> стало E2
+          m    = list(cell = "F2"), # было D2 -> стало F2
+          d    = list(cell = "D2"), # было B2 -> стало D2
+          dict = list(row = 2, col = 1)
+        ),
+        widths = list(
+          # Раньше на vertical вы настраивали только d и dict.
+          # Теперь на d добавим ширины для country/country_id + date (по аналогии со стилем).
+          d    = c(22, 10, 22),
+          dict = c(41, 14, 20, 7, 22, 3, 3, 10, 10, 10, 10)
+        )
+      )
+      
+      # применяем только к реально существующим листам
+      fmt$freeze <- fmt$freeze[names(sheets)]
+      fmt$widths <- fmt$widths[names(sheets)]
       
       write_xlsx_formatted(
-        sheets = list(data = wide_tbl),
-        path   = file,
-        freeze_by_sheet = list(data = list(cell = "C2")),
-        col_widths_by_sheet = list(data = c(10, 25))
+        sheets              = sheets,
+        path                = file,
+        freeze_by_sheet     = fmt$freeze,
+        col_widths_by_sheet = fmt$widths
       )
     }
   )

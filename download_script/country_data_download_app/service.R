@@ -739,6 +739,95 @@ build_custom_download_wide <- function(fd,
     dplyr::arrange(.data$country_id, .data$indicator)
 }
 
+build_custom_download_vertical <- function(fd,
+                                           selected_node_ids,
+                                           country_ids = NULL,
+                                           year_from = NULL,
+                                           year_to = NULL) {
+  if (is.null(selected_node_ids) || length(selected_node_ids) == 0) {
+    return(list())
+  }
+  
+  # Если страны не выбраны — берём все
+  if (is.null(country_ids) || length(country_ids) == 0) {
+    country_ids <- fd$extdata_y |>
+      dplyr::distinct(.data$country_id) |>
+      dplyr::pull(.data$country_id)
+  }
+  
+  parts <- split_node_id(selected_node_ids)
+  req_tbl <- tibble::tibble(
+    indicator_code = parts$indicator_code,
+    source_frequency = parts$frequency
+  )
+  
+  # Какие индикаторы по каждой частоте реально запросили
+  wanted_by_freq <- req_tbl |>
+    dplyr::distinct(.data$source_frequency, .data$indicator_code) |>
+    dplyr::group_by(.data$source_frequency) |>
+    dplyr::summarise(indicators = list(unique(.data$indicator_code)), .groups = "drop")
+  
+  build_sheet <- function(freq, time_cols) {
+    df <- get_freq_data(fd, freq = freq)
+    if (is.null(df)) return(NULL)
+    
+    inds <- wanted_by_freq |>
+      dplyr::filter(.data$source_frequency == freq) |>
+      dplyr::pull(.data$indicators) |>
+      purrr::pluck(1, .default = character(0))
+    
+    # Оставляем только те индикаторы, которые реально есть в df
+    inds <- intersect(inds, names(df))
+    if (length(inds) == 0) return(NULL)
+    
+    # Фильтр стран
+    df <- df |>
+      dplyr::filter(.data$country_id %in% country_ids)
+    
+    # Добавляем year/period и фильтруем по годам (d тоже получит year)
+    df <- add_period_columns(df, freq = freq)
+    df <- filter_by_years(df, year_from = year_from, year_to = year_to)
+    
+    # Собираем: country, country_id, time cols, индикаторы
+    keep_cols <- c("country", "country_id", time_cols, inds)
+    
+    df |>
+      dplyr::select(dplyr::any_of(keep_cols)) |>
+      dplyr::arrange(.data$country, .data$country_id)
+  }
+  
+  sheets <- list(
+    y = build_sheet("y", time_cols = c("year")),
+    q = build_sheet("q", time_cols = c("year", "quarter")),
+    m = build_sheet("m", time_cols = c("year", "quarter", "month")),
+    d = {
+      df <- build_sheet("d", time_cols = c("date"))
+      df
+    }
+  )
+  
+  sheets <- purrr::compact(sheets)
+  
+  # ---- dict (пока базово: только то, что относится к реально выгружаемым индикаторам) ----
+  if (!is.null(fd$dict) && nrow(fd$dict) > 0 && length(sheets) > 0) {
+    exported <- purrr::imap_dfr(
+      sheets,
+      \(df, freq) {
+        tibble::tibble(
+          indicator_code = setdiff(names(df), c("country", "country_id", "year", "quarter", "month", "date")),
+          source_frequency = freq
+        )
+      }
+    ) |>
+      dplyr::distinct()
+    
+    sheets$dict <- fd$dict |>
+      dplyr::semi_join(exported, by = dplyr::join_by(indicator_code, source_frequency == source_frequency))
+  }
+  
+  sheets
+}
+
 # ---------- functions to build the dependency graph -------------------------------------
 
 ### From import.R

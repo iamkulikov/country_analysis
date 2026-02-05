@@ -109,25 +109,26 @@ ui <- navbarPage(
                 choices  = NULL,
                 multiple = TRUE,
                 options = list(
-                  placeholder = "Начните вводить код/название индикатора…",
+                  placeholder = "Start entering code/name of the indicator…",
                   maxOptions  = 5000
                 )
               )
             ),
             column(
-              width = 4,
+              width = 3,
               selectizeInput(
                 inputId  = "custom_countries",
                 label    = "Country",
                 choices  = country_choices_multi,
                 multiple = TRUE,
                 options  = list(
-                  placeholder = "Выберите страны…"
+                  placeholder = "Choose countries…"
                 )
               )
             ),
             column(
-              width = 3,
+              width = 4,
+              
               fluidRow(
                 column(
                   width = 6,
@@ -138,7 +139,23 @@ ui <- navbarPage(
                   textInput("year_to", "Years to", value = "", placeholder = "e.g. 2023")
                 )
               ),
-              downloadButton("download_custom", "Download")
+              
+              div(
+                style = "display: flex; align-items: center; gap: 12px;",
+                
+                radioButtons(
+                  inputId = "custom_time_layout",
+                  label   = NULL,
+                  choices = c(
+                    "Time in columns" = "columns",
+                    "Time in rows"    = "rows"
+                  ),
+                  selected = "columns",
+                  inline   = TRUE
+                ),
+                
+                downloadButton("download_custom", "Download")
+              )
             )
           )
         )
@@ -372,40 +389,68 @@ server <- function(input, output, session) {
   
   output$download_custom <- downloadHandler(
     filename = function() {
-      glue("custom_extract_vertical_{format(Sys.Date(), '%Y-%m-%d')}.xlsx")
+      layout_tag <- if (identical(input$custom_time_layout, "rows")) "time_in_rows" else "time_in_columns"
+      glue("custom_extract_{layout_tag}_{format(Sys.Date(), '%Y-%m-%d')}.xlsx")
     },
     content = function(file) {
       req(input$custom_indicators)
       
-      sheets <- build_custom_download_vertical(
-        fd                = FD,
-        selected_node_ids = input$custom_indicators,
-        country_ids       = input$custom_countries,  # NULL/empty => все страны (внутри функции)
-        year_from         = custom_year_from(),
-        year_to           = custom_year_to()
-      )
+      sheets <- if (identical(input$custom_time_layout, "rows")) {
+        build_custom_download_vertical(
+          fd                = FD,
+          selected_node_ids = input$custom_indicators,
+          country_ids       = input$custom_countries,
+          year_from         = custom_year_from(),
+          year_to           = custom_year_to()
+        )
+      } else {
+        build_custom_download_time_in_columns(
+          fd                = FD,
+          selected_node_ids = input$custom_indicators,
+          country_ids       = input$custom_countries,
+          year_from         = custom_year_from(),
+          year_to           = custom_year_to()
+        )
+      }
       
       shiny::validate(shiny::need(length(sheets) > 0, "Нет данных по выбранным фильтрам."))
       
-      # ---- Форматирование как "All data (vertical)" с первой вкладки,
-      # ---- но freeze сдвинут на +2 столбца (country + country_id)
-      fmt <- list(
-        freeze = list(
-          y    = list(cell = "D2"), # было B2 -> стало D2
-          q    = list(cell = "E2"), # было C2 -> стало E2
-          m    = list(cell = "F2"), # было D2 -> стало F2
-          d    = list(cell = "D2"), # было B2 -> стало D2
-          dict = list(row = 2, col = 1)
-        ),
-        widths = list(
-          # Раньше на vertical вы настраивали только d и dict.
-          # Теперь на d добавим ширины для country/country_id + date (по аналогии со стилем).
-          d    = c(22, 10, 22),
-          dict = c(41, 14, 20, 7, 22, 3, 3, 10, 10, 10, 10)
+      # ---- форматирование ----
+      # 1) Time in rows: как vertical на первой вкладке, но +2 столбца (country/country_id)
+      # 2) Time in columns: фиксируем 3 первых колонки (country/country_id/indicator_code) => freeze D2
+      fmt <- if (identical(input$custom_time_layout, "rows")) {
+        list(
+          freeze = list(
+            y    = list(cell = "D2"), # было B2 -> стало D2
+            q    = list(cell = "E2"), # было C2 -> стало E2
+            m    = list(cell = "F2"), # было D2 -> стало F2
+            d    = list(cell = "D2"), # было B2 -> стало D2
+            dict = list(row = 2, col = 1)
+          ),
+          widths = list(
+            d    = c(22, 10, 22),
+            dict = c(41, 14, 20, 7, 22, 3, 3, 10, 10, 10, 10)
+          )
         )
-      )
+      } else {
+        list(
+          freeze = list(
+            y    = list(cell = "D2"),
+            q    = list(cell = "D2"),
+            m    = list(cell = "D2"),
+            d    = list(cell = "D2"),
+            dict = list(row = 2, col = 1)
+          ),
+          widths = list(
+            y = c(22, 10, 22),
+            q = c(22, 10, 22),
+            m = c(22, 10, 22),
+            d = c(22, 10, 22),
+            dict = c(41, 14, 20, 7, 22, 3, 3, 10, 10, 10, 10)
+          )
+        )
+      }
       
-      # применяем только к реально существующим листам
       fmt$freeze <- fmt$freeze[names(sheets)]
       fmt$widths <- fmt$widths[names(sheets)]
       

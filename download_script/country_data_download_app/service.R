@@ -739,6 +739,97 @@ build_custom_download_wide <- function(fd,
     dplyr::arrange(.data$country_id, .data$indicator)
 }
 
+build_custom_download_time_in_columns <- function(fd,
+                                                  selected_node_ids,
+                                                  country_ids = NULL,
+                                                  year_from = NULL,
+                                                  year_to = NULL) {
+  if (is.null(selected_node_ids) || length(selected_node_ids) == 0) {
+    return(list())
+  }
+  
+  # если страны не выбраны — берём все
+  if (is.null(country_ids) || length(country_ids) == 0) {
+    country_ids <- fd$extdata_y |>
+      dplyr::distinct(.data$country_id) |>
+      dplyr::pull(.data$country_id)
+  }
+  
+  parts <- split_node_id(selected_node_ids)
+  req_tbl <- tibble::tibble(
+    indicator_code    = parts$indicator_code,
+    source_frequency  = parts$frequency
+  )
+  
+  wanted_by_freq <- req_tbl |>
+    dplyr::distinct(.data$source_frequency, .data$indicator_code) |>
+    dplyr::group_by(.data$source_frequency) |>
+    dplyr::summarise(indicators = list(unique(.data$indicator_code)), .groups = "drop")
+  
+  build_sheet <- function(freq) {
+    df <- get_freq_data(fd, freq = freq)
+    if (is.null(df)) return(NULL)
+    
+    inds <- wanted_by_freq |>
+      dplyr::filter(.data$source_frequency == freq) |>
+      dplyr::pull(.data$indicators) |>
+      purrr::pluck(1, .default = character(0))
+    
+    inds <- intersect(inds, names(df))
+    if (length(inds) == 0) return(NULL)
+    
+    df <- df |>
+      dplyr::filter(.data$country_id %in% country_ids) |>
+      add_period_columns(freq = freq) |>
+      filter_by_years(year_from = year_from, year_to = year_to)
+    
+    # long: country/country_id/period + indicator_code/value
+    long <- df |>
+      dplyr::select(dplyr::any_of(c("country", "country_id", "period", inds))) |>
+      tidyr::pivot_longer(
+        cols      = dplyr::all_of(inds),
+        names_to  = "indicator_code",
+        values_to = "value"
+      )
+    
+    if (nrow(long) == 0) return(NULL)
+    
+    long |>
+      tidyr::pivot_wider(
+        names_from  = .data$period,
+        values_from = .data$value
+      ) |>
+      dplyr::arrange(.data$country, .data$country_id, .data$indicator_code)
+  }
+  
+  sheets <- list(
+    y = build_sheet("y"),
+    q = build_sheet("q"),
+    m = build_sheet("m"),
+    d = build_sheet("d")
+  ) |>
+    purrr::compact()
+  
+  # dict пока базовый: по реально попавшим indicator_code@freq
+  if (!is.null(fd$dict) && nrow(fd$dict) > 0 && length(sheets) > 0) {
+    exported <- purrr::imap_dfr(
+      sheets,
+      \(df, freq) {
+        tibble::tibble(
+          indicator_code   = df$indicator_code %||% character(0),
+          source_frequency = freq
+        )
+      }
+    ) |>
+      dplyr::distinct()
+    
+    sheets$dict <- fd$dict |>
+      dplyr::semi_join(exported, by = dplyr::join_by(indicator_code, source_frequency == source_frequency))
+  }
+  
+  sheets
+}
+
 build_custom_download_vertical <- function(fd,
                                            selected_node_ids,
                                            country_ids = NULL,

@@ -7,9 +7,11 @@ library(glue)
 library(rlang)
 library(DT)
 library(openxlsx)
+library(shinyjs)
 
 here::i_am("app.R")
 source(here("service.R"))
+source(here("dep_graph.R"))
 
 # app_dir <- normalizePath(getwd())
 # source(file.path(app_dir, "service.R"))
@@ -67,6 +69,7 @@ indicator_catalog <- build_indicator_catalog_from_dict(FD$dict)
 ui <- navbarPage(
   title = "Country data downloader",
   theme = bslib::bs_theme(bootswatch = "flatly"),
+  shinyjs::useShinyjs(),
   
   # -------- Tab 1: Country file ----------
   tabPanel(
@@ -165,7 +168,49 @@ ui <- navbarPage(
     fluidRow(
       column(
         width = 12,
-        DT::DTOutput("custom_table")
+        DT::DTOutput("custom_table"),
+        div(
+          style = "margin-top: 10px;",
+          tags$hr(),
+          
+          tags$h4("Reproduce a previous download"),
+          
+          fluidRow(
+            column(
+              width = 12,
+              tags$label("Paste recipe code from the file (dict sheet):"),
+              textInput(
+                inputId     = "custom_recipe_code",
+                label       = NULL,
+                value       = "",
+                placeholder = "Paste CUST1:... code here"
+              )
+            )
+          ),
+          
+          fluidRow(
+            column(
+              width = 12,
+              div(
+                style = "display: flex; align-items: center; justify-content: flex-start; gap: 6px;",
+                actionButton(
+                  "custom_recipe_apply",
+                  "Apply",
+                  class = "btn-primary"
+                ),
+                actionButton(
+                  "custom_recipe_clear",
+                  "Clear",
+                  class = "btn-secondary"
+                ),
+                tags$div(
+                  style = "margin-left: 10px; opacity: 0.8;",
+                  textOutput("custom_recipe_status", inline = TRUE)
+                )
+              )
+            )
+          )
+        )
       ),
       
       fluidRow(
@@ -387,6 +432,109 @@ server <- function(input, output, session) {
     )
   })
   
+  recipe_status <- reactiveVal("")
+  
+  output$custom_recipe_status <- renderText({
+    recipe_status()
+  })
+  
+  observeEvent(input$custom_recipe_apply, {
+    code <- input$custom_recipe_code %||% ""
+    
+    tryCatch(
+      {
+        rec <- decode_recipe(code)
+        
+        indicators <- rec$indicators %||% character(0)
+        countries  <- rec$countries  %||% character(0)
+        
+        # decode может вернуть list -> приводим к character
+        indicators <- as.character(unlist(indicators, use.names = FALSE))
+        countries  <- as.character(unlist(countries,  use.names = FALSE))
+        
+        layout <- rec$time_layout %||% "columns"
+        layout <- as.character(unlist(layout, use.names = FALSE))[1]
+        if (is.na(layout) || layout == "") layout <- "columns"
+        
+        yf <- rec$year_from
+        yt <- rec$year_to
+        
+        # server-side selectize: обновляем choices + selected
+        ind_choices <- rlang::set_names(indicator_catalog$node_id, indicator_catalog$label)
+        updateSelectizeInput(
+          session,
+          inputId  = "custom_indicators",
+          choices  = ind_choices,
+          selected = indicators,
+          server   = TRUE
+        )
+        
+        updateSelectizeInput(
+          session,
+          inputId  = "custom_countries",
+          choices  = country_choices_multi,
+          selected = countries,
+          server   = TRUE
+        )
+        
+        updateRadioButtons(session, "custom_time_layout", selected = layout)
+        updateTextInput(session, "year_from", value = if (is.null(yf)) "" else as.character(yf))
+        updateTextInput(session, "year_to",   value = if (is.null(yt)) "" else as.character(yt))
+        
+        recipe_status("Applied.")
+        shiny::showNotification("Recipe applied.", type = "message", duration = 2)
+      },
+      error = function(e) {
+        msg <- paste("Invalid code:", conditionMessage(e))
+        recipe_status(msg)
+        shiny::showNotification(msg, type = "error", duration = 6)
+      }
+    )
+  })
+  
+  observeEvent(input$custom_recipe_clear, {
+    updateSelectizeInput(session, "custom_indicators", selected = character(0))
+    updateSelectizeInput(session, "custom_countries",  selected = character(0))
+    updateRadioButtons(session, "custom_time_layout", selected = "columns")
+    updateTextInput(session, "year_from", value = "")
+    updateTextInput(session, "year_to", value = "")
+    recipe_status("Cleared.")
+  })
+  
+  make_recipe_for_export <- function() {
+    list(
+      v = 1,
+      indicators  = input$custom_indicators %||% character(0),
+      countries   = input$custom_countries %||% character(0),
+      year_from   = custom_year_from(),
+      year_to     = custom_year_to(),
+      time_layout = input$custom_time_layout %||% "columns"
+    )
+  }
+  
+  recipe_can_apply <- reactive({
+    code <- input$custom_recipe_code %||% ""
+    nzchar(code) && startsWith(code, "CUST1:")
+  })
+  
+  observe({
+    if (isTRUE(recipe_can_apply())) {
+      shinyjs::enable("custom_recipe_apply")
+    } else {
+      shinyjs::disable("custom_recipe_apply")
+    }
+  })
+  
+  observe({
+    if (!nzchar(input$custom_recipe_code %||% "")) {
+      recipe_status("Paste recipe code to enable Apply.")
+    } else if (!startsWith(input$custom_recipe_code, "CUST1:")) {
+      recipe_status("Invalid recipe format.")
+    } else {
+      recipe_status("")
+    }
+  })
+  
   output$download_custom <- downloadHandler(
     filename = function() {
       layout_tag <- if (identical(input$custom_time_layout, "rows")) "time_in_rows" else "time_in_columns"
@@ -414,6 +562,50 @@ server <- function(input, output, session) {
       }
       
       shiny::validate(shiny::need(length(sheets) > 0, "Нет данных по выбранным фильтрам."))
+      
+      # --- recipe code записываем в dict внизу ---
+      recipe_code <- encode_recipe(make_recipe_for_export())
+      
+      if ("dict" %in% names(sheets) && inherits(sheets$dict, c("data.frame", "tbl")) && ncol(sheets$dict) >= 2) {
+        
+        dict_cols <- names(sheets$dict)
+        col_key   <- dict_cols[[1]]
+        col_val   <- dict_cols[[2]]
+        
+        make_row <- function(key, val) {
+          row <- as.list(rep(NA, length(dict_cols)))
+          names(row) <- dict_cols
+          row[[col_key]] <- key
+          row[[col_val]] <- val
+          tibble::as_tibble(row)
+        }
+        
+        # гарантированная пустая строка (все NA) как разделитель
+        blank_row <- sheets$dict |>
+          dplyr::slice(1) |>
+          dplyr::mutate(dplyr::across(dplyr::everything(), \(x) NA))
+        
+        recipe_rows <- dplyr::bind_rows(
+          make_row("RECIPE_CODE", recipe_code),
+          make_row("RECIPE_NOTE", "Paste RECIPE_CODE into the app (Custom tab) and click Apply to reproduce.")
+        )
+        
+        sheets$dict <- dplyr::bind_rows(
+          sheets$dict,
+          blank_row,
+          recipe_rows
+        )
+        
+      } else {
+        # если dict отсутствует или в нём <2 колонок — создаём минимальный
+        sheets$dict <- tibble::tibble(
+          key   = c("RECIPE_CODE", "RECIPE_NOTE"),
+          value = c(
+            recipe_code,
+            "Paste RECIPE_CODE into the app (Custom tab) and click Apply to reproduce."
+          )
+        )
+      }
       
       # ---- форматирование ----
       # 1) Time in rows: как vertical на первой вкладке, но +2 столбца (country/country_id)

@@ -425,10 +425,10 @@ build_indicator_catalog_from_dict <- function(dict) {
       label          = dplyr::case_when(
         !is.na(.data$indicator_name) & .data$indicator_name != "" ~
           glue::glue("{node_id} — {indicator_name}"),
-        TRUE ~ .data$node_id
+        TRUE ~ node_id
       )
     ) |>
-    dplyr::distinct(.data$node_id, .keep_all = TRUE) |>
+    dplyr::distinct(node_id, .keep_all = TRUE) |>
     dplyr::arrange(.data$indicator_code, .data$source_frequency) |>
     dplyr::select(
       node_id, label,
@@ -655,10 +655,10 @@ build_custom_summary_table <- function(fd,
   out <- out |>
     dplyr::mutate(
       node_id = glue::glue("{indicator_code}@{source_frequency}"),
-      .order  = match(.data$node_id, selected_node_ids)
+      .order  = match(node_id, selected_node_ids)
     ) |>
     dplyr::arrange(.data$.order) |>
-    dplyr::select(-.data$node_id, -.data$.order)
+    dplyr::select(-node_id, -.data$.order)
   
   out
 }
@@ -722,7 +722,7 @@ build_custom_download_time_in_columns <- function(fd,
     
     long |>
       tidyr::pivot_wider(
-        names_from  = .data$period,
+        names_from  = period,
         values_from = .data$value
       ) |>
       dplyr::arrange(.data$country, .data$country_id, .data$indicator_code)

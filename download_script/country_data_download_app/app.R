@@ -13,16 +13,10 @@ here::i_am("app.R")
 source(here("service.R"))
 source(here("dep_graph.R"))
 
-# app_dir <- normalizePath(getwd())
-# source(file.path(app_dir, "service.R"))
-
 # ------------------------- LOAD DB -----------------------------------------
 
 data_fname   <- here("Filled_DB.rds")
 data_d_fname <- here("Filled_DB_d.rds")
-
-# data_fname <- file.path(app_dir, "Filled_DB.rds")
-# data_d_fname <- file.path(app_dir, "Filled_DB_d.rds")
 sheet_keys   <- c(y = "y", q = "q", m = "m")
 
 FD <- importData(
@@ -48,20 +42,12 @@ formula_words <- c(
   "if_else", "ifelse", "sqrt", "log", "abs", "rollapply"
 )
 
-dep_graph_static <- build_dependency_graph(
-  impplan       = impplan,
-  fillplan      = fillplan,
-  formula_words = formula_words,
-  only_active   = TRUE
-)
+dep_graph_static <- build_dependency_graph(impplan = impplan, fillplan = fillplan, 
+        formula_words = formula_words, only_active = TRUE)
 
-countries_tbl <- FD$extdata_y |>
-  dplyr::distinct(country, country_id) |>
-  dplyr::arrange(country)
-
+countries_tbl <- FD$extdata_y |> dplyr::distinct(country, country_id) |> dplyr::arrange(country)
 country_choices_single <- rlang::set_names(countries_tbl$country_id, countries_tbl$country)
 country_choices_multi  <- country_choices_single
-
 indicator_catalog <- build_indicator_catalog_from_dict(FD$dict)
 
 # --------------------------- UI --------------------------------------------
@@ -392,7 +378,7 @@ server <- function(input, output, session) {
       dplyr::transmute(
         node_id = glue::glue("{indicator_code}@{source_frequency}")
       ) |>
-      dplyr::pull(.data$node_id) |>
+      dplyr::pull(node_id) |>
       dplyr::first()
     
     current <- selected_dep_node()

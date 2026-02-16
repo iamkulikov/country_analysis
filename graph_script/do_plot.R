@@ -1,5 +1,16 @@
 ######## Call the sequence of plotting functions
-library(here)
+
+library_names <- c("dplyr","reshape2","ggplot2","ggthemes","countrycode","readxl","tidyr","data.table","writexl","unikn",
+                   "ggtext","svglite","stringr","directlabels","fanplot", "forcats", "rlang", "here",
+                   "ggfan",  # проверять, не вернулся ли на CRAN
+                   #"hrbrthemes",
+                   "glue","readr", "showtext")
+
+#devtools::install_github("jasonhilton/ggfan")
+
+for (library_name in library_names) {
+  library(library_name, character.only = TRUE)
+}
 
 ##### Where is the plotting schedule saved? What are the data files?
 here::i_am("graph_script/do_plot.R")
@@ -7,11 +18,13 @@ here::i_am("graph_script/do_plot.R")
 ##### Import function definitions
 source(here("download_script","import.R"))
 source(here("download_script","fill.R"))
-source(here("graph_script","plot.R"))
 source(here("graph_script","check_graphplan.R"))
+source(here("graph_script","prepare_elements.R"))
+source(here("graph_script","plot_types.R"))
+source(here("graph_script","plot_themes.R"))
 
 ##### Parameters and source names
-country_code3 <- "RUS"
+country_code3 <- "BRA"
 country_code2 <- countrycode::countrycode(country_code3, "iso3c", "iso2c", warn = FALSE)
 file_output <- "jpeg"
 horizontal_size <- c(1800, 900)
@@ -30,7 +43,7 @@ graph_types <- c("scatter_dynamic", "scatter_country_comparison", "scatter_befor
                  "triangle")
 trend_types <- c("lm" ,"loess")
 orient_types <- c("horizontal", "vertical")
-theme_types <- c("ipsum", "ACRA", "economist", "minimal")
+theme_types <- c("ipsum", "ACRA_light", "ACRA_clean", "grey", "economist", "minimal")
 sheet_keys <- c(y = "y", q = "q", m = "m")
 verbose <- T
 
@@ -40,11 +53,11 @@ D <- importData(yqm_file = data_fname, d_file = data_d_fname, sheet_keys = sheet
 country_name <- D$extdata_y |> select(country_id, country) |> unique() |> filter(country_id == country_code2) |> pull(country)
 plotparam_fname <- here("assets", country_name, "Auto_report", "2_graphlib.xlsx")
 
-
 ###### Determining country focus and peers
 country_info <- getPeersCodes(country_iso3c = country_code3, peers_fname = peers_fname)
 
 ##### Importing plotting schedule and generating sources
+source(here("graph_script","plot_types.R"))
 graphplan <- getPlotSchedule(plotparam_fname = plotparam_fname, dict = D$dict)
 
 ##### Check integrity of the plans
@@ -61,7 +74,6 @@ if (checkColumns(graphplan = graphplan, graphplan_columns = graphplan_columns) =
 } else {error_report <- data.frame("Check number of columns and rows")}
 
 ##### Plotting sequence
-source(here("graph_script","plot.R"))
 if (is.null(dim(error_report)[1]) | is.na(dim(error_report)[1]) | (dim(error_report)[1] == 0)) {
   
   print("Checks passed")
@@ -71,13 +83,13 @@ if (is.null(dim(error_report)[1]) | is.na(dim(error_report)[1]) | (dim(error_rep
       
       ### Parsing single graph parameters (and filling with defaults)
       graph_params <- parseGraphPlan(graphrow = graphplan[i,], dict = D$dict, horizontal_size = horizontal_size, vertical_size = vertical_size)
-      
+
       ### Fixing peers
       peers_iso2c <- fixPeers(country_info = country_info, params = graph_params, data = D)
-      
+
       ### Fill empty graph parameters with defaults and calculate dependent labels
       graph_params <- fillGraphPlan(parsedrow = graph_params, data = D, country_iso2c = country_info$country_iso2c, peers_iso2c = peers_iso2c)
-
+      
       ### Filtering data to include only needed for the graph
       data_temp <- subsetData(data = D, graph_params = graph_params, country_code = country_info$country_iso2c, peers_code = peers_iso2c)
       

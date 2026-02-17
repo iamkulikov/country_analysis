@@ -255,7 +255,8 @@ finalize_plot_common <- function(p, params, style, legend = TRUE) {
   x_lab_allowed_types <- c(
     "scatter_country_comparison",
     "scatter_before_after",
-    "density_fix"
+    "density_fix",
+    "scatter_dynamic"
   )
   
   use_x_lab <- isTRUE(show_x_lab) || (!is.na(graph_type) && graph_type %in% x_lab_allowed_types)
@@ -859,15 +860,467 @@ scatterCountryComparison <- function(data,
 }
 
 
-###### Scatter before-after
-# to-do
-
 ###### Scatter dynamic
 
-# year <- function(x) as.POSIXlt(x)$year + 1900
-# ggplot(economics, aes(unemploy / pop, uempmed)) + 
-#   geom_path(colour = "grey50") +
-#   geom_point(aes(colour = year(date)))
+scatterDynamic <- function(data,
+                           graph_params,
+                           country_iso2c,
+                           peers_iso2c = NULL,
+                           verbose = TRUE,
+                           warn_invalid = TRUE,
+                           debug = TRUE) {
+  assert_packages(c("dplyr", "tidyr", "ggplot2", "stringr", "rlang", "tibble", "purrr"))
+  
+  params <- graph_params %||% list(active = 1L)
+  style  <- resolve_plot_style(params$theme_name %||% "acra_light")
+  
+  # ---- helpers ---------------------------------------------------------
+  is_true01 <- function(x) {
+    x <- suppressWarnings(as.integer(x))
+    isTRUE(!is.na(x) && x == 1L)
+  }
+  
+  warn_active <- function(msg) {
+    if (isTRUE(warn_invalid) && is_true01(params$active %||% 1L)) {
+      rlang::warn(paste0("scatterDynamic: ", msg))
+    }
+  }
+  
+  normalize_chr_vec <- function(x) {
+    x <- as.character(x %||% character(0)) |> stringr::str_trim()
+    x <- x[!is.na(x) & x != ""]
+    unique(x)
+  }
+  
+  apply_log10_plotspace <- function(x, do_log) {
+    x <- suppressWarnings(as.numeric(x))
+    if (!isTRUE(do_log)) return(x)
+    out <- rep(NA_real_, length(x))
+    ok <- is.finite(x) & x > 0
+    out[ok] <- log10(x[ok])
+    out
+  }
+  
+  # Convert time-index to year/quarter/month when those columns exist.
+  # We prefer explicit columns if extdata already has them.
+  derive_time_parts <- function(df, freq) {
+    freq <- tolower(as.character(freq %||% ""))
+    
+    # Ensure columns exist
+    if (!("year" %in% names(df)))     df$year <- NA_integer_
+    if (!("quarter" %in% names(df)))  df$quarter <- NA_integer_
+    if (!("month" %in% names(df)))    df$month <- NA_integer_
+    
+    # ---- Daily: derive year/month from 'date' ----------------------------
+    if (freq == "d") {
+      if ("date" %in% names(df)) {
+        dd <- df$date
+        if (inherits(dd, "Date")) {
+          # ok
+        } else if (inherits(dd, "POSIXt")) {
+          dd <- as.Date(dd)
+        } else {
+          dd_chr <- as.character(dd) |> stringr::str_trim() |> dplyr::na_if("")
+          dd_try <- suppressWarnings(as.Date(dd_chr))
+          need_posix <- is.na(dd_try) & !is.na(dd_chr)
+          if (any(need_posix)) {
+            dt_try <- suppressWarnings(as.POSIXct(dd_chr[need_posix], tz = "UTC"))
+            dd_try[need_posix] <- as.Date(dt_try)
+          }
+          dd <- dd_try
+        }
+        
+        ok <- !is.na(dd)
+        if (any(ok)) {
+          df$year[ok]  <- as.integer(format(dd[ok], "%Y"))
+          df$month[ok] <- as.integer(format(dd[ok], "%m"))
+        }
+      }
+      return(df)
+    }
+    
+    # ---- Non-daily: ALWAYS derive from numeric 'time' ---------------------
+    if (!("time" %in% names(df))) return(df)
+    
+    t <- suppressWarnings(as.numeric(df$time))
+    ok <- is.finite(t)
+    if (!any(ok)) return(df)
+    
+    if (freq == "y") {
+      df$year[ok] <- as.integer(t[ok] + 1987)
+      return(df)
+    }
+    
+    if (freq == "q") {
+      # time index: (year-1987)*4 + quarter
+      df$year[ok] <- as.integer(floor((t[ok] - 1) / 4) + 1987)
+      df$quarter[ok] <- as.integer(t[ok] - (df$year[ok] - 1987) * 4)
+      return(df)
+    }
+    
+    if (freq == "m") {
+      # time index: (year-1987)*12 + month
+      df$year[ok] <- as.integer(floor((t[ok] - 1) / 12) + 1987)
+      df$month[ok] <- as.integer(t[ok] - (df$year[ok] - 1987) * 12)
+      return(df)
+    }
+    
+    df
+  }
+  
+  time_bin_spec <- function(df, freq) {
+    # Returns df with: bin_id (character), bin_label (character)
+    freq <- tolower(as.character(freq %||% ""))
+    
+    if (freq == "y") {
+      # 5-year bins
+      df |>
+        dplyr::mutate(
+          .year0 = as.integer(.data$year),
+          .bin_start = (.year0 %/% 5L) * 5L,
+          .bin_end = .data$.bin_start + 4L,
+          bin_id = paste0(.data$.bin_start),
+          bin_label = paste0(.data$.bin_start, "\u2013", .data$.bin_end)
+        ) |>
+        dplyr::select(-dplyr::any_of(c(".year0", ".bin_start", ".bin_end")))
+    } else if (freq %in% c("q", "m")) {
+      # 1-year bins
+      df |>
+        dplyr::mutate(
+          .year0 = as.integer(.data$year),
+          bin_id = sprintf("%04d", .data$.year0),
+          bin_label = sprintf("%04d", .data$.year0)
+        ) |>
+        dplyr::select(-dplyr::any_of(".year0"))
+    } else if (freq == "d") {
+      # 1-month bins (prefer year+month; otherwise fall back to year)
+      has_ym <- ("year" %in% names(df)) && ("month" %in% names(df)) &&
+        any(!is.na(df$year)) && any(!is.na(df$month))
+      
+      if (isTRUE(has_ym)) {
+        df |>
+          dplyr::mutate(
+            .year0 = as.integer(.data$year),
+            .mon0 = as.integer(.data$month),
+            bin_id = paste0(sprintf("%04d", .data$.year0), "m", .data$.mon0),
+            bin_label = paste0(sprintf("%04d", .data$.year0), "m", .data$.mon0)
+          ) |>
+          dplyr::select(-dplyr::any_of(c(".year0", ".mon0")))
+      } else {
+        warn_active("Daily frequency without year+month columns; binning by year instead of month.")
+        df |>
+          dplyr::mutate(
+            .year0 = as.integer(.data$year),
+            bin_id = sprintf("%04d", .data$.year0),
+            bin_label = sprintf("%04d", .data$.year0)
+          ) |>
+          dplyr::select(-dplyr::any_of(".year0"))
+      }
+    } else {
+      # Fallback: single bin
+      df |>
+        dplyr::mutate(bin_id = "all", bin_label = "all")
+    }
+  }
+  
+  get_timebin_palette <- function(style, n) {
+    # Prefer style$palettes$time_bins, fallback to style$palette$time_bins, then safe deterministic fallback
+    pal <- style$palettes$time_bins %||% style$palette$time_bins %||% NULL
+    pal <- if (is.null(pal)) character(0) else as.character(pal)
+    pal <- pal[!is.na(pal) & pal != ""]
+    if (length(pal) == 0) {
+      # deterministic fallback using existing semantic colors
+      base <- c(
+        style$palette$accent %||% "grey20",
+        style$palette$country %||% "grey30",
+        style$palette$peers %||% "grey40",
+        style$palette$others %||% "grey60"
+      )
+      pal <- rep(base, length.out = max(1L, n))
+    }
+    rep(pal, length.out = max(1L, n))
+  }
+  
+  # ---- logging ---------------------------------------------------------
+  if (isTRUE(verbose)) {
+    nm <- params$graph_name %||% NA_character_
+    if (!is.na(nm) && nzchar(nm)) message("Plot: ", nm)
+  }
+  
+  # ---- guards ----------------------------------------------------------
+  if (is_true01(params$all %||% 0L)) {
+    warn_active("Param all=1 is ignored for scatter_dynamic (single-country time scatter).")
+  }
+  if (length(normalize_chr_vec(peers_iso2c)) > 0) {
+    warn_active("peers are ignored for scatter_dynamic (single-country time scatter).")
+  }
+  
+  ext <- data$extdata %||% tibble::tibble()
+  if (!is.data.frame(ext) || nrow(ext) == 0) {
+    p0 <- make_placeholder_plot(params, style, "No data (extdata is empty)")
+    return(list(graph = p0, data = tibble::tibble()))
+  }
+  
+  needed <- c("country_id", "country", "time")
+  miss <- setdiff(needed, names(ext))
+  if (length(miss) > 0) {
+    warn_active(paste0("extdata missing columns: ", paste(miss, collapse = ", ")))
+    p0 <- make_placeholder_plot(params, style, "No data (missing required columns)")
+    return(list(graph = p0, data = tibble::tibble()))
+  }
+  
+  inds <- normalize_chr_vec(params$indicators)
+  if (length(inds) != 2) {
+    warn_active("scatter_dynamic requires exactly two indicator codes in params$indicators.")
+    p0 <- make_placeholder_plot(params, style, "Need 2 indicators")
+    return(list(graph = p0, data = tibble::tibble()))
+  }
+  
+  x_code <- inds[[1]]
+  y_code <- inds[[2]]
+  
+  if (!(x_code %in% names(ext)) || !(y_code %in% names(ext))) {
+    warn_active("extdata does not contain one or both indicator columns.")
+    p0 <- make_placeholder_plot(params, style, "Missing indicator columns")
+    return(list(graph = p0, data = tibble::tibble()))
+  }
+  
+  freq <- normalize_freq(params$data_frequency %||% NA_character_) %||% "y"
+  
+  # ---- filter to one country + (optional) time window -------------------
+  df0 <- tibble::as_tibble(ext) |>
+    dplyr::filter(.data$country_id == country_iso2c) |>
+    dplyr::select(
+      dplyr::any_of(c("country_id", "country", "time", "year", "quarter", "month", "date")),
+      dplyr::all_of(c(x_code, y_code))
+    ) |>
+    dplyr::mutate(
+      time = suppressWarnings(as.numeric(.data$time)),
+      x_raw = suppressWarnings(as.numeric(.data[[x_code]])),
+      y_raw = suppressWarnings(as.numeric(.data[[y_code]]))
+    )
+  
+  # ---- time window selection --------------------------------------------
+  freq <- normalize_freq(params$data_frequency %||% NA_character_) %||% "y"
+  
+  if (identical(freq, "d")) {
+    d1 <- params$date_start %||% as.Date(NA)
+    d2 <- params$date_end   %||% as.Date(NA)
+    
+    if (inherits(d1, "Date") && inherits(d2, "Date") && !is.na(d1) && !is.na(d2) && d1 <= d2) {
+      if ("date" %in% names(df0)) {
+        df0 <- df0 |>
+          dplyr::mutate(.date2 = as.Date(.data$date)) |>
+          dplyr::filter(!is.na(.data$.date2), .data$.date2 >= d1, .data$.date2 <= d2) |>
+          dplyr::select(-.data$.date2)
+      } else {
+        warn_active("Daily window exists but extdata has no date column; cannot filter.")
+      }
+    }
+  } else {
+    t_start <- suppressWarnings(as.numeric(params$time_start %||% NA_real_))
+    t_end   <- suppressWarnings(as.numeric(params$time_end   %||% NA_real_))
+    
+    if (is.finite(t_start) && is.finite(t_end) && t_start <= t_end) {
+      df0 <- df0 |> dplyr::filter(.data$time >= t_start, .data$time <= t_end)
+    }
+  }
+  
+  if (nrow(df0) == 0) {
+    warn_active("No data after filtering by country/time-window and finite values.")
+    p0 <- make_placeholder_plot(params, style, "No points")
+    return(list(graph = p0, data = tibble::tibble()))
+  }
+  
+  # ---- prepared time window (from fillGraphPlan) -------------------------
+  t_start <- suppressWarnings(as.numeric(params$time_start %||% NA_real_))
+  t_end   <- suppressWarnings(as.numeric(params$time_end   %||% NA_real_))
+  use_window <- is.finite(t_start) && is.finite(t_end) && t_start <= t_end
+  freq <- normalize_freq(params$data_frequency %||% NA_character_) %||% "y"
+  
+  # Apply numeric time window ONLY for non-daily
+  
+  if (isTRUE(use_window) && tolower(freq) != "d") {
+    df0 <- df0 |> dplyr::filter(.data$time >= t_start, .data$time <= t_end)
+  }
+
+  if (nrow(df0) == 0) {
+    warn_active("No data after filtering by country/time-window and finite values.")
+    p0 <- make_placeholder_plot(params, style, "No points")
+    return(list(graph = p0, data = tibble::tibble()))
+  }
+  
+  # ---- logs in plot space ----------------------------------------------
+  x_log <- is_true01(params$x_log %||% 0L)
+  y_log <- is_true01(params$y_log %||% 0L)
+  
+  df0 <- df0 |>
+    dplyr::mutate(
+      x_plot = apply_log10_plotspace(.data$x_raw, x_log),
+      y_plot = apply_log10_plotspace(.data$y_raw, y_log)
+    ) |>
+    dplyr::filter(is.finite(.data$x_plot), is.finite(.data$y_plot))
+  
+  if (nrow(df0) == 0) {
+    warn_active("All points removed after log transforms.")
+    p0 <- make_placeholder_plot(params, style, "No points after transforms")
+    return(list(graph = p0, data = tibble::tibble()))
+  }
+  
+  # ---- time binning -----------------------------------------------------
+  df1 <- df0 |>
+    derive_time_parts(freq = freq) |>
+    time_bin_spec(freq = freq)
+  
+  # stable ordering
+  df1 <- df1 |> dplyr::arrange(.data$time)
+  
+  bins <- df1 |>
+    dplyr::distinct(.data$bin_id, .data$bin_label) |>
+    dplyr::arrange(.data$bin_id)
+  
+  pal <- get_timebin_palette(style, n = nrow(bins))
+  
+  bin_map <- bins |>
+    dplyr::mutate(bin_color = pal)
+  
+  df <- df1 |>
+    dplyr::left_join(bin_map, by = dplyr::join_by(bin_id, bin_label))
+  
+  # ---- axis labels from dict -------------------------------------------
+  dict <- data$dict %||% tibble::tibble()
+  
+  get_ind_name <- function(code) {
+    nm <- code
+    if (is.data.frame(dict) && nrow(dict) > 0 && all(c("indicator_code", "indicator") %in% names(dict))) {
+      d <- tibble::as_tibble(dict) |> dplyr::filter(.data$indicator_code == code) |> dplyr::slice(1)
+      if (nrow(d) == 1) nm <- d$indicator[[1]]
+    }
+    nm
+  }
+  
+  x_name <- get_ind_name(x_code)
+  y_name <- get_ind_name(y_code)
+  
+  # ---- limits policy (use y_lim_policy for both axes) -------------------
+  x_rng <- range(df$x_plot, na.rm = TRUE)
+  y_rng <- range(df$y_plot, na.rm = TRUE)
+  
+  # ---- axis limits: accept only scalar numeric, ignore (year,sub) vectors ----
+  as_scalar_num <- function(x) {
+    if (is.null(x)) return(NA_real_)
+    x <- suppressWarnings(as.numeric(x))
+    if (length(x) < 1) return(NA_real_)
+    # If vector (e.g., c(year, sub)), treat as invalid for axis limits here
+    if (length(x) != 1) return(NA_real_)
+    x[[1]]
+  }
+  
+  x_min_in <- as_scalar_num(params$x_min)
+  x_max_in <- as_scalar_num(params$x_max)
+  y_min_in <- as_scalar_num(params$y_min)
+  y_max_in <- as_scalar_num(params$y_max)
+  
+  pol_x <- y_lim_policy(
+    kind = "scatter",
+    y_min = x_min_in,
+    y_max = x_max_in,
+    y_rng_data = x_rng
+  )
+  pol_y <- y_lim_policy(
+    kind = "scatter",
+    y_min = y_min_in,
+    y_max = y_max_in,
+    y_rng_data = y_rng
+  )
+  
+  x_min <- pol_x$y_min; x_max <- pol_x$y_max
+  y_min <- pol_y$y_min; y_max <- pol_y$y_max
+  
+  if (!(is.finite(x_min) && is.finite(x_max) && x_min < x_max)) { x_min <- x_rng[[1]]; x_max <- x_rng[[2]] }
+  if (!(is.finite(y_min) && is.finite(y_max) && y_min < y_max)) { y_min <- y_rng[[1]]; y_max <- y_rng[[2]] }
+  
+  # ---- scaling (labels count = number of bins) --------------------------
+  sc <- compute_plot_scaling(
+    n_pts = nrow(df),
+    width = params$width %||% NA_real_,
+    height = params$height %||% NA_real_,
+    n_labels = nrow(bins),
+    kind = "scatter"
+  )
+  
+  base_pt     <- sc$pt_size
+  base_lab_mm <- sc$lab_mm
+  
+  dx <- (x_max - x_min)
+  dy <- (y_max - y_min)
+  nudge_x <- (sc$nudge_x_frac %||% 0.02) * ifelse(is.finite(dx) && dx > 0, dx, 1)
+  nudge_y <- (sc$nudge_y_frac %||% 0.02) * ifelse(is.finite(dy) && dy > 0, dy, 1)
+  
+  # ---- one label per bin: take last time point in bin -------------------
+  df_labels <- df |>
+    dplyr::arrange(.data$time) |>
+    dplyr::group_by(.data$bin_id, .data$bin_label, .data$bin_color) |>
+    dplyr::slice_tail(n = 1) |>
+    dplyr::ungroup()
+  
+  # ---- build plot -------------------------------------------------------
+  p <- ggplot2::ggplot(df, ggplot2::aes(x = .data$x_plot, y = .data$y_plot)) +
+    ggplot2::coord_cartesian(xlim = c(x_min, x_max), ylim = c(y_min, y_max))
+  
+  p <- p +
+    ggplot2::geom_point(
+      ggplot2::aes(color = .data$bin_color),
+      size = base_pt,
+      alpha = 0.95,
+      show.legend = FALSE
+    )
+  
+  p <- p +
+    ggplot2::geom_text(
+      data = df_labels,
+      ggplot2::aes(label = .data$bin_label, color = .data$bin_color),
+      nudge_x = nudge_x,
+      nudge_y = nudge_y,
+      size = base_lab_mm / ggplot2::.pt,
+      show.legend = FALSE
+    )
+  
+  p <- p + ggplot2::scale_color_identity()
+  
+  # ---- finalize (no legend; no time tag in corner) ----------------------
+  params2 <- params
+  params2$time_fix_label <- ""  # time is encoded in points; do not show a corner tag
+  params2$x_lab <- x_name
+  params2$y_lab <- y_name
+  
+  p <- finalize_plot_common(p, params2, style, legend = FALSE)
+  
+  out <- list(graph = p, data = df)
+  
+  if (isTRUE(debug)) {
+    out$debug <- list(
+      bins = bin_map,
+      meta = tibble::tibble(
+        country_id = country_iso2c,
+        x_code = x_code,
+        y_code = y_code,
+        freq = freq,
+        n_pts = nrow(df),
+        n_bins = nrow(bins),
+        x_log = x_log,
+        y_log = y_log,
+        t_start = t_start,
+        t_end = t_end
+      )
+    )  
+  }
+  
+  out
+}
+
+
+
 
 ###### Bar dynamic - dodged, stacked or stacked and normalized
 
@@ -3810,6 +4263,456 @@ distributionDynamic <- function(data,
         time_start = time_start,
         time_end = time_end
       )
+    )
+  }
+  
+  out
+}
+
+
+###### Scatter plot to compare before and after for all countries
+
+scatterBeforeAfter <- function(data,
+                               graph_params,
+                               country_iso2c,
+                               peers_iso2c,
+                               verbose = TRUE,
+                               warn_invalid = TRUE,
+                               debug = FALSE) {
+  assert_packages(c("dplyr", "tidyr", "ggplot2", "stringr", "rlang", "tibble", "purrr"))
+  
+  params <- graph_params %||% list(active = 1L)
+  style  <- resolve_plot_style(params$theme_name %||% "acra_light")
+  
+  # ---- helpers ---------------------------------------------------------
+  is_true01 <- function(x) {
+    x <- suppressWarnings(as.integer(x))
+    isTRUE(!is.na(x) && x == 1L)
+  }
+  
+  warn_active <- function(msg) {
+    if (isTRUE(warn_invalid) && is_true01(params$active %||% 1L)) {
+      rlang::warn(paste0("scatterBeforeAfter: ", msg))
+    }
+  }
+  
+  normalize_chr_vec <- function(x) {
+    x <- as.character(x %||% character(0)) |> stringr::str_trim()
+    x <- x[!is.na(x) & x != ""]
+    unique(x)
+  }
+  
+  split_time_tokens <- function(x) {
+    x <- as.character(x %||% NA_character_)
+    x <- if (length(x) >= 1) x[[1]] else NA_character_
+    x <- stringr::str_trim(x)
+    x <- dplyr::na_if(x, "")
+    if (is.na(x)) return(character(0))
+    
+    x |>
+      stringr::str_split(",") |>
+      purrr::pluck(1) |>
+      stringr::str_trim() |>
+      (\(v) v[!is.na(v) & v != ""])()
+  }
+  
+  # parse a single token into internal numeric "time" index used in extdata$time
+  parse_time_token_to_num <- function(tok, freq) {
+    tok <- stringr::str_trim(as.character(tok %||% ""))
+    if (!nzchar(tok)) return(NA_real_)
+    
+    # If already numeric (some pipelines may pass internal time index)
+    xn <- suppressWarnings(as.numeric(tok))
+    if (is.finite(xn)) return(xn)
+    
+    freq <- tolower(stringr::str_trim(as.character(freq %||% "")))
+    
+    # canonicalize: allow Q/M uppercase in user input
+    tok2 <- stringr::str_to_lower(tok)
+    
+    if (freq == "y" && stringr::str_detect(tok2, "^\\d{4}$")) {
+      y <- suppressWarnings(as.integer(tok2))
+      if (is.finite(y)) return(y - 1987)
+    }
+    
+    if (freq == "q" && stringr::str_detect(tok2, "^\\d{4}q\\d$")) {
+      y <- suppressWarnings(as.integer(stringr::str_sub(tok2, 1, 4)))
+      q <- suppressWarnings(as.integer(stringr::str_sub(tok2, 6)))
+      if (is.finite(y) && is.finite(q)) return((y - 1987) * 4 + q)
+    }
+    
+    if (freq == "m" && stringr::str_detect(tok2, "^\\d{4}m\\d{1,2}$")) {
+      y <- suppressWarnings(as.integer(stringr::str_sub(tok2, 1, 4)))
+      m <- suppressWarnings(as.integer(stringr::str_sub(tok2, 6)))
+      if (is.finite(y) && is.finite(m)) return((y - 1987) * 12 + m)
+    }
+    
+    NA_real_
+  }
+  
+  canonical_time_label <- function(tok) {
+    tok <- stringr::str_trim(as.character(tok %||% ""))
+    tok <- stringr::str_to_lower(tok)
+    tok
+  }
+  
+  apply_log10_plotspace <- function(x, do_log) {
+    x <- suppressWarnings(as.numeric(x))
+    if (!isTRUE(do_log)) return(x)
+    out <- rep(NA_real_, length(x))
+    ok <- is.finite(x) & x > 0
+    out[ok] <- log10(x[ok])
+    out
+  }
+  
+  # ---- logging ---------------------------------------------------------
+  if (isTRUE(verbose)) {
+    nm <- params$graph_name %||% NA_character_
+    if (!is.na(nm) && nzchar(nm)) message("Plot: ", nm)
+  }
+  
+  # ---- guards ----------------------------------------------------------
+  ext <- data$extdata %||% tibble::tibble()
+  if (!is.data.frame(ext) || nrow(ext) == 0) {
+    warn_active("extdata is empty; returning placeholder.")
+    p0 <- make_placeholder_plot(params, style, "No data (extdata is empty)")
+    return(list(graph = p0, data = tibble::tibble()))
+  }
+  
+  needed_base <- c("country_id", "country", "time")
+  missing_base <- setdiff(needed_base, names(ext))
+  if (length(missing_base) > 0) {
+    warn_active(paste0("extdata missing columns: ", paste(missing_base, collapse = ", ")))
+    p0 <- make_placeholder_plot(params, style, "No data (missing required columns)")
+    return(list(graph = p0, data = tibble::tibble()))
+  }
+  
+  indicators <- normalize_chr_vec(params$indicators)
+  if (length(indicators) == 0) {
+    warn_active("indicators is empty; returning placeholder.")
+    p0 <- make_placeholder_plot(params, style, "No indicator")
+    return(list(graph = p0, data = tibble::tibble()))
+  }
+  if (length(indicators) > 1) {
+    warn_active(paste0(
+      "Multiple indicators provided (", length(indicators),
+      "); scatter_before_after uses only the first: ", indicators[[1]]
+    ))
+    indicators <- indicators[[1]]
+  }
+  
+  if (!(indicators %in% names(ext))) {
+    warn_active(paste0("extdata has no column for indicator: ", indicators))
+    p0 <- make_placeholder_plot(params, style, "No data (missing indicator column)")
+    return(list(graph = p0, data = tibble::tibble()))
+  }
+  
+  freq <- normalize_freq(params$data_frequency %||% NA_character_) %||% "y"
+  
+  # ---- time points: prefer prepared cross time_fix (numeric length 2) ----
+  tf <- params$time_fix
+  
+  use_prepared <- is.numeric(tf) && length(tf) == 2 && all(is.finite(tf))
+  
+  if (use_prepared) {
+    t_x <- as.numeric(tf[[1]])
+    t_y <- as.numeric(tf[[2]])
+    
+    labs <- params$time_fix_parts$labels %||% NA_character_
+    labs_ok <- is.character(labs) && length(labs) == 2 && all(!is.na(labs)) && all(nzchar(labs))
+    
+    if (labs_ok) {
+      lab_x_time <- labs[[1]]
+      lab_y_time <- labs[[2]]
+    } else {
+      # deterministic fallback: show numeric time index if labels are missing
+      lab_x_time <- as.character(t_x)
+      lab_y_time <- as.character(t_y)
+    }
+  } else {
+    # ---- legacy fallback: parse from string (should become rare) ----------
+    toks <- split_time_tokens(params$time_fix)
+    
+    if (length(toks) != 2) {
+      warn_active("time_fix must contain exactly two time tokens, like '2012, 2018' or '2011q1, 2018q4'.")
+      p0 <- make_placeholder_plot(params, style, "Bad time_fix (need 2 tokens)")
+      return(list(graph = p0, data = tibble::tibble()))
+    }
+    
+    tok_x <- toks[[1]]
+    tok_y <- toks[[2]]
+    
+    t_x <- parse_time_token_to_num(tok_x, freq)
+    t_y <- parse_time_token_to_num(tok_y, freq)
+    
+    if (!is.finite(t_x) || !is.finite(t_y)) {
+      warn_active(paste0("Could not parse time_fix tokens: '", tok_x, "', '", tok_y, "' for freq='", freq, "'."))
+      p0 <- make_placeholder_plot(params, style, "Bad time_fix tokens")
+      return(list(graph = p0, data = tibble::tibble()))
+    }
+    
+    lab_x_time <- canonical_time_label(tok_x)
+    lab_y_time <- canonical_time_label(tok_y)
+  }
+  
+  # ---- peers/all routing ------------------------------------------------
+  peers_iso2c <- normalize_chr_vec(peers_iso2c)
+  all_flag <- as.integer(params$all %||% 0L)
+  
+  country_set <- if (all_flag == 1L) {
+    tibble::as_tibble(ext) |>
+      dplyr::distinct(.data$country_id) |>
+      dplyr::arrange(.data$country_id) |>
+      dplyr::pull(.data$country_id)
+  } else {
+    unique(c(country_iso2c, peers_iso2c))
+  }
+  country_set <- country_set[!is.na(country_set) & country_set != ""]
+  
+  # ---- data: wide before/after -----------------------------------------
+  df_long <- tibble::as_tibble(ext) |>
+    dplyr::filter(.data$country_id %in% country_set, .data$time %in% c(t_x, t_y)) |>
+    dplyr::select(dplyr::any_of(c("country", "country_id", "time")), dplyr::all_of(indicators)) |>
+    dplyr::mutate(
+      time = suppressWarnings(as.numeric(.data$time)),
+      value_raw = suppressWarnings(as.numeric(.data[[indicators]]))
+    ) |>
+    dplyr::filter(is.finite(.data$time))
+  
+  if (nrow(df_long) == 0) {
+    warn_active("No rows for selected countries at requested times.")
+    p0 <- make_placeholder_plot(params, style, "No data at requested times")
+    return(list(graph = p0, data = tibble::tibble()))
+  }
+  
+  df_wide <- df_long |>
+    dplyr::mutate(
+      time_role = dplyr::case_when(
+        .data$time == t_x ~ "x",
+        .data$time == t_y ~ "y",
+        TRUE ~ NA_character_
+      )
+    ) |>
+    dplyr::filter(!is.na(.data$time_role)) |>
+    dplyr::select(.data$country, .data$country_id, .data$time_role, .data$value_raw) |>
+    tidyr::pivot_wider(
+      names_from = .data$time_role,
+      values_from = .data$value_raw
+    ) |>
+    dplyr::filter(is.finite(.data$x), is.finite(.data$y))
+  
+  if (nrow(df_wide) == 0) {
+    warn_active("No countries have finite values at BOTH times.")
+    p0 <- make_placeholder_plot(params, style, "No complete before/after pairs")
+    return(list(graph = p0, data = tibble::tibble()))
+  }
+  
+  # ---- log semantics in plot space -------------------------------------
+  x_log <- is_true01(params$x_log %||% 0L)
+  y_log <- is_true01(params$y_log %||% 0L)
+  
+  df <- df_wide |>
+    dplyr::mutate(
+      x_plot = apply_log10_plotspace(.data$x, x_log),
+      y_plot = apply_log10_plotspace(.data$y, y_log)
+    ) |>
+    dplyr::filter(is.finite(.data$x_plot), is.finite(.data$y_plot))
+  
+  if (nrow(df) == 0) {
+    warn_active("All points were removed after numeric/log transforms.")
+    p0 <- make_placeholder_plot(params, style, "No valid points after transforms")
+    return(list(graph = p0, data = tibble::tibble()))
+  }
+  
+  # role tagging (system-wide semantics)
+  df <- add_country_role(df, country_iso2c = country_iso2c, peers_iso2c = peers_iso2c, id_col = "country_id")
+  
+  # ---- limits (use y_lim_policy for validation; symmetric for x/y) -----
+  x_rng <- range(df$x_plot, na.rm = TRUE)
+  y_rng <- range(df$y_plot, na.rm = TRUE)
+  
+  pol_x <- y_lim_policy(kind = "scatter",
+                        y_min = params$x_min %||% NA_real_,
+                        y_max = params$x_max %||% NA_real_,
+                        y_rng_data = x_rng)
+  pol_y <- y_lim_policy(kind = "scatter",
+                        y_min = params$y_min %||% NA_real_,
+                        y_max = params$y_max %||% NA_real_,
+                        y_rng_data = y_rng)
+  
+  x_min <- pol_x$y_min
+  x_max <- pol_x$y_max
+  y_min <- pol_y$y_min
+  y_max <- pol_y$y_max
+  
+  # If still degenerate, fallback
+  if (!(is.finite(x_min) && is.finite(x_max) && x_min < x_max)) { x_min <- x_rng[[1]]; x_max <- x_rng[[2]] }
+  if (!(is.finite(y_min) && is.finite(y_max) && y_min < y_max)) { y_min <- y_rng[[1]]; y_max <- y_rng[[2]] }
+  
+  # ---- scaling ---------------------------------------------------------
+  n_pts <- nrow(df)
+  n_labels <- sum(df$role %in% c("country", "peers"))
+  
+  sc <- compute_plot_scaling(
+    n_pts = n_pts,
+    width = params$width %||% NA_real_,
+    height = params$height %||% NA_real_,
+    n_labels = n_labels,
+    kind = "scatter"
+  )
+  
+  base_pt     <- sc$pt_size
+  base_lab_mm <- sc$lab_mm
+  
+  dx <- (x_max - x_min)
+  dy <- (y_max - y_min)
+  nudge_x <- (sc$nudge_x_frac %||% 0.02) * ifelse(is.finite(dx) && dx > 0, dx, 1)
+  nudge_y <- (sc$nudge_y_frac %||% 0.02) * ifelse(is.finite(dy) && dy > 0, dy, 1)
+  
+  # ---- semantic styles -------------------------------------------------
+  palette <- style$palette %||% list()
+  axis_col <- palette$axis %||% "grey20"
+  
+  st_others_pt <- style_for(style, "others",  "point")
+  st_peers_pt  <- style_for(style, "peers",   "point")
+  st_ctry_pt   <- style_for(style, "country", "point")
+  
+  st_peers_tx  <- style_for(style, "peers",   "text")
+  st_ctry_tx   <- style_for(style, "country", "text")
+  
+  # y=x line styled like grid
+  grid_major_col <- style$grid$major$color %||% (palette$grid_major %||% "grey90")
+  grid_major_lw  <- style$grid$major$linewidth %||% 0.30
+  
+  # ---- axis labels: indicator name from dict + (time) -------------------
+  dict <- data$dict %||% tibble::tibble()
+  ind_name <- indicators
+  if (is.data.frame(dict) && nrow(dict) > 0 &&
+      all(c("indicator_code", "indicator") %in% names(dict))) {
+    d <- tibble::as_tibble(dict) |>
+      dplyr::filter(.data$indicator_code == indicators)
+    if ("source_frequency" %in% names(d) && !is.na(freq) && nzchar(freq)) {
+      d <- dplyr::filter(d, .data$source_frequency == freq)
+    }
+    d <- d |>
+      dplyr::distinct(.data$indicator_code, .data$indicator) |>
+      dplyr::slice(1)
+    if (nrow(d) == 1) ind_name <- d$indicator[[1]]
+  }
+  
+  params2 <- params
+  params2$time_fix_label <- ""  # no time tag in the corner
+  params2$x_lab <- paste0(ind_name, " (", lab_x_time, ")")
+  params2$y_lab <- paste0(ind_name, " (", lab_y_time, ")")
+  
+  # ---- build plot ------------------------------------------------------
+  p <- ggplot2::ggplot(df, ggplot2::aes(x = .data$x_plot, y = .data$y_plot)) +
+    ggplot2::coord_fixed(
+      ratio = 1,
+      xlim = c(x_min, x_max),
+      ylim = c(y_min, y_max)
+    )
+  
+  # y=x divider
+  p <- p +
+    ggplot2::geom_abline(
+      slope = 1, intercept = 0,
+      color = grid_major_col,
+      linewidth = grid_major_lw
+    )
+  
+  # points (others shown only when all==1)
+  p <- p +
+    ggplot2::geom_point(
+      data = dplyr::filter(df, .data$role == "others"),
+      color = st_others_pt$color,
+      alpha = if (all_flag == 1L) st_others_pt$alpha else 0,
+      size  = base_pt * (st_others_pt$size_mult %||% 1)
+    ) +
+    ggplot2::geom_point(
+      data = dplyr::filter(df, .data$role == "peers"),
+      color = st_peers_pt$color,
+      alpha = st_peers_pt$alpha,
+      size  = base_pt * (st_peers_pt$size_mult %||% 1)
+    ) +
+    ggplot2::geom_point(
+      data = dplyr::filter(df, .data$role == "country"),
+      color = st_ctry_pt$color,
+      alpha = st_ctry_pt$alpha,
+      size  = base_pt * (st_ctry_pt$size_mult %||% 1)
+    )
+  
+  # labels
+  df_peers <- dplyr::filter(df, .data$role == "peers")
+  df_ctry  <- dplyr::filter(df, .data$role == "country")
+  
+  p <- p +
+    ggplot2::geom_text(
+      data = df_peers,
+      ggplot2::aes(label = .data$country_id),
+      color = st_peers_tx$color,
+      alpha = st_peers_tx$alpha,
+      nudge_x = nudge_x,
+      nudge_y = nudge_y,
+      size = (base_lab_mm * (st_peers_tx$size_mult %||% 1)) / ggplot2::.pt,
+      check_overlap = FALSE
+    ) +
+    ggplot2::geom_text(
+      data = df_ctry,
+      ggplot2::aes(label = .data$country_id),
+      color = st_ctry_tx$color,
+      alpha = st_ctry_tx$alpha,
+      nudge_x = nudge_x,
+      nudge_y = nudge_y,
+      size = (base_lab_mm * (st_ctry_tx$size_mult %||% 1)) / ggplot2::.pt,
+      check_overlap = FALSE
+    )
+  
+  # arrows: growth (y>x) / decline (y<x)
+  # Place them inside the panel with stable padding
+  pad_x <- 0.06 * ifelse(is.finite(dx) && dx > 0, dx, 1)
+  pad_y <- 0.06 * ifelse(is.finite(dy) && dy > 0, dy, 1)
+  
+  p <- p +
+    ggplot2::annotate(
+      geom = "text",
+      x = x_min + pad_x,
+      y = y_max - pad_y,
+      label = "\u2191",
+      size = 6,
+      color = axis_col,
+      alpha = 0.65
+    ) +
+    ggplot2::annotate(
+      geom = "text",
+      x = x_max - pad_x,
+      y = y_min + pad_y,
+      label = "\u2193",
+      size = 6,
+      color = axis_col,
+      alpha = 0.65
+    )
+  
+  # ---- finalize --------------------------------------------------------
+  p <- finalize_plot_common(p, params2, style, legend = FALSE)
+  
+  out <- list(graph = p, data = df)
+  
+  if (isTRUE(debug)) {
+    out$debug <- list(
+      meta = tibble::tibble(
+        indicator = indicators,
+        tok_x = tok_x,
+        tok_y = tok_y,
+        t_x = t_x,
+        t_y = t_y,
+        n_pts = nrow(df),
+        all_flag = all_flag,
+        x_log = x_log,
+        y_log = y_log,
+        x_min = x_min, x_max = x_max, y_min = y_min, y_max = y_max
+      ),
+      df_wide = df_wide
     )
   }
   

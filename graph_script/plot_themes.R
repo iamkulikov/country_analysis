@@ -58,6 +58,14 @@ make_style_acra_light <- function() {
     warn        = unname(ACRA["red"])
   )
   
+  palettes <- list(
+    time_bins = unname(ACRA[c(
+      "sec1", "sec2", "sec3", "sec4", "sec5", "sec6", "sec7", "sec8",
+      "add1", "add2", "add3", "add4", "add5", "reddest", "orange", "brown",
+      "green", "dark"
+    )])
+  )
+  
   # --------------------------------------------------------------------
   # Typography: centralized control (finalize_plot_common uses these)
   # --------------------------------------------------------------------
@@ -225,6 +233,7 @@ make_style_acra_light <- function() {
     gg_theme = gg_theme,
     
     palette = palette,
+    palettes = palettes,
     typography = typography,
     grid = grid,
     layout = layout,

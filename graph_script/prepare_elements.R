@@ -522,7 +522,7 @@ parseGraphPlan <- function(graphrow, dict, horizontal_size, vertical_size) {
   
   # ---- Convert dates for intended frequency ----------------------------
   cross_types <- c(
-    "scatter_country_comparison", "structure_country_comparison",
+    "scatter_country_comparison", "scatter_before_after", "structure_country_comparison",
     "structure_country_comparison_norm", "bar_country_comparison",
     "bar_country_comparison_norm", "bar_year_comparison",
     "distribution_year_comparison", "scatter_dynamic", "density_fix"
@@ -1343,9 +1343,38 @@ derive_dynamic_window_from_data <- function(extdata, params, country_iso2c, peer
     ))
   }
   
-  # If user specified x_min/x_max (as strings), parse & convert to this freq
-  x_min_in <- first_time_token(params$x_min %||% NA_character_)
-  x_max_in <- first_time_token(params$x_max %||% NA_character_)
+  # ---- bounds priority ---------------------------------------------------
+  # Default: take bounds from x_min/x_max.
+  # Exception: for scatter_dynamic allow time_fix="t1, t2" as a window override.
+  split_two_tokens <- function(x) {
+    x <- as.character(x %||% NA_character_)
+    x <- if (length(x) >= 1) x[[1]] else NA_character_
+    x <- stringr::str_trim(x)
+    x <- dplyr::na_if(x, "")
+    if (is.na(x)) return(character(0))
+    
+    x |>
+      stringr::str_split(",") |>
+      (\(v) v[[1]])() |>
+      stringr::str_trim() |>
+      (\(v) v[!is.na(v) & v != ""])()
+  }
+  
+  tf_tokens <- split_two_tokens(params$time_fix %||% NA_character_)
+  use_tf_window <- identical(params$graph_type %||% NA_character_, "scatter_dynamic") &&
+    length(tf_tokens) == 2L
+  
+  if (isTRUE(use_tf_window)) {
+    x_min_in <- tf_tokens[[1]]
+    x_max_in <- tf_tokens[[2]]
+  } else {
+    x_min_in <- first_time_token(params$x_min %||% NA_character_)
+    x_max_in <- first_time_token(params$x_max %||% NA_character_)
+  }
+  
+  # ---- defaults (must exist in all branches) -----------------------------
+  date_start <- as.Date(NA)
+  date_end   <- as.Date(NA)
   
   parse_parts <- function(tok, end) {
     if (is.na(tok) || !nzchar(tok)) return(list(ok = FALSE))
@@ -1459,13 +1488,138 @@ derive_dynamic_window_from_data <- function(extdata, params, country_iso2c, peer
     labfreq <- 12
     timetony_start <- (13 - x_min_parts$sub) %% 12
     timetony_end <- x_max_parts$sub
+  } else if (freq == "d") {
+    # ---- Daily support: derive window by date, and return numeric time bounds too ----
+    if (!("date" %in% names(extdata))) {
+      warn_active(params, "Daily extdata has no 'date' column; cannot derive dynamic window.", warn_invalid)
+      time_start <- NA_real_
+      time_end <- NA_real_
+      labfreq <- NA_real_
+      timetony_start <- NA_real_
+      timetony_end <- NA_real_
+      date_start <- as.Date(NA)
+      date_end <- as.Date(NA)
+    } else {
+      # helper: parse date/datetime token -> Date
+      parse_date_tok <- function(tok) {
+        tok <- as.character(tok %||% NA_character_)
+        tok <- if (length(tok) >= 1) tok[[1]] else NA_character_
+        tok <- stringr::str_trim(tok)
+        tok <- dplyr::na_if(tok, "")
+        if (is.na(tok)) return(as.Date(NA))
+        
+        d1 <- suppressWarnings(as.Date(tok))
+        if (!is.na(d1)) return(d1)
+        
+        dt <- suppressWarnings(as.POSIXct(tok, tz = "UTC"))
+        as.Date(dt)
+      }
+      
+      # Build df_ok like before, but include date/time
+      df_d <- tibble::as_tibble(extdata) |>
+        dplyr::filter(.data$country_id == country_iso2c) |>
+        dplyr::select(dplyr::any_of(c("country_id", "time", "date")), dplyr::any_of(indicators))
+      
+      if (nrow(df_d) == 0) {
+        warn_active(params, "No rows for country in daily extdata; cannot derive dynamic window.", warn_invalid)
+        time_start <- NA_real_
+        time_end <- NA_real_
+        labfreq <- NA_real_
+        timetony_start <- NA_real_
+        timetony_end <- NA_real_
+        date_start <- as.Date(NA)
+        date_end <- as.Date(NA)
+      } else {
+        # normalize date to Date (supports Date / POSIXt / character datetime)
+        df_d <- df_d |>
+          dplyr::mutate(
+            .date2 = {
+              dd <- .data$date
+              if (inherits(dd, "Date")) dd
+              else if (inherits(dd, "POSIXt")) as.Date(dd)
+              else {
+                dd_chr <- as.character(dd) |> stringr::str_trim() |> dplyr::na_if("")
+                dd_try <- suppressWarnings(as.Date(dd_chr))
+                need_posix <- is.na(dd_try) & !is.na(dd_chr)
+                if (any(need_posix)) {
+                  dt_try <- suppressWarnings(as.POSIXct(dd_chr[need_posix], tz = "UTC"))
+                  dd_try[need_posix] <- as.Date(dt_try)
+                }
+                dd_try
+              }
+            },
+            .time2 = suppressWarnings(as.numeric(.data$time))
+          )
+        
+        df_ok <- df_d |>
+          dplyr::mutate(.non_na = rowSums(!is.na(dplyr::pick(dplyr::any_of(indicators))))) |>
+          dplyr::filter(.data$.non_na >= 1, !is.na(.data$.date2)) |>
+          dplyr::arrange(.data$.date2)
+        
+        if (nrow(df_ok) == 0) {
+          warn_active(params, "No non-NA indicator points with valid dates for daily window; returning NAs.", warn_invalid)
+          time_start <- NA_real_
+          time_end <- NA_real_
+          labfreq <- NA_real_
+          timetony_start <- NA_real_
+          timetony_end <- NA_real_
+          date_start <- as.Date(NA)
+          date_end <- as.Date(NA)
+        } else {
+          # user-specified x_min/x_max treated as date bounds for daily
+          d_min_in <- parse_date_tok(x_min_in)
+          d_max_in <- parse_date_tok(x_max_in)
+          
+          if (!is.na(d_min_in) && !is.na(d_max_in)) {
+            date_start <- min(d_min_in, d_max_in)
+            date_end   <- max(d_min_in, d_max_in)
+            
+            df_w <- df_ok |>
+              dplyr::filter(.data$.date2 >= date_start, .data$.date2 <= date_end)
+            
+            # if window is empty, fall back to full available range (no hidden truncation)
+            if (nrow(df_w) == 0) {
+              warn_active(params, "Daily x_min/x_max window produced 0 points; using full available range.", warn_invalid)
+              date_start <- df_ok$.date2[[1]]
+              date_end   <- df_ok$.date2[[nrow(df_ok)]]
+              df_w <- df_ok
+            }
+          } else {
+            # derive full available daily range
+            date_start <- df_ok$.date2[[1]]
+            date_end   <- df_ok$.date2[[nrow(df_ok)]]
+            df_w <- df_ok
+          }
+          
+          # numeric time bounds (if time exists/finite)
+          if ("time" %in% names(df_w) && any(is.finite(df_w$.time2))) {
+            time_start <- min(df_w$.time2, na.rm = TRUE)
+            time_end   <- max(df_w$.time2, na.rm = TRUE)
+          } else {
+            time_start <- NA_real_
+            time_end <- NA_real_
+          }
+          
+          # daily label spacing is plot-specific; keep NA (safe default)
+          labfreq <- NA_real_
+          timetony_start <- NA_real_
+          timetony_end <- NA_real_
+        }
+      }
+    }
+    
+    # Provide x_min_parts/x_max_parts for consistency (won't be used for d in fillGraphPlan after patch 2)
+    x_min_parts <- list(ok = !is.na(date_start), year = as.integer(format(date_start, "%Y")), sub = NA_integer_)
+    x_max_parts <- list(ok = !is.na(date_end),   year = as.integer(format(date_end, "%Y")),   sub = NA_integer_)
   } else {
-    # daily not supported in legacy "time" index right now
+    # unknown / unsupported
     time_start <- NA_real_
     time_end <- NA_real_
     labfreq <- NA_real_
     timetony_start <- NA_real_
     timetony_end <- NA_real_
+    date_start <- as.Date(NA)
+    date_end <- as.Date(NA)
   }
   
   list(
@@ -1473,6 +1627,8 @@ derive_dynamic_window_from_data <- function(extdata, params, country_iso2c, peer
     x_max_parts = x_max_parts,
     time_start = time_start,
     time_end = time_end,
+    date_start = date_start %||% as.Date(NA),
+    date_end   = date_end %||% as.Date(NA),
     labfreq = labfreq,
     timetony_start = timetony_start,
     timetony_end = timetony_end
@@ -1484,8 +1640,40 @@ derive_dynamic_window_from_data <- function(extdata, params, country_iso2c, peer
 #  time_fix_parts: list(ok, year, sub)
 #  time_fix_label: "yyyy" / "yyyyqN" / "yyyymN" / "dd.mm.yyyy"
 #  time_fix: internal numeric "time" index (1987-based) for y/q/m; NA for y? (legacy uses year-1987)
-derive_cross_time_fix <- function(extdata, params, country_iso2c, warn_invalid = TRUE) {
+derive_cross_time_fix <- function(extdata,
+                                  params,
+                                  country_iso2c,
+                                  warn_invalid = TRUE,
+                                  expected_n = NULL) {
   assert_packages(c("dplyr", "tibble", "stringr", "rlang"))
+  
+  # ---- local helpers (deterministic, no side effects) -------------------
+  split_time_tokens_local <- function(x) {
+    x <- as.character(x %||% NA_character_)
+    if (length(x) == 0) return(character(0))
+    x <- x[[1]]
+    x <- stringr::str_trim(x)
+    x <- dplyr::na_if(x, "")
+    if (is.na(x)) return(character(0))
+    
+    x |>
+      stringr::str_split(",") |>
+      (\(v) v[[1]])() |>
+      stringr::str_trim() |>
+      (\(v) v[!is.na(v) & v != ""])()
+  }
+  
+  is_expected_n <- function(n) {
+    if (is.null(n)) return(TRUE)
+    n <- suppressWarnings(as.integer(n))
+    is.finite(n) && n >= 1L
+  }
+  
+  expected_n <- if (is.null(expected_n)) NULL else suppressWarnings(as.integer(expected_n))
+  if (!is_expected_n(expected_n)) {
+    warn_active(params, "Bad expected_n for time_fix; ignoring (treat as NULL).", warn_invalid)
+    expected_n <- NULL
+  }
   
   freq <- normalize_freq(params$data_frequency)
   if (is.na(freq)) {
@@ -1493,31 +1681,140 @@ derive_cross_time_fix <- function(extdata, params, country_iso2c, warn_invalid =
     return(list(time_fix = NA_real_, time_fix_label = NA_character_, time_fix_parts = list(ok = FALSE)))
   }
   
-  # If user specified time_fix, convert it to this freq (end=1)
-  tf_in <- first_time_token(params$time_fix %||% NA_character_)
-  if (!is.na(tf_in) && nzchar(tf_in)) {
-    tf_tok <- convert_time_token(tf_in, freq = freq, end = 1L, warn_invalid = warn_invalid, params_for_warn = params)
-    p <- parse_time_token(tf_tok)
-    if (isTRUE(p$ok)) {
-      year <- as.integer(p$year)
-      sub  <- if (freq == "q") as.integer(p$sub) else if (freq == "m") as.integer(p$sub) else NA_integer_
+  # ----------------------------------------------------------------------
+  # 1) If user specified time_fix: parse 1 token (legacy) OR N tokens (new)
+  # ----------------------------------------------------------------------
+  if (is.null(expected_n) || identical(expected_n, 1L)) {
+    # ---- legacy behavior: take only the first token ---------------------
+    tf_in <- first_time_token(params$time_fix %||% NA_character_)
+    if (!is.na(tf_in) && nzchar(tf_in)) {
+      tf_tok <- convert_time_token(tf_in, freq = freq, end = 1L, warn_invalid = warn_invalid, params_for_warn = params)
+      p <- parse_time_token(tf_tok)
       
-      # label in canonical format
-      tf_label <- if (freq == "y") sprintf("%04d", year) else if (freq == "q") paste0(sprintf("%04d", year), "q", sub) else if (freq == "m") paste0(sprintf("%04d", year), "m", sub) else tf_tok
+      if (isTRUE(p$ok)) {
+        year <- as.integer(p$year)
+        sub  <- if (freq == "q") as.integer(p$sub) else if (freq == "m") as.integer(p$sub) else NA_integer_
+        
+        tf_label <- if (freq == "y") {
+          sprintf("%04d", year)
+        } else if (freq == "q") {
+          paste0(sprintf("%04d", year), "q", sub)
+        } else if (freq == "m") {
+          paste0(sprintf("%04d", year), "m", sub)
+        } else {
+          tf_tok
+        }
+        
+        tf_num <- if (freq == "y") {
+          (year - 1987)
+        } else if (freq == "q") {
+          (year - 1987) * 4 + sub
+        } else if (freq == "m") {
+          (year - 1987) * 12 + sub
+        } else {
+          NA_real_
+        }
+        
+        return(list(
+          time_fix = tf_num,
+          time_fix_label = tf_label,
+          time_fix_parts = list(ok = TRUE, year = year, sub = sub)
+        ))
+      }
       
-      tf_num <- if (freq == "y") (year - 1987) else if (freq == "q") (year - 1987) * 4 + sub else if (freq == "m") (year - 1987) * 12 + sub else NA_real_
-      
-      return(list(
-        time_fix = tf_num,
-        time_fix_label = tf_label,
-        time_fix_parts = list(ok = TRUE, year = year, sub = sub)
-      ))
+      warn_active(params, paste0("time_fix token '", tf_in, "' could not be parsed; will try derive from data."), warn_invalid)
+    }
+  } else {
+    # ---- new behavior: require exactly expected_n tokens ----------------
+    toks_raw <- split_time_tokens_local(params$time_fix %||% NA_character_)
+    
+    if (length(toks_raw) > 0 && length(toks_raw) != expected_n) {
+      warn_active(
+        params,
+        paste0(
+          "time_fix must contain exactly ", expected_n, " tokens (comma-separated). Got ",
+          length(toks_raw), ": '", paste(toks_raw, collapse = ", "), "'. Returning NA."
+        ),
+        warn_invalid
+      )
+      return(list(time_fix = NA_real_, time_fix_label = NA_character_, time_fix_parts = list(ok = FALSE)))
     }
     
-    warn_active(params, paste0("time_fix token '", tf_in, "' could not be parsed; will try derive from data."), warn_invalid)
+    if (length(toks_raw) == expected_n) {
+      # convert each token to target freq (end=1)
+      toks_conv <- toks_raw |>
+        purrr::map_chr(\(tok) {
+          convert_time_token(tok, freq = freq, end = 1L, warn_invalid = warn_invalid, params_for_warn = params)
+        })
+      
+      parts <- toks_conv |> purrr::map(parse_time_token)
+      ok <- parts |> purrr::map_lgl(\(p) isTRUE(p$ok))
+      
+      if (all(ok)) {
+        years <- parts |> purrr::map_int(\(p) as.integer(p$year))
+        subs  <- parts |> purrr::map_int(\(p) {
+          if (freq %in% c("q", "m")) as.integer(p$sub) else NA_integer_
+        })
+        
+        labels <- if (freq == "y") {
+          sprintf("%04d", years)
+        } else if (freq == "q") {
+          paste0(sprintf("%04d", years), "q", subs)
+        } else if (freq == "m") {
+          paste0(sprintf("%04d", years), "m", subs)
+        } else {
+          toks_conv
+        }
+        
+        nums <- if (freq == "y") {
+          (years - 1987)
+        } else if (freq == "q") {
+          (years - 1987) * 4 + subs
+        } else if (freq == "m") {
+          (years - 1987) * 12 + subs
+        } else {
+          rep(NA_real_, expected_n)
+        }
+        
+        return(list(
+          time_fix = as.numeric(nums),                         # length expected_n
+          time_fix_label = paste(labels, collapse = ", "),
+          time_fix_parts = list(
+            ok = TRUE,
+            year = years,
+            sub = subs,
+            labels = labels,
+            toks_raw = toks_raw,
+            toks_conv = toks_conv,
+            freq = freq
+          )
+        ))
+      }
+      
+      warn_active(
+        params,
+        paste0(
+          "time_fix tokens could not be parsed: '", paste(toks_raw, collapse = ", "),
+          "'; returning NA (no derivation for expected_n>1)."
+        ),
+        warn_invalid
+      )
+      return(list(time_fix = NA_real_, time_fix_label = NA_character_, time_fix_parts = list(ok = FALSE)))
+    }
+    
+    # length(toks_raw) == 0: user did not specify time_fix
+    # For expected_n>1 we do NOT derive silently (avoid hidden fallback)
+    warn_active(
+      params,
+      paste0("time_fix is missing; expected ", expected_n, " tokens. Returning NA (no derivation for expected_n>1)."),
+      warn_invalid
+    )
+    return(list(time_fix = NA_real_, time_fix_label = NA_character_, time_fix_parts = list(ok = FALSE)))
   }
   
-  # Otherwise derive latest date where ALL requested indicators exist for main country
+  # ----------------------------------------------------------------------
+  # 2) Derive from data (legacy path ONLY; i.e., expected_n is NULL/1)
+  # ----------------------------------------------------------------------
   indicators <- params$indicators %||% character(0)
   indicators <- as.character(indicators)
   indicators <- indicators[!is.na(indicators) & indicators != ""]
@@ -1558,9 +1855,25 @@ derive_cross_time_fix <- function(extdata, params, country_iso2c, warn_invalid =
   year <- as.integer(last_row$year[[1]])
   sub  <- if (freq == "q") as.integer(last_row$quarter[[1]] %||% 4L) else if (freq == "m") as.integer(last_row$month[[1]] %||% 12L) else NA_integer_
   
-  tf_label <- if (freq == "y") sprintf("%04d", year) else if (freq == "q") paste0(sprintf("%04d", year), "q", sub) else if (freq == "m") paste0(sprintf("%04d", year), "m", sub) else NA_character_
+  tf_label <- if (freq == "y") {
+    sprintf("%04d", year)
+  } else if (freq == "q") {
+    paste0(sprintf("%04d", year), "q", sub)
+  } else if (freq == "m") {
+    paste0(sprintf("%04d", year), "m", sub)
+  } else {
+    NA_character_
+  }
   
-  tf_num <- if (freq == "y") (year - 1987) else if (freq == "q") (year - 1987) * 4 + sub else if (freq == "m") (year - 1987) * 12 + sub else NA_real_
+  tf_num <- if (freq == "y") {
+    (year - 1987)
+  } else if (freq == "q") {
+    (year - 1987) * 4 + sub
+  } else if (freq == "m") {
+    (year - 1987) * 12 + sub
+  } else {
+    NA_real_
+  }
   
   list(
     time_fix = tf_num,
@@ -1816,12 +2129,12 @@ fillGraphPlan <- function(parsedrow, data, country_iso2c, peers_iso2c, warn_inva
   
   # Classify graph type
   dynamic_types <- c(
-    "structure_dynamic", "bar_dynamic", "lines_country_comparison",
+    "structure_dynamic", "scatter_dynamic", "bar_dynamic", "lines_country_comparison",
     "lines_indicator_comparison", "distribution_dynamic"
   )
   
   cross_types <- c(
-    "scatter_country_comparison", "structure_country_comparison",
+    "scatter_country_comparison", "scatter_before_after", "structure_country_comparison",
     "structure_country_comparison_norm", "bar_country_comparison",
     "bar_country_comparison_norm", "bar_year_comparison",
     "distribution_year_comparison", "density_fix", "triangle"
@@ -1844,17 +2157,23 @@ fillGraphPlan <- function(parsedrow, data, country_iso2c, peers_iso2c, warn_inva
     params$x_max_parts <- dyn$x_max_parts
     params$time_start <- dyn$time_start
     params$time_end <- dyn$time_end
+    params$date_start <- dyn$date_start %||% as.Date(NA)
+    params$date_end   <- dyn$date_end %||% as.Date(NA)
     params$labfreq <- dyn$labfreq
     params$timetony_start <- dyn$timetony_start
     params$timetony_end <- dyn$timetony_end
     
     # Backward compat: some dynamic plots expect x_min/x_max to be c(year, sub)
+    # BUT scatter_dynamic uses x_min/x_max as VALUE axis limits, so never overwrite there.
     freq <- normalize_freq(params$data_frequency)
-    if (isTRUE(dyn$x_min_parts$ok)) {
-      params$x_min <- if (freq == "y") dyn$x_min_parts$year else c(dyn$x_min_parts$year, dyn$x_min_parts$sub)
-    }
-    if (isTRUE(dyn$x_max_parts$ok)) {
-      params$x_max <- if (freq == "y") dyn$x_max_parts$year else c(dyn$x_max_parts$year, dyn$x_max_parts$sub)
+    
+    if (!identical(params$graph_type %||% NA_character_, "scatter_dynamic")) {
+      if (isTRUE(dyn$x_min_parts$ok)) {
+        params$x_min <- if (freq == "y") dyn$x_min_parts$year else c(dyn$x_min_parts$year, dyn$x_min_parts$sub)
+      }
+      if (isTRUE(dyn$x_max_parts$ok)) {
+        params$x_max <- if (freq == "y") dyn$x_max_parts$year else c(dyn$x_max_parts$year, dyn$x_max_parts$sub)
+      }
     }
   } else {
     # Not dynamic: keep NA; and DO NOT overwrite axis x_min/x_max which are value limits for many cross plots
@@ -1862,6 +2181,8 @@ fillGraphPlan <- function(parsedrow, data, country_iso2c, peers_iso2c, warn_inva
     params$x_max_parts <- NULL
     params$time_start <- NA_real_
     params$time_end <- NA_real_
+    params$date_start <- as.Date(NA)
+    params$date_end <- as.Date(NA)
     params$labfreq <- NA_real_
     params$timetony_start <- NA_real_
     params$timetony_end <- NA_real_
@@ -1876,6 +2197,14 @@ fillGraphPlan <- function(parsedrow, data, country_iso2c, peers_iso2c, warn_inva
         country_iso2c = params$country_iso2c,
         warn_invalid = warn_invalid
       )
+    } else if (identical(params$graph_type, "scatter_before_after")) {
+      cross <- derive_cross_time_fix(
+        extdata = ext,
+        params = params,
+        country_iso2c = params$country_iso2c,
+        warn_invalid = warn_invalid,
+        expected_n = 2L
+      )
     } else {
       cross <- derive_cross_time_fix(
         extdata = ext,
@@ -1889,9 +2218,17 @@ fillGraphPlan <- function(parsedrow, data, country_iso2c, peers_iso2c, warn_inva
     params$time_fix_label <- cross$time_fix_label
     params$time_fix_parts <- cross$time_fix_parts
   } else {
-    params$time_fix <- NA_real_
-    params$time_fix_label <- NA_character_
-    params$time_fix_parts <- NULL
+    # For most non-cross graphs, time_fix is not used and should be cleared.
+    # EXCEPTION: scatter_dynamic uses time_fix="t1, t2" as a dynamic window override.
+    if (!identical(params$graph_type %||% NA_character_, "scatter_dynamic")) {
+      params$time_fix <- NA_real_
+      params$time_fix_label <- NA_character_
+      params$time_fix_parts <- NULL
+    } else {
+      # keep raw time_fix so scatter_dynamic (or dynamic-window derivation) can use it
+      params$time_fix_label <- params$time_fix_label %||% NA_character_
+      params$time_fix_parts <- params$time_fix_parts %||% NULL
+    }
   }
   
   # --- 3) Axis labels (systematic; never dict[,1]; never mutate x_ind/y_ind) ---

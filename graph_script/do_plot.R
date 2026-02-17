@@ -24,7 +24,7 @@ source(here("graph_script","plot_types.R"))
 source(here("graph_script","plot_themes.R"))
 
 ##### Parameters and source names
-country_code3 <- "BRA"
+country_code3 <- "RUS"
 country_code2 <- countrycode::countrycode(country_code3, "iso3c", "iso2c", warn = FALSE)
 file_output <- "jpeg"
 horizontal_size <- c(1800, 900)
@@ -57,7 +57,8 @@ plotparam_fname <- here("assets", country_name, "Auto_report", "2_graphlib.xlsx"
 country_info <- getPeersCodes(country_iso3c = country_code3, peers_fname = peers_fname)
 
 ##### Importing plotting schedule and generating sources
-source(here("graph_script","plot_types.R"))
+# source(here("graph_script","prepare_elements.R"))
+# source(here("graph_script","plot_types.R"))
 graphplan <- getPlotSchedule(plotparam_fname = plotparam_fname, dict = D$dict)
 
 ##### Check integrity of the plans

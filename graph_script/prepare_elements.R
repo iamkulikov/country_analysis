@@ -50,6 +50,13 @@ coerce_01 <- function(x) {
   out
 }
 
+normalize_chr_vec <- function(x) {
+  x <- as.character(x %||% character(0)) |>
+    stringr::str_trim()
+  x <- x[!is.na(x) & x != ""]
+  unique(x)
+}
+
 getPeersCodes <- function(country_iso3c, peers_fname) {
   
   assert_packages(c("readxl", "dplyr", "stringr", "countrycode", "tibble", "rlang"))
@@ -525,7 +532,8 @@ parseGraphPlan <- function(graphrow, dict, horizontal_size, vertical_size) {
     "scatter_country_comparison", "scatter_before_after", "structure_country_comparison",
     "structure_country_comparison_norm", "bar_country_comparison",
     "bar_country_comparison_norm", "bar_year_comparison",
-    "distribution_year_comparison", "scatter_dynamic", "density_fix"
+    "distribution_time_comparison", "distribution_indicator_comparison", "scatter_dynamic", 
+    "density_fix"
   )
   
   dynamic_types <- c(
@@ -679,7 +687,6 @@ numberOfDays <- function(date) {
   
   as.integer(format(first_next_month - 1L, "%d"))
 }
-
 
 prepareDates <- function(datetext, freq, end) {
   assert_packages(c("rlang", "stringr", "glue"))
@@ -1253,7 +1260,7 @@ derive_axis_labels <- function(dict, params, warn_invalid = TRUE) {
   dynamic_time_x <- graph_type %in% c(
     "structure_dynamic", "bar_dynamic",
     "lines_country_comparison", "lines_indicator_comparison",
-    "distribution_dynamic"
+    "distribution_dynamic", "distribution_time_comparison"
   )
   
   cross_country_x <- graph_type %in% c(
@@ -1996,8 +2003,14 @@ y_lim_policy <- function(
     y_rng_data <- c(0, 1)
   }
   
-  y_min0 <- suppressWarnings(as.numeric(y_min))
-  y_max0 <- suppressWarnings(as.numeric(y_max))
+  y_min_in <- suppressWarnings(as.numeric(y_min))
+  y_max_in <- suppressWarnings(as.numeric(y_max))
+  
+  user_set_y_min <- is.finite(y_min_in)
+  user_set_y_max <- is.finite(y_max_in)
+  
+  y_min0 <- y_min_in
+  y_max0 <- y_max_in
   
   if (!is.finite(y_min0)) y_min0 <- y_rng_data[[1]]
   if (!is.finite(y_max0)) y_max0 <- y_rng_data[[2]]
@@ -2051,6 +2064,14 @@ y_lim_policy <- function(
     }
   }
   
+  # ---- Global rule: if data has no negatives -> baseline at 0 ----
+  # Apply only when user did NOT set y_min explicitly.
+  if (!isTRUE(user_set_y_min)) {
+    if (is.finite(y_rng_data[[1]]) && y_rng_data[[1]] >= 0) {
+      y_min0 <- 0
+    }
+  }
+  
   list(
     y_min = y_min0,
     y_max = y_max0,
@@ -2071,12 +2092,372 @@ apply_y_limits_viewport <- function(p, ylim, do_sec = FALSE, coeff = NA_real_) {
   do_sec <- isTRUE(do_sec)
   coeff  <- suppressWarnings(as.numeric(coeff))
   
-  if (do_sec && is.finite(coeff) && coeff != 0) {
-    p <- p + ggplot2::scale_y_continuous(sec.axis = ggplot2::sec_axis(~ . / coeff))
+  # ---- Helper: set Y expansion without touching X expansion -------------
+  set_y_expand <- function(p, lower_mult = 0.0, upper_mult = 0.05) {
+    sc_y <- p$scales$get_scales("y")
+    expn <- ggplot2::expansion(mult = c(lower_mult, upper_mult))
+    
+    if (is.null(sc_y)) {
+      # Add y scale only if absent (won't touch x scale)
+      return(p + ggplot2::scale_y_continuous(expand = expn))
+    }
+    
+    # Modify existing y scale in place (keeps labels/breaks/trans)
+    sc_y$expand <- expn
+    p
   }
   
+  # ---- Secondary axis (keep as you already do) --------------------------
+  if (do_sec && is.finite(coeff) && coeff != 0) {
+    sc_y <- p$scales$get_scales("y")
+    
+    if (!is.null(sc_y)) {
+      sc_y$sec.axis <- ggplot2::sec_axis(~ . / coeff)
+    } else {
+      p <- p + ggplot2::scale_y_continuous(sec.axis = ggplot2::sec_axis(~ . / coeff))
+    }
+  }
+  
+  # ---- Only remove the *bottom* padding when baseline is exactly 0 ------
+  if (isTRUE(all.equal(ylim[[1]], 0))) {
+    # bottom = 0, top = small air
+    p <- set_y_expand(p, lower_mult = 0.0, upper_mult = 0.05)
+  }
+  
+  # Keep coord expansion defaults (so X gets its usual air, and top air stays)
   p + ggplot2::coord_cartesian(ylim = ylim)
 }
+
+### X-axis policy - avoiding overlaps in labels
+
+apply_x_axis_policy <- function(p, params, style, plot_data = NULL, country_iso2c = NULL) {
+  assert_packages(c("ggplot2", "dplyr", "tibble", "stringr", "rlang", "scales"))
+  
+  params <- params %||% list()
+  style  <- style  %||% list()
+  
+  graph_type <- as.character(params$graph_type %||% NA_character_)
+  freq <- normalize_freq(params$data_frequency %||% NA_character_) %||% NA_character_
+  
+  # --- heuristics: which axis kind is implied by graph_type --------------
+  x_kind <- params$x_axis_kind %||% NA_character_
+  x_kind <- stringr::str_to_lower(as.character(x_kind))
+  
+  country_x_types <- c(
+    "bar_country_comparison",
+    "structure_country_comparison",
+    "structure_country_comparison_norm",
+    "bar_year_comparison"
+  )
+  
+  time_x_types <- c(
+    "lines_indicator_comparison",
+    "lines_country_comparison",
+    "bar_dynamic",
+    "structure_dynamic",
+    "distribution_time_comparison",
+    "distribution_indicator_comparison",
+    "distribution_dynamic"
+  )
+  
+  value_x_types <- c(
+    "scatter_country_comparison",
+    "scatter_before_after",
+    "scatter_dynamic",
+    "density_fix"
+  )
+  
+  if (is.na(x_kind) || !nzchar(x_kind)) {
+    if (graph_type %in% country_x_types) x_kind <- "countries"
+    if (graph_type %in% time_x_types)    x_kind <- "time"
+    if (graph_type %in% value_x_types)   x_kind <- "value"
+  }
+  
+  if (is.na(x_kind) || !nzchar(x_kind)) return(p)
+  
+  # ---- graph-type specific grid tweaks -----------------------------------
+  if (identical(graph_type, "distribution_time_comparison")) {
+    p <- p + ggplot2::theme(
+      panel.grid.major.x = ggplot2::element_blank(),
+      panel.grid.minor.x = ggplot2::element_blank()
+    )
+  }
+  
+  # ---- layout params ----------------------------------------------------
+  plot_w <- suppressWarnings(as.numeric(params$width %||% NA_real_))
+  if (!is.finite(plot_w) || plot_w <= 0) plot_w <- 8
+  
+  # If width looks like pixels, convert to approximate inches (assume 96 dpi)
+  if (plot_w > 60) plot_w <- plot_w / 96
+  
+  # Clamp to a sane range (inches)
+  plot_w <- max(4, min(14, plot_w))
+  
+  # typography
+  base_size <- style$typography$base_size %||% 11
+  min_lbl_pt <- 6
+  
+  # Utility: safe extract of discrete x values (countries)
+  get_country_levels <- function(df) {
+    if (!is.data.frame(df) || nrow(df) == 0) return(character(0))
+    
+    cand <- c("country_id", "country", "x")
+    xcol <- cand[cand %in% names(df)][1] %||% NA_character_
+    if (is.na(xcol)) return(character(0))
+    
+    x <- df[[xcol]]
+    x <- as.character(x)
+    x <- x[!is.na(x) & x != ""]
+    unique(x)
+  }
+  
+  # Utility: safe extract of time x values
+  get_time_vec <- function(df) {
+    if (!is.data.frame(df) || nrow(df) == 0) return(NULL)
+    
+    if ("date" %in% names(df) && (inherits(df$date, "Date") || inherits(df$date, "POSIXt"))) {
+      return(as.Date(df$date))
+    }
+    if ("time" %in% names(df)) {
+      return(suppressWarnings(as.numeric(df$time)))
+    }
+    NULL
+  }
+  
+  # Utility: convert internal numeric time -> label (y/q/m)
+  time_num_to_label <- function(t, freq) {
+    t <- suppressWarnings(as.numeric(t))
+    if (!any(is.finite(t))) return(as.character(t))
+    
+    freq <- tolower(as.character(freq %||% ""))
+    if (freq == "y") {
+      y <- as.integer(round(t + 1987))
+      return(sprintf("%04d", y))
+    }
+    if (freq == "q") {
+      y <- as.integer(floor((t - 1) / 4) + 1987)
+      q <- as.integer(t - (y - 1987) * 4)
+      return(paste0(sprintf("%04d", y), "q", q))
+    }
+    if (freq == "m") {
+      y <- as.integer(floor((t - 1) / 12) + 1987)
+      m <- as.integer(t - (y - 1987) * 12)
+      return(paste0(sprintf("%04d", y), "m", m))
+    }
+    as.character(t)
+  }
+  
+  # Utility: choose step so breaks count <= target but >= min_n if possible
+  choose_step <- function(rng, steps, min_n, target_n) {
+    rng <- suppressWarnings(as.numeric(rng))
+    if (length(rng) != 2 || !all(is.finite(rng)) || rng[[1]] >= rng[[2]]) return(NA_real_)
+    
+    span <- rng[[2]] - rng[[1]]
+    if (span <= 0) return(NA_real_)
+    
+    n_for_step <- function(step) floor(span / step) + 1L
+    
+    ok <- steps[n_for_step(steps) <= target_n]
+    if (length(ok) > 0) return(min(ok))
+    
+    steps[[length(steps)]]
+  }
+  
+  # -------------------- countries ----------------------------------------
+  if (identical(x_kind, "countries")) {
+    x_vals <- get_country_levels(plot_data)
+    n_cat <- length(x_vals)
+    
+    if (n_cat <= 0) return(p)
+    
+    cap <- max(1L, floor(plot_w * 2.5))
+    
+    shrink_ratio <- min(1, cap / n_cat)
+    lbl_pt <- max(min_lbl_pt, base_size * shrink_ratio)
+    
+    main_only <- (lbl_pt <= min_lbl_pt) && (n_cat > cap) && !is.null(country_iso2c) && nzchar(country_iso2c)
+    
+    if (isTRUE(main_only)) {
+      # Keep labels for the main country AND peers (if available).
+      # - peers can be supplied via params$peers_iso2c (graphplan)
+      # - or inferred from plot_data$role == "peers" when plot_data is passed
+      peers_vec <- normalize_chr_vec(params$peers_iso2c %||% character(0))
+      if (length(peers_vec) == 0 && is.data.frame(plot_data) && nrow(plot_data) > 0 &&
+          all(c("country_id", "role") %in% names(plot_data))) {
+        peers_vec <- plot_data |>
+          dplyr::filter(.data$role == "peers") |>
+          dplyr::pull(.data$country_id) |>
+          as.character() |>
+          unique()
+      }
+      
+      keep_vec <- unique(c(country_iso2c, peers_vec))
+      keep_vec <- keep_vec[!is.na(keep_vec) & keep_vec != ""]
+      
+      p <- p +
+        ggplot2::scale_x_discrete(labels = function(x) {
+          x_chr <- as.character(x)
+          ifelse(x_chr %in% keep_vec, x_chr, "")
+        })
+    }
+    
+    p <- p +
+      ggplot2::theme(
+        axis.text.x = ggplot2::element_text(size = lbl_pt, angle = 0, hjust = 0.5, vjust = 1),
+        panel.grid.major.x = ggplot2::element_blank(),
+        panel.grid.minor.x = ggplot2::element_blank()
+      )
+    
+    return(p)
+  }
+  
+  # -------------------- time ---------------------------------------------
+  if (identical(x_kind, "time")) {
+    tv <- get_time_vec(plot_data)
+    if (is.null(tv)) return(p)
+    
+    if (inherits(tv, "Date")) {
+      rng <- range(tv, na.rm = TRUE)
+      if (!all(is.finite(as.numeric(rng)))) return(p)
+      
+      target_n <- max(3L, floor(plot_w * 1.2))
+      target_n <- min(target_n, 12L)
+      
+      opts <- c("1 month", "2 months", "3 months", "6 months", "1 year", "2 years", "5 years")
+      
+      span_days <- as.numeric(rng[[2]] - rng[[1]])
+      pick <- dplyr::case_when(
+        span_days <= 120 ~ "1 week",
+        span_days <= 365 ~ "1 month",
+        span_days <= 730 ~ "2 months",
+        span_days <= 1460 ~ "3 months",
+        span_days <= 3650 ~ "6 months",
+        TRUE ~ "1 year"
+      )
+      if (!pick %in% c(opts, "1 week")) pick <- "1 month"
+      
+      angle <- if (target_n <= 3L) 90 else 0
+      
+      p <- p +
+        ggplot2::scale_x_date(breaks = scales::date_breaks(pick), labels = scales::label_date()) +
+        ggplot2::theme(axis.text.x = ggplot2::element_text(angle = angle, hjust = 1, vjust = 0.5))
+      
+      return(p)
+    }
+    
+    rng <- range(tv, na.rm = TRUE)
+    if (!all(is.finite(rng)) || rng[[1]] >= rng[[2]]) return(p)
+    
+    target_n <- max(3L, floor(plot_w * 1.2))
+    target_n <- min(target_n, 12L)
+    min_n <- 3L
+    
+    steps <- dplyr::case_when(
+      tolower(freq) == "y" ~ list(c(1, 2, 5, 10, 20, 50)),
+      tolower(freq) == "q" ~ list(c(1, 2, 4, 8, 16, 32, 64)),
+      tolower(freq) == "m" ~ list(c(1, 3, 6, 12, 24, 60, 120)),
+      TRUE ~ list(c(1, 2, 5, 10, 20, 50))
+    )[[1]]
+    
+    step <- choose_step(rng, steps = steps, min_n = min_n, target_n = target_n)
+    if (!is.finite(step) || step <= 0) return(p)
+    
+    start <- floor(rng[[1]] / step) * step
+    end   <- ceiling(rng[[2]] / step) * step
+    brks  <- seq(from = start, to = end, by = step)
+    brks  <- brks[brks >= rng[[1]] & brks <= rng[[2]]]
+    
+    if (length(brks) < min_n) {
+      for (st in steps) {
+        start2 <- floor(rng[[1]] / st) * st
+        end2   <- ceiling(rng[[2]] / st) * st
+        br2 <- seq(from = start2, to = end2, by = st)
+        br2 <- br2[br2 >= rng[[1]] & br2 <= rng[[2]]]
+        if (length(br2) >= min_n) {
+          brks <- br2
+          step <- st
+          break
+        }
+      }
+    }
+    
+    angle <- if (length(brks) <= min_n) 90 else 0
+    
+    p <- p +
+      ggplot2::scale_x_continuous(
+        breaks = brks,
+        labels = function(x) time_num_to_label(x, freq = freq)
+      ) +
+      ggplot2::theme(axis.text.x = ggplot2::element_text(angle = angle, hjust = if (angle == 90) 1 else 0.5, vjust = 0.5))
+    
+    return(p)
+  }
+  
+  # -------------------- value --------------------------------------------
+  if (identical(x_kind, "value")) {
+    target_n <- max(3L, floor(plot_w * 1.2))
+    target_n <- min(target_n, 12L)
+    
+    p <- p +
+      ggplot2::scale_x_continuous(breaks = scales::breaks_extended(n = target_n)) +
+      ggplot2::theme(panel.grid.minor.x = ggplot2::element_blank())
+    
+    return(p)
+  }
+  
+  p
+}
+
+apply_legend_wrap_policy <- function(p, params, style) {
+  assert_packages(c("ggplot2", "rlang"))
+  
+  params <- params %||% list()
+  style  <- style  %||% list()
+  
+  layout_leg <- style$layout$legend %||% list()
+  
+  # Apply only for bottom horizontal legends (your standard)
+  if (!identical(layout_leg$position %||% "bottom", "bottom")) return(p)
+  if (!identical(layout_leg$direction %||% "horizontal", "horizontal")) return(p)
+  
+  max_per_row <- suppressWarnings(as.integer(layout_leg$max_items_per_row %||% 6L))
+  if (!is.finite(max_per_row) || max_per_row < 2) max_per_row <- 6L
+  
+  # Optional: adapt to width (small plots -> fewer items per row)
+  w <- suppressWarnings(as.numeric(params$width %||% NA_real_))
+  if (is.finite(w)) {
+    if (w <= 6)  max_per_row <- min(max_per_row, 4L)
+    if (w <= 4)  max_per_row <- min(max_per_row, 3L)
+  }
+  
+  # Count legend items from discrete scales (cheap, no grob building)
+  get_n_items <- function(sc) {
+    if (!inherits(sc, "ScaleDiscrete")) return(0L)
+    lim <- tryCatch(sc$get_limits(), error = function(e) NULL)
+    if (is.null(lim)) return(0L)
+    length(lim)
+  }
+  
+  scales <- p$scales$scales %||% list()
+  n_items <- 0L
+  for (sc in scales) n_items <- max(n_items, get_n_items(sc))
+  
+  if (!is.finite(n_items) || n_items <= max_per_row) return(p)
+  
+  nrow <- ceiling(n_items / max_per_row)
+  nrow <- max(2L, as.integer(nrow))
+  
+  g <- ggplot2::guide_legend(nrow = nrow, byrow = TRUE)
+  
+  # Apply to common legend aesthetics; safe even if some are unused
+  p + ggplot2::guides(
+    colour   = g,
+    fill     = g,
+    shape    = g,
+    linetype = g
+  )
+}
+
 
 # ------------------------------------------------------------------------------
 # Improved fillGraphPlan()
@@ -2137,7 +2518,7 @@ fillGraphPlan <- function(parsedrow, data, country_iso2c, peers_iso2c, warn_inva
     "scatter_country_comparison", "scatter_before_after", "structure_country_comparison",
     "structure_country_comparison_norm", "bar_country_comparison",
     "bar_country_comparison_norm", "bar_year_comparison",
-    "distribution_year_comparison", "density_fix", "triangle"
+    "distribution_time_comparison", "density_fix", "triangle"
   )
   
   is_dynamic <- !is.na(params$graph_type) && params$graph_type %in% dynamic_types
@@ -2189,15 +2570,44 @@ fillGraphPlan <- function(parsedrow, data, country_iso2c, peers_iso2c, warn_inva
   }
   
   # --- 2) Cross-section time point (only for cross graphs) --------------
-  if (isTRUE(is_cross)) {
+  if (is_cross) {
+    
+    freq <- normalize_freq(params$data_frequency %||% "y") %||% "y"
+    
     if (params$graph_type %in% c("bar_year_comparison", "distribution_year_comparison")) {
+      
       cross <- derive_cross_time_fix_years(
         extdata = ext,
         params = params,
         country_iso2c = params$country_iso2c,
         warn_invalid = warn_invalid
       )
+      
+    } else if (identical(params$graph_type, "distribution_time_comparison") && identical(freq, "y")) {
+      
+      cross <- derive_cross_time_fix_years(
+        extdata = ext,
+        params = params,
+        country_iso2c = params$country_iso2c,
+        warn_invalid = warn_invalid
+      )
+      
+    } else if (identical(params$graph_type, "distribution_time_comparison") && freq %in% c("q", "m", "d")) {
+      
+      # IMPORTANT: allow multiple time_fix tokens (comma-separated)
+      toks <- split_time_tokens(params$time_fix %||% NA_character_)
+      expected_n <- if (length(toks) >= 1) length(toks) else 1L
+      
+      cross <- derive_cross_time_fix(
+        extdata = ext,
+        params = params,
+        country_iso2c = params$country_iso2c,
+        warn_invalid = warn_invalid,
+        expected_n = expected_n
+      )
+      
     } else if (identical(params$graph_type, "scatter_before_after")) {
+      
       cross <- derive_cross_time_fix(
         extdata = ext,
         params = params,
@@ -2205,7 +2615,9 @@ fillGraphPlan <- function(parsedrow, data, country_iso2c, peers_iso2c, warn_inva
         warn_invalid = warn_invalid,
         expected_n = 2L
       )
+      
     } else {
+      
       cross <- derive_cross_time_fix(
         extdata = ext,
         params = params,
@@ -2214,21 +2626,10 @@ fillGraphPlan <- function(parsedrow, data, country_iso2c, peers_iso2c, warn_inva
       )
     }
     
-    params$time_fix <- cross$time_fix
+    params$time_fix       <- cross$time_fix
     params$time_fix_label <- cross$time_fix_label
     params$time_fix_parts <- cross$time_fix_parts
-  } else {
-    # For most non-cross graphs, time_fix is not used and should be cleared.
-    # EXCEPTION: scatter_dynamic uses time_fix="t1, t2" as a dynamic window override.
-    if (!identical(params$graph_type %||% NA_character_, "scatter_dynamic")) {
-      params$time_fix <- NA_real_
-      params$time_fix_label <- NA_character_
-      params$time_fix_parts <- NULL
-    } else {
-      # keep raw time_fix so scatter_dynamic (or dynamic-window derivation) can use it
-      params$time_fix_label <- params$time_fix_label %||% NA_character_
-      params$time_fix_parts <- params$time_fix_parts %||% NULL
-    }
+    
   }
   
   # --- 3) Axis labels (systematic; never dict[,1]; never mutate x_ind/y_ind) ---

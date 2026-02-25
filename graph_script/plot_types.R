@@ -39,7 +39,7 @@ is_true01 <- function(x) {
   isTRUE(!is.na(x) && x == 1L)
 }
 
-finalize_plot_common <- function(p, params, style, legend = TRUE) {
+finalize_plot_common <- function(p, params, style, legend = TRUE, plot_data = NULL) {
   assert_packages(c("ggplot2", "ggtext", "stringr", "rlang", "grid"))
   
   params <- params %||% list()
@@ -308,6 +308,10 @@ finalize_plot_common <- function(p, params, style, legend = TRUE) {
   legend_just <- layout$legend$justification %||% "left"
   blank_title <- isTRUE(layout$legend$title_blank %||% TRUE)
   
+  if (isTRUE(legend)) {
+    p <- apply_legend_wrap_policy(p, params, style)
+  }
+  
   # -------------------- Keeping annotations visible + optional X viewport ----------------------
   coord_clip <- as.character(params$coord_clip %||% "on")
   coord_clip <- if (coord_clip %in% c("on", "off")) coord_clip else "on"
@@ -442,6 +446,15 @@ finalize_plot_common <- function(p, params, style, legend = TRUE) {
       legend.margin = ggplot2::margin(t = 2),
       legend.box.margin = ggplot2::margin(t = 2)
     )
+  
+  # ---- X axis anti-overlap policy (centralized) ---------------------------
+  p <- apply_x_axis_policy(
+    p = p,
+    params = params,
+    style = style,
+    plot_data = plot_data,
+    country_iso2c = params$country_iso2c %||% NULL
+  )
   
   p
 }
@@ -739,8 +752,8 @@ scatterCountryComparison <- function(data,
   st_peers_pt  <- style_for(style, "peers",   "point")
   st_ctry_pt   <- style_for(style, "country", "point")
   
-  st_peers_tx  <- style_for(style, "peers",   "text")
-  st_ctry_tx   <- style_for(style, "country", "text")
+  st_peers_tx  <- style_for(style, "peers",   "point_label")
+  st_ctry_tx   <- style_for(style, "country", "point_label")
   
   axis_col <- palette$axis %||% "grey20"
   
@@ -833,7 +846,7 @@ scatterCountryComparison <- function(data,
   }
   
   # Common finalize: uses style$palette / style$typography / style$grid / style$layout / style$annotations$time_tag
-  p <- finalize_plot_common(p, params, style, legend = FALSE)
+  p <- finalize_plot_common(p, params, style, legend = FALSE, plot_data = df)
   
   out <- list(graph = p, data = df)
   
@@ -1294,7 +1307,7 @@ scatterDynamic <- function(data,
   params2$x_lab <- x_name
   params2$y_lab <- y_name
   
-  p <- finalize_plot_common(p, params2, style, legend = FALSE)
+  p <- finalize_plot_common(p, params2, style, legend = FALSE, plot_data = df)
   
   out <- list(graph = p, data = df)
   
@@ -1744,7 +1757,7 @@ barDynamic <- function(data,
     params2$y_lab <- ""
   }
   
-  p <- finalize_plot_common(p, params2, style, legend = show_legend)
+  p <- finalize_plot_common(p, params2, style, legend = show_legend, plot_data = df)
   
   out <- list(graph = p, data = df)
 
@@ -2023,6 +2036,7 @@ barCountryComparison <- function(data,
   
   # Role tagging for single-indicator mode (country/peers/others)
   df <- add_country_role(df, country_iso2c = country_iso2c, peers_iso2c = peers_iso2c, id_col = "country_id")
+  df <- df |> dplyr::mutate(.is_main = as.character(.data$country_id) == country_iso2c)
   
   # ---- Ordering by first indicator -------------------------------------
   order_ind <- indicators[[1]]
@@ -2104,25 +2118,39 @@ barCountryComparison <- function(data,
       others  = st_others$fill
     )
     
+    main_outline_lw <- 0.75
+    do_outline_on_bars <- identical(graph_type, "bar_country_comparison")
+    
     p <- p +
       ggplot2::geom_col(
-        ggplot2::aes(fill = .data$role),
+        ggplot2::aes(
+          fill = .data$role,
+          color = dplyr::if_else(isTRUE(do_outline_on_bars) & .data$.is_main, "black", NA_character_)
+        ),
         width = 0.70,
         alpha = 0.85,
         position = "identity",
-        color = NA
+        linewidth = main_outline_lw
       ) +
-      ggplot2::scale_fill_manual(values = role_cols, name = "")
+      ggplot2::scale_fill_manual(values = role_cols, name = "") +
+      ggplot2::scale_color_identity(guide = "none")
   } else {
     # Multiple indicators: fill by indicator variable
-    p <- p +
-      ggplot2::geom_col(
-        ggplot2::aes(fill = .data$variable),
-        width = 0.70,
-        alpha = (style_for(style, "country", "bar")$alpha %||% 0.85),
-        position = pos,
-        color = NA
-      )
+      main_outline_lw <- 0.75
+      do_outline_on_bars <- identical(graph_type, "bar_country_comparison")
+      
+      p <- p +
+        ggplot2::geom_col(
+          ggplot2::aes(
+            fill = .data$variable,
+            color = dplyr::if_else(isTRUE(do_outline_on_bars) & .data$.is_main, "black", NA_character_)
+          ),
+          width = 0.70,
+          alpha = (style_for(style, "country", "bar")$alpha %||% 0.85),
+          position = pos,
+          linewidth = main_outline_lw
+        ) +
+        ggplot2::scale_color_identity(guide = "none")
     
     if (!is.null(fill_colors)) {
       p <- p +
@@ -2196,7 +2224,84 @@ barCountryComparison <- function(data,
     params2$y_lab <- ""
   }
   
-  p <- finalize_plot_common(p, params2, style, legend = show_legend)
+  # ---- MAIN COUNTRY OUTLINE (structure_* only) ---------------------------
+  do_outline_on_bars <- identical(graph_type, "bar_country_comparison")
+  main_outline_lw <- 0.75
+  
+  if (graph_type %in% c("structure_country_comparison", "structure_country_comparison_norm")) {
+    
+    df_main <- df |>
+      dplyr::filter(.data$.is_main) |>
+      dplyr::mutate(country_id = .data$country_id) # keep factor levels
+    
+    if (graph_type == "structure_country_comparison_norm") {
+      # fill -> total is always 1 for the country bar
+      df_border <- df_main |>
+        dplyr::summarise(y = 1, .by = "country_id")
+      
+      p <- p +
+        ggplot2::geom_col(
+          data = df_border,
+          ggplot2::aes(x = .data$country_id, y = .data$y),
+          inherit.aes = FALSE,
+          width = 0.70,
+          position = "identity",
+          fill = NA,
+          color = "black",
+          linewidth = main_outline_lw
+        )
+    }
+    
+    if (graph_type == "structure_country_comparison") {
+      # stack with possible negatives -> draw two outlines: positive and negative parts
+      df_border <- df_main |>
+        dplyr::summarise(
+          pos_sum = sum(pmax(.data$value_plot, 0), na.rm = TRUE),
+          neg_sum = sum(pmin(.data$value_plot, 0), na.rm = TRUE),
+          .by = "country_id"
+        )
+      
+      # positive outline
+      df_pos <- df_border |>
+        dplyr::filter(is.finite(.data$pos_sum), .data$pos_sum != 0) |>
+        dplyr::transmute(country_id = .data$country_id, y = .data$pos_sum)
+      
+      if (nrow(df_pos) > 0) {
+        p <- p +
+          ggplot2::geom_col(
+            data = df_pos,
+            ggplot2::aes(x = .data$country_id, y = .data$y),
+            inherit.aes = FALSE,
+            width = 0.7,
+            position = "identity",
+            fill = NA,
+            color = "black",
+            linewidth = main_outline_lw
+          )
+      }
+      
+      # negative outline
+      df_neg <- df_border |>
+        dplyr::filter(is.finite(.data$neg_sum), .data$neg_sum != 0) |>
+        dplyr::transmute(country_id = .data$country_id, y = .data$neg_sum)
+      
+      if (nrow(df_neg) > 0) {
+        p <- p +
+          ggplot2::geom_col(
+            data = df_neg,
+            ggplot2::aes(x = .data$country_id, y = .data$y),
+            inherit.aes = FALSE,
+            width = 0.70,
+            position = "identity",
+            fill = NA,
+            color = "black",
+            linewidth = main_outline_lw
+          )
+      }
+    }
+  }
+  
+  p <- finalize_plot_common(p, params2, style, legend = show_legend, plot_data = df)
   
   out <- list(graph = p, data = df)
   
@@ -2440,7 +2545,7 @@ barYearComparison <- function(data,
   
   p <- p + ggplot2::labs(x = NULL, y = NULL)
   
-  p <- finalize_plot_common(p, params2, style, legend = TRUE)
+  p <- finalize_plot_common(p, params2, style, legend = TRUE, plot_data = df)
   
   out <- list(graph = p, data = df_long)
   
@@ -2879,7 +2984,7 @@ linesIndicatorComparison <- function(data,
   params2$x_lab <- ""
   params2$y_lab <- ""
   
-  p <- finalize_plot_common(p, params2, style, legend = show_legend)
+  p <- finalize_plot_common(p, params2, style, legend = show_legend, plot_data = df)
   
   out <- list(graph = p, data = df)
   
@@ -3435,7 +3540,7 @@ linesCountryComparison <- function(data,
     params2$y_lab <- ""
   }
   
-  p <- finalize_plot_common(p, params2, style, legend = FALSE)
+  p <- finalize_plot_common(p, params2, style, legend = FALSE, plot_data = df)
   
   out <- list(graph = p, data = df)
   
@@ -3789,7 +3894,7 @@ densityFix <- function(data, graph_params,
   # density_fix is allowed to show x label by your rule, so don't blank it here.
   # y_lab тоже не трогаем: пусть управляется планом / derive_axis_labels.
   
-  p <- finalize_plot_common(p, params2, style, legend = FALSE)
+  p <- finalize_plot_common(p, params2, style, legend = FALSE, plot_data = df)
   
   out <- list(graph = p, data = df_dist)
   
@@ -4248,7 +4353,7 @@ distributionDynamic <- function(data,
   params2$x_lab <- "" # dynamic x label off by default
   # y_lab comes from fillGraphPlan / derive_axis_labels; do not override here
   
-  p <- finalize_plot_common(p, params2, style, legend = FALSE)
+  p <- finalize_plot_common(p, params2, style, legend = FALSE, plot_data = df)
   
   out <- list(graph = p, data = df_all)
   
@@ -4577,8 +4682,8 @@ scatterBeforeAfter <- function(data,
   st_peers_pt  <- style_for(style, "peers",   "point")
   st_ctry_pt   <- style_for(style, "country", "point")
   
-  st_peers_tx  <- style_for(style, "peers",   "text")
-  st_ctry_tx   <- style_for(style, "country", "text")
+  st_peers_tx  <- style_for(style, "peers",   "point_label")
+  st_ctry_tx   <- style_for(style, "country", "point_label")
   
   # y=x line styled like grid
   grid_major_col <- style$grid$major$color %||% (palette$grid_major %||% "grey90")
@@ -4694,7 +4799,7 @@ scatterBeforeAfter <- function(data,
     )
   
   # ---- finalize --------------------------------------------------------
-  p <- finalize_plot_common(p, params2, style, legend = FALSE)
+  p <- finalize_plot_common(p, params2, style, legend = FALSE, plot_data = df)
   
   out <- list(graph = p, data = df)
   
@@ -4722,40 +4827,858 @@ scatterBeforeAfter <- function(data,
 
 ###### Distribution year comparison (candle plot, fixed indicator)
 
-distributionYearComparison <- function(datagraph_params, country_iso2c, peers_iso2c, verbose=T) {
+distributionTimeComparison <- function(data,
+                                       graph_params,
+                                       country_iso2c,
+                                       peers_iso2c = NULL,
+                                       verbose = TRUE,
+                                       warn_invalid = TRUE,
+                                       debug = TRUE) {
+  assert_packages(c("dplyr", "tidyr", "ggplot2", "stringr", "rlang", "tibble", "purrr"))
   
-  for (j in seq_along(graph_params)) { eval(parse(text = paste0(names(graph_params)[j], " <- graph_params$", names(graph_params)[j]) )) }
-  if (verbose == T) {print(graph_name)}
+  params <- graph_params %||% list(active = 1L)
+  style  <- resolve_plot_style(params$theme_name %||% "acra_light")
   
-  data_all <- reshape2::melt(data$extdata, id.vars=c("country", "country_id", "year"), variable.name="variable", value.name="value")
-  data_all <- data_all |> filter(variable %in% indicators, year %in% time_fix, country_id == country_iso2c, !is.na(value)) |> 
-    mutate(variable = fct_relevel(variable, indicators))
+  graph_type <- params$graph_type %||% "distribution_time_comparison"
+  graph_type <- stringr::str_trim(as.character(graph_type))
+  if (!nzchar(graph_type)) graph_type <- "distribution_time_comparison"
   
-  dict_temp <- data$dict |> filter(indicator_code %in% indicators, source_frequency == data_frequency) |> 
-    arrange(factor(indicator_code, levels = indicators)) |> select(indicator)
-  x_lab <- unname(unlist(dict_temp))
-  x_lab <- str_wrap(x_lab, width = 15)
+  # ---- helpers ---------------------------------------------------------
+  is_true01 <- function(x) {
+    x <- suppressWarnings(as.integer(x))
+    isTRUE(!is.na(x) && x == 1L)
+  }
   
-  theplot <- ggplot(data_all, aes(as.factor(year), value)) + geom_boxplot() +
-    scale_y_continuous(limits=c(y_min, y_max)) +
-    scale_x_discrete(labels=x_lab) +
-    ggtitle(title) + labs(caption = caption, x=NULL, y=NULL)
+  warn_active <- function(msg) {
+    if (isTRUE(warn_invalid) && is_true01(params$active %||% 1L)) {
+      rlang::warn(paste0("distributionTimeComparison: ", msg))
+    }
+  }
   
-  theplot <- theplot + resolve_theme(graph_params$theme_name)
-  theplot <- theplot + theme(plot.title = element_textbox_simple(), axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) +
-    geom_hline(yintercept = 0, color = "dark grey", size = 1)
+  normalize_chr_vec <- function(x) {
+    x <- as.character(x %||% character(0)) |> stringr::str_trim()
+    x <- x[!is.na(x) & x != ""]
+    unique(x)
+  }
   
-  # if (identical(normalize_theme_name(theme_name), "ipsum")) {
-  #   theplot <- theplot + ggplot2::theme(text = ggplot2::element_text(family = "Nunito Sans"))
-  # }
-  return(list(graph = theplot, data = data_all))
+  normalize_int_vec <- function(x) {
+    if (is.null(x) || length(x) == 0) return(integer(0))
+    
+    if (is.character(x) && length(x) == 1L) {
+      x <- x |>
+        stringr::str_split(",") |>
+        purrr::pluck(1) |>
+        stringr::str_trim()
+    } else {
+      x <- as.character(x) |> stringr::str_trim()
+    }
+    
+    x <- suppressWarnings(as.integer(x))
+    x <- x[is.finite(x)]
+    sort(unique(x))
+  }
   
+  # Parse time token into numeric "time" space (for ordering & filtering)
+  parse_time_code <- function(x, freq) {
+    x <- as.character(x %||% NA_character_)
+    x <- stringr::str_trim(x)
+    if (!nzchar(x) || is.na(x)) return(NA_real_)
+    
+    xn <- suppressWarnings(as.numeric(x))
+    if (is.finite(xn)) return(xn)
+    
+    freq <- tolower(stringr::str_trim(as.character(freq %||% "")))
+    
+    # YYYYmM -> (y-1987)*12 + m
+    if (freq == "m" && stringr::str_detect(x, "^\\d{4}m\\d{1,2}$")) {
+      y <- suppressWarnings(as.integer(stringr::str_sub(x, 1, 4)))
+      m <- suppressWarnings(as.integer(stringr::str_sub(x, 6)))
+      if (is.finite(y) && is.finite(m)) return((y - 1987) * 12 + m)
+    }
+    
+    # YYYYqQ -> (y-1987)*4 + q
+    if (freq == "q" && stringr::str_detect(x, "^\\d{4}q\\d$")) {
+      y <- suppressWarnings(as.integer(stringr::str_sub(x, 1, 4)))
+      q <- suppressWarnings(as.integer(stringr::str_sub(x, 6)))
+      if (is.finite(y) && is.finite(q)) return((y - 1987) * 4 + q)
+    }
+    
+    NA_real_
+  }
+  
+  parse_time_fix_tokens <- function(x) {
+    # Accept: numeric vector, character vector, or single "a,b,c"
+    if (is.null(x) || length(x) == 0) return(character(0))
+    
+    if (is.character(x) && length(x) == 1L) {
+      x <- x |>
+        stringr::str_split(",") |>
+        purrr::pluck(1) |>
+        stringr::str_trim()
+    } else {
+      x <- as.character(x) |> stringr::str_trim()
+    }
+    
+    x <- x[!is.na(x) & x != ""]
+    unique(x)
+  }
+  
+  labels_from_parts <- function(parts, tf, freq) {
+    parts <- parts %||% list()
+    
+    labs <- parts$labels %||% NULL
+    if (!is.null(labs)) {
+      labs <- unlist(labs, use.names = FALSE)
+      labs <- as.character(labs) |> stringr::str_trim()
+      if (length(labs) == length(tf) && all(!is.na(labs)) && all(nzchar(labs))) {
+        return(labs)
+      }
+    }
+    
+    yrs <- parts$year %||% NULL
+    sub <- parts$sub  %||% NULL
+    yrs <- suppressWarnings(as.integer(unlist(yrs, use.names = FALSE)))
+    sub <- suppressWarnings(as.integer(unlist(sub, use.names = FALSE)))
+    
+    if (length(yrs) == length(tf) && all(is.finite(yrs))) {
+      if (identical(freq, "q") && length(sub) == length(tf) && all(is.finite(sub))) {
+        return(paste0(sprintf("%04d", yrs), "q", sub))
+      }
+      if (identical(freq, "m") && length(sub) == length(tf) && all(is.finite(sub))) {
+        return(paste0(sprintf("%04d", yrs), "m", sub))
+      }
+    }
+    
+    as.character(tf)
+  }
+  
+  clean_iso2_vec <- function(x, self_iso2c = NULL) {
+    x <- as.character(x %||% character(0)) |> stringr::str_trim()
+    x <- x[!is.na(x) & x != ""]
+    x <- unique(x)
+    if (!is.null(self_iso2c) && nzchar(self_iso2c)) x <- x[x != self_iso2c]
+    x
+  }
+  
+  # ---- logging ---------------------------------------------------------
+  if (isTRUE(verbose)) {
+    nm <- params$graph_name %||% NA_character_
+    if (!is.na(nm) && nzchar(nm)) message("Plot: ", nm)
+  }
+  
+  # ---- guards ----------------------------------------------------------
+  ext <- data$extdata %||% tibble::tibble()
+  if (!is.data.frame(ext) || nrow(ext) == 0) {
+    warn_active("extdata is empty; returning placeholder.")
+    p0 <- make_placeholder_plot(params, style, "No data (extdata is empty)")
+    return(list(graph = p0, data = tibble::tibble()))
+  }
+  
+  needed_base <- c("country_id")
+  miss_base <- setdiff(needed_base, names(ext))
+  if (length(miss_base) > 0) {
+    warn_active(paste0("extdata missing columns: ", paste(miss_base, collapse = ", ")))
+    p0 <- make_placeholder_plot(params, style, "No data (missing required columns)")
+    return(list(graph = p0, data = tibble::tibble()))
+  }
+  
+  indicators <- normalize_chr_vec(params$indicators)
+  if (length(indicators) == 0) {
+    warn_active("indicators is empty; returning placeholder.")
+    p0 <- make_placeholder_plot(params, style, "No indicators")
+    return(list(graph = p0, data = tibble::tibble()))
+  }
+  
+  # Single-indicator by design (distribution at each time)
+  if (length(indicators) > 1) {
+    warn_active(paste0(
+      "Multiple indicators provided (", length(indicators),
+      "); distributionTimeComparison uses only the first one: ", indicators[[1]]
+    ))
+    indicators <- indicators[[1]]
+  }
+  
+  if (!isTRUE(indicators %in% names(ext))) {
+    warn_active(paste0("extdata has no column for indicator: ", indicators))
+    p0 <- make_placeholder_plot(params, style, "No data (missing indicator column)")
+    return(list(graph = p0, data = tibble::tibble()))
+  }
+  
+  freq <- normalize_freq(params$data_frequency %||% NA_character_) %||% "y"
+  
+  # ---- data: barYearComparison-style for yearly ------------------------
+  if (identical(freq, "y")) {
+    miss_y <- setdiff(c("year"), names(ext))
+    if (length(miss_y) > 0) {
+      warn_active("Yearly mode requires extdata column 'year'.")
+      p0 <- make_placeholder_plot(params, style, "No 'year' column in extdata")
+      return(list(graph = p0, data = tibble::tibble()))
+    }
+    
+    years_fix <- normalize_int_vec(params$time_fix)
+    if (length(years_fix) == 0) {
+      warn_active("time_fix (years) is empty/invalid; returning placeholder.")
+      p0 <- make_placeholder_plot(params, style, "No years in time_fix")
+      return(list(graph = p0, data = tibble::tibble()))
+    }
+    
+    df_all <- tibble::as_tibble(ext) |>
+      dplyr::filter(.data$year %in% years_fix) |>
+      dplyr::select(dplyr::any_of(c("country_id", "country", "year")), dplyr::all_of(indicators)) |>
+      dplyr::mutate(
+        country_id = as.character(.data$country_id),
+        year = suppressWarnings(as.integer(.data$year)),
+        value_raw = suppressWarnings(as.numeric(.data[[indicators]]))
+      ) |>
+      dplyr::filter(is.finite(.data$year), is.finite(.data$value_raw)) |>
+      dplyr::mutate(
+        time_label = factor(.data$year, levels = years_fix, ordered = TRUE)
+      )
+    
+    if (nrow(df_all) == 0) {
+      warn_active("No numeric rows at requested years; returning placeholder.")
+      p0 <- make_placeholder_plot(params, style, "No numeric data at time_fix years")
+      return(list(graph = p0, data = tibble::tibble()))
+    }
+    
+    df_country <- df_all |>
+      dplyr::filter(.data$country_id == .env$country_iso2c) |>
+      dplyr::select(.data$time_label, country_value = .data$value_raw)
+    
+  } else {
+    
+    miss_t <- setdiff(c("time"), names(ext))
+    if (length(miss_t) > 0) {
+      warn_active("Non-yearly mode requires extdata column 'time'.")
+      p0 <- make_placeholder_plot(params, style, "No 'time' column in extdata")
+      return(list(graph = p0, data = tibble::tibble()))
+    }
+    
+    # params$time_fix is already internal time (timetony) after fillGraphPlan()
+    time_num <- suppressWarnings(as.numeric(params$time_fix))
+    time_num <- time_num[is.finite(time_num)]
+    
+    if (length(time_num) == 0) {
+      warn_active("time_fix is empty/invalid in non-yearly mode; returning placeholder.")
+      p0 <- make_placeholder_plot(params, style, "No time points in time_fix")
+      return(list(graph = p0, data = tibble::tibble()))
+    }
+    
+    parts <- params$time_fix_parts %||% list()
+    labs  <- labels_from_parts(parts, time_num, freq)
+    
+    time_tbl <- tibble::tibble(
+      time_num = time_num,
+      time_label_raw = labs
+    ) |>
+      dplyr::distinct(.data$time_num, .keep_all = TRUE) |>
+      dplyr::mutate(
+        time_label = factor(.data$time_label_raw, levels = .data$time_label_raw, ordered = TRUE)
+      )
+    
+    df_all <- tibble::as_tibble(ext) |>
+      dplyr::select(dplyr::any_of(c("country_id", "country", "time")), dplyr::all_of(indicators)) |>
+      dplyr::mutate(
+        country_id = as.character(.data$country_id),
+        time = suppressWarnings(as.numeric(.data$time)),
+        value_raw = suppressWarnings(as.numeric(.data[[indicators]]))
+      ) |>
+      dplyr::filter(is.finite(.data$time), is.finite(.data$value_raw)) |>
+      dplyr::inner_join(
+        time_tbl |> dplyr::select(.data$time_num, .data$time_label),
+        by = dplyr::join_by(time == time_num),
+        relationship = "many-to-one"
+      )
+    
+    if (nrow(df_all) == 0) {
+      warn_active("No numeric rows at requested time points; returning placeholder.")
+      p0 <- make_placeholder_plot(params, style, "No numeric data at time_fix points")
+      return(list(graph = p0, data = tibble::tibble()))
+    }
+    
+    df_country <- df_all |>
+      dplyr::filter(.data$country_id == .env$country_iso2c) |>
+      dplyr::select(.data$time_label, country_value = .data$value_raw)
+  }
+  
+  peers_vec <- clean_iso2_vec(peers_iso2c, self_iso2c = country_iso2c)
+  
+  df_peers <- if (length(peers_vec) > 0) {
+    df_all |>
+      dplyr::filter(.data$country_id %in% peers_vec) |>
+      dplyr::mutate(country_lbl = .data$country_id)
+  } else {
+    tibble::tibble()
+  }
+  
+  # ---- y-limits via policy ---------------------------------------------
+  y_rng <- range(df_all$value_raw, na.rm = TRUE)
+  if (!all(is.finite(y_rng)) || y_rng[[1]] >= y_rng[[2]]) {
+    warn_active("Bad y range from data; fallback to [0,1].")
+    y_rng <- c(0, 1)
+  }
+  
+  pol <- y_lim_policy(
+    kind = graph_type,
+    y_min = params$y_min %||% NA_real_,
+    y_max = params$y_max %||% NA_real_,
+    y_rng_data = y_rng
+  )
+  ylim_vec <- c(pol$y_min, pol$y_max)
+  if (!all(is.finite(ylim_vec)) || ylim_vec[[1]] >= ylim_vec[[2]]) ylim_vec <- y_rng
+  
+  # ---- styles -----------------------------------------------------------
+  palette <- style$palette %||% list()
+  
+  st_box  <- style_for(style, role = "others",  object = "area")
+  st_line <- style_for(style, role = "others",  object = "line")
+  st_mean <- style_for(style, role = "others",  object = "point")
+  st_ctry <- style_for(style, role = "country", object = "point")
+  
+  st_peer <- style_for(style, role = "peers", object = "point")
+  col_peer <- st_peer$color %||% (style$palette %||% list())$peers %||% (style$palette %||% list())$muted_text %||% "grey40"
+  
+  fill_box <- st_box$fill  %||% palette$others %||% palette$panel_bg %||% "grey90"
+  col_box  <- st_line$color %||% palette$grid_major %||% "grey70"
+  
+  col_mean <- st_mean$color %||% palette$axis %||% "grey30"
+  col_ctry <- st_ctry$color %||% palette$country %||% palette$accent %||% "grey10"
+  
+  # ---- plot -------------------------------------------------------------
+  p <- ggplot2::ggplot(df_all, ggplot2::aes(x = .data$time_label, y = .data$value_raw)) +
+    ggplot2::geom_boxplot(
+      width = 0.55,
+      outlier.alpha = 0.20,
+      outlier.size = 1.2,
+      fill = fill_box,
+      color = col_box,
+      linewidth = 0.35,
+      alpha = st_box$alpha %||% 0.65,
+      show.legend = FALSE,
+      na.rm = TRUE
+    ) +
+    ggplot2::stat_summary(
+      fun = mean,
+      geom = "point",
+      shape = 4,
+      size = (st_mean$base_pt_size %||% 2.0) * (st_mean$size_mult %||% 1.0),
+      stroke = 0.8,
+      color = col_mean,
+      show.legend = FALSE,
+      na.rm = TRUE
+    )
+  
+  if (nrow(df_country) > 0) {
+    df_country_lbl <- df_country |>
+      dplyr::mutate(country_lbl = .env$country_iso2c)
+    
+    p <- p +
+      ggplot2::geom_point(
+        data = df_country_lbl,
+        ggplot2::aes(x = .data$time_label, y = .data$country_value),
+        inherit.aes = FALSE,
+        shape = 21,
+        size = (st_ctry$base_pt_size %||% 2.0) * 1.35 * (st_ctry$size_mult %||% 1.0),
+        fill = col_ctry,
+        color = col_ctry,
+        alpha = st_ctry$alpha %||% 0.95,
+        stroke = 0.25,
+        show.legend = FALSE,
+        na.rm = TRUE
+      ) +
+      ggplot2::geom_text(
+        data = df_country_lbl,
+        ggplot2::aes(x = .data$time_label, y = .data$country_value, label = .data$country_lbl),
+        inherit.aes = FALSE,
+        nudge_x = 0.18,     # <- вправо (подбирается)
+        hjust = 0,          # <- якорь слева, текст уходит вправо
+        vjust = 0.5,
+        size = 3.2,
+        color = col_ctry,
+        show.legend = FALSE,
+        na.rm = TRUE
+      )
+  } else {
+    warn_active("Main country has no points at requested time_fix; plot will be shown without country markers.")
+  }
+  
+  if (nrow(df_peers) > 0) {
+    p <- p +
+      ggplot2::geom_point(
+        data = df_peers,
+        ggplot2::aes(x = .data$time_label, y = .data$value_raw),
+        inherit.aes = FALSE,
+        shape = 21,
+        size = (st_peer$base_pt_size %||% 2.0) * 1.10 * (st_peer$size_mult %||% 1.0),
+        fill = col_peer,
+        color = col_peer,
+        alpha = st_peer$alpha %||% 0.85,
+        stroke = 0.25,
+        show.legend = FALSE,
+        na.rm = TRUE
+      ) +
+      ggplot2::geom_text(
+        data = df_peers,
+        ggplot2::aes(x = .data$time_label, y = .data$value_raw, label = .data$country_lbl),
+        inherit.aes = FALSE,
+        nudge_x = 0.18,
+        hjust = 0,
+        vjust = 0.5,
+        size = 3.0,
+        color = col_peer,
+        show.legend = FALSE,
+        na.rm = TRUE
+      )
+  }
+  
+  # p <- p + ggplot2::scale_x_discrete(
+  #   expand = ggplot2::expansion(mult = c(0.10, 0.25))
+  # )
+  
+  # Never censor data with scale limits: viewport only
+  p <- apply_y_limits_viewport(
+    p = p,
+    ylim = ylim_vec,
+    do_sec = FALSE,
+    coeff = NA_real_
+  )
+  
+  # ---- finalize (no axis labels; keep x tick labels) --------------------
+  params2 <- params
+  # Keep x label empty; set y label to indicator label (or code as fallback)
+  params2$x_lab <- ""
+  # Prefer explicit y_lab if already prepared; else fallback to indicator name/code
+  params2$y_lab <- params$y_lab %||% indicators
+  
+  p <- p + ggplot2::labs(x = NULL)  # do NOT blank y here
+  params2$time_fix_label <- NA_character_
+  params2$time_fix_parts <- NULL
+  
+  p <- p + ggplot2::labs(x = NULL, y = params2$y_lab)
+  p <- finalize_plot_common(p, params2, style, legend = FALSE, plot_data = df_all)
+  
+  out <- list(graph = p, data = df_all)
+  
+  if (isTRUE(debug)) {
+    out$debug <- list(
+      meta = tibble::tibble(
+        n = nrow(df_all),
+        indicator = indicators,
+        freq = freq,
+        time_points = paste(levels(df_all$time_label), collapse = ", "),
+        n_country_points = nrow(df_country),
+        n_non_na = sum(is.finite(df_all$value_raw))
+      )
+    )
+  }
+  
+  out
 }
-
-# ggplot(Oxboys, aes(Occasion, height)) + 
-#   geom_boxplot() +
-# stat_summary(fun.y = "mean", geom = "point", shape = 23, size = 3, fill = "white")
 
 ###### Distribution indicator comparison (candle plot, fixed time period)
 
-# distributionIndicatorComparison <- function(datagraph_params, country_iso2c, peers_iso2c, verbose=T) {}
+distributionIndicatorComparison <- function(data,
+                                            graph_params,
+                                            country_iso2c,
+                                            peers_iso2c = NULL,
+                                            verbose = TRUE,
+                                            warn_invalid = TRUE,
+                                            debug = TRUE) {
+  assert_packages(c("dplyr", "tidyr", "ggplot2", "stringr", "rlang", "tibble", "purrr"))
+  
+  params <- graph_params %||% list(active = 1L)
+  style  <- resolve_plot_style(params$theme_name %||% "acra_light")
+  
+  graph_type <- params$graph_type %||% "distribution_indicator_comparison"
+  graph_type <- stringr::str_trim(as.character(graph_type))
+  if (!nzchar(graph_type)) graph_type <- "distribution_indicator_comparison"
+  
+  # ---- helpers ---------------------------------------------------------
+  is_true01 <- function(x) {
+    x <- suppressWarnings(as.integer(x))
+    isTRUE(!is.na(x) && x == 1L)
+  }
+  
+  warn_active <- function(msg) {
+    if (isTRUE(warn_invalid) && is_true01(params$active %||% 1L)) {
+      rlang::warn(paste0("distributionIndicatorComparison: ", msg))
+    }
+  }
+  
+  normalize_chr_vec <- function(x) {
+    x <- as.character(x %||% character(0)) |> stringr::str_trim()
+    x <- x[!is.na(x) & x != ""]
+    unique(x)
+  }
+  
+  normalize_int_vec <- function(x) {
+    if (is.null(x) || length(x) == 0) return(integer(0))
+    
+    if (is.character(x) && length(x) == 1L) {
+      x <- x |>
+        stringr::str_split(",") |>
+        purrr::pluck(1) |>
+        stringr::str_trim()
+    } else {
+      x <- as.character(x) |> stringr::str_trim()
+    }
+    
+    x <- suppressWarnings(as.integer(x))
+    x <- x[is.finite(x)]
+    sort(unique(x))
+  }
+  
+  is_blank_str <- function(x) {
+    x <- as.character(x %||% "")
+    x <- stringr::str_squish(x)
+    is.na(x) | x == ""
+  }
+  
+  clean_iso2_vec <- function(x, self_iso2c = NULL) {
+    x <- as.character(x %||% character(0)) |> stringr::str_trim()
+    x <- x[!is.na(x) & x != ""]
+    x <- unique(x)
+    if (!is.null(self_iso2c) && nzchar(self_iso2c)) x <- x[x != self_iso2c]
+    x
+  }
+  
+  # ---- logging ---------------------------------------------------------
+  if (isTRUE(verbose)) {
+    nm <- params$graph_name %||% NA_character_
+    if (!is.na(nm) && nzchar(nm)) message("Plot: ", nm)
+  }
+  
+  # ---- guards ----------------------------------------------------------
+  ext <- data$extdata %||% tibble::tibble()
+  if (!is.data.frame(ext) || nrow(ext) == 0) {
+    warn_active("extdata is empty; returning placeholder.")
+    p0 <- make_placeholder_plot(params, style, "No data (extdata is empty)")
+    return(list(graph = p0, data = tibble::tibble()))
+  }
+  
+  if (!("country_id" %in% names(ext))) {
+    warn_active("extdata missing column: country_id")
+    p0 <- make_placeholder_plot(params, style, "No data (missing country_id)")
+    return(list(graph = p0, data = tibble::tibble()))
+  }
+  
+  indicators <- normalize_chr_vec(params$indicators)
+  if (length(indicators) == 0) {
+    warn_active("indicators is empty; returning placeholder.")
+    p0 <- make_placeholder_plot(params, style, "No indicators")
+    return(list(graph = p0, data = tibble::tibble()))
+  }
+  
+  miss_ind <- setdiff(indicators, names(ext))
+  if (length(miss_ind) > 0) {
+    warn_active(paste0("extdata missing indicator columns: ", paste(miss_ind, collapse = ", ")))
+    p0 <- make_placeholder_plot(params, style, "No data (missing indicator columns)")
+    return(list(graph = p0, data = tibble::tibble()))
+  }
+  
+  freq <- normalize_freq(params$data_frequency %||% NA_character_) %||% "y"
+  
+  # ---- resolve a single time point ------------------------------------
+  if (identical(freq, "y")) {
+    if (!("year" %in% names(ext))) {
+      warn_active("Yearly mode requires extdata column 'year'.")
+      p0 <- make_placeholder_plot(params, style, "No 'year' column in extdata")
+      return(list(graph = p0, data = tibble::tibble()))
+    }
+    
+    years_fix <- normalize_int_vec(params$time_fix)
+    if (length(years_fix) == 0) {
+      warn_active("time_fix is empty/invalid (expected a single year).")
+      p0 <- make_placeholder_plot(params, style, "No year in time_fix")
+      return(list(graph = p0, data = tibble::tibble()))
+    }
+    if (length(years_fix) > 1) {
+      warn_active("Multiple years in time_fix; using the first one.")
+      years_fix <- years_fix[[1]]
+    }
+    time_label <- sprintf("%04d", as.integer(years_fix))
+    
+    df_base <- tibble::as_tibble(ext) |>
+      dplyr::filter(suppressWarnings(as.integer(.data$year)) == years_fix) |>
+      dplyr::select(dplyr::any_of(c("country_id", "country")), dplyr::all_of(indicators))
+  } else {
+    if (!("time" %in% names(ext))) {
+      warn_active("Non-yearly mode requires extdata column 'time'.")
+      p0 <- make_placeholder_plot(params, style, "No 'time' column in extdata")
+      return(list(graph = p0, data = tibble::tibble()))
+    }
+    
+    tfix <- suppressWarnings(as.numeric(params$time_fix))
+    tfix <- tfix[is.finite(tfix)]
+    if (length(tfix) == 0) {
+      warn_active("time_fix is empty/invalid in non-yearly mode (expected a single internal time code).")
+      p0 <- make_placeholder_plot(params, style, "No time in time_fix")
+      return(list(graph = p0, data = tibble::tibble()))
+    }
+    if (length(tfix) > 1) {
+      warn_active("Multiple time points in time_fix; using the first one.")
+      tfix <- tfix[[1]]
+    }
+    
+    tfp <- params$time_fix_parts %||% list()
+    time_label <- tfp$labels %||% NULL
+    if (!is.null(time_label)) time_label <- unlist(time_label, use.names = FALSE)
+    time_label <- as.character(time_label %||% "")
+    time_label <- stringr::str_trim(time_label[[1]] %||% "")
+    
+    if (!nzchar(time_label)) {
+      yy <- suppressWarnings(as.integer(unlist(tfp$year %||% NA_integer_, use.names = FALSE)[[1]]))
+      ss <- suppressWarnings(as.integer(unlist(tfp$sub  %||% NA_integer_, use.names = FALSE)[[1]]))
+      if (is.finite(yy) && is.finite(ss)) {
+        time_label <- if (identical(freq, "q")) paste0(sprintf("%04d", yy), "q", ss) else paste0(sprintf("%04d", yy), "m", ss)
+      } else {
+        time_label <- as.character(tfix)
+      }
+    }
+    
+    df_base <- tibble::as_tibble(ext) |>
+      dplyr::filter(suppressWarnings(as.numeric(.data$time)) == tfix) |>
+      dplyr::select(dplyr::any_of(c("country_id", "country")), dplyr::all_of(indicators))
+  }
+  
+  if (nrow(df_base) == 0) {
+    warn_active("No rows at requested time point; returning placeholder.")
+    p0 <- make_placeholder_plot(params, style, "No data at time_fix")
+    return(list(graph = p0, data = tibble::tibble()))
+  }
+  
+  # ---- indicator labels (dict schema is known: indicator_code + indicator) ----
+  dict <- data$dict %||% tibble::tibble()
+  
+  label_map <- tibble::tibble(indicator_code = indicators)
+  
+  if (is.data.frame(dict) && all(c("indicator_code", "indicator") %in% names(dict))) {
+    dict_small <- tibble::as_tibble(dict) |>
+      dplyr::transmute(
+        indicator_code = stringr::str_trim(as.character(.data$indicator_code)),
+        label = stringr::str_squish(as.character(.data$indicator))
+      ) |>
+      dplyr::filter(!is.na(.data$indicator_code), .data$indicator_code != "") |>
+      dplyr::distinct(.data$indicator_code, .keep_all = TRUE)
+    
+    label_map <- label_map |>
+      dplyr::left_join(dict_small, by = dplyr::join_by(indicator_code)) |>
+      dplyr::mutate(
+        label = dplyr::if_else(is_blank_str(.data$label), .data$indicator_code, .data$label)
+      )
+  } else {
+    label_map <- label_map |>
+      dplyr::mutate(label = .data$indicator_code)
+  }
+  
+  label_levels <- label_map$label
+  
+  # ---- long form: distributions by indicator ---------------------------
+  df_all <- df_base |>
+    dplyr::mutate(country_id = as.character(.data$country_id)) |>
+    tidyr::pivot_longer(
+      cols = dplyr::all_of(indicators),
+      names_to = "indicator_code",
+      values_to = "value_raw"
+    ) |>
+    dplyr::mutate(
+      value_raw = suppressWarnings(as.numeric(.data$value_raw)),
+      indicator_code = stringr::str_trim(as.character(.data$indicator_code))
+    ) |>
+    dplyr::left_join(label_map, by = dplyr::join_by(indicator_code)) |>
+    dplyr::mutate(
+      indicator_label = factor(.data$label, levels = label_levels, ordered = TRUE)
+    ) |>
+    dplyr::filter(is.finite(.data$value_raw))
+  
+  if (nrow(df_all) == 0) {
+    warn_active("No numeric values at requested time point; returning placeholder.")
+    p0 <- make_placeholder_plot(params, style, "No numeric data at time_fix")
+    return(list(graph = p0, data = tibble::tibble()))
+  }
+  
+  df_country <- df_all |>
+    dplyr::filter(.data$country_id == .env$country_iso2c) |>
+    dplyr::select(.data$indicator_label, country_value = .data$value_raw) |>
+    dplyr::mutate(country_lbl = .env$country_iso2c)
+  
+  peers_vec <- clean_iso2_vec(peers_iso2c, self_iso2c = country_iso2c)
+  
+  df_peers <- if (length(peers_vec) > 0) {
+    df_all |>
+      dplyr::filter(.data$country_id %in% peers_vec) |>
+      dplyr::mutate(country_lbl = .data$country_id)
+  } else {
+    tibble::tibble()
+  }
+  
+  # ---- y-limits via policy ---------------------------------------------
+  y_rng <- range(df_all$value_raw, na.rm = TRUE)
+  if (!all(is.finite(y_rng)) || y_rng[[1]] >= y_rng[[2]]) y_rng <- c(0, 1)
+  
+  pol <- y_lim_policy(
+    kind = graph_type,
+    y_min = params$y_min %||% NA_real_,
+    y_max = params$y_max %||% NA_real_,
+    y_rng_data = y_rng
+  )
+  ylim_vec <- c(pol$y_min, pol$y_max)
+  if (!all(is.finite(ylim_vec)) || ylim_vec[[1]] >= ylim_vec[[2]]) ylim_vec <- y_rng
+  
+  # ---- styles -----------------------------------------------------------
+  palette <- style$palette %||% list()
+  
+  st_box  <- style_for(style, role = "others",  object = "area")
+  st_line <- style_for(style, role = "others",  object = "line")
+  st_mean <- style_for(style, role = "others",  object = "point")
+  st_ctry <- style_for(style, role = "country", object = "point")
+  
+  st_peer <- style_for(style, role = "peers", object = "point")
+  col_peer <- st_peer$color %||% (style$palette %||% list())$peers %||% (style$palette %||% list())$muted_text %||% "grey40"
+  
+  fill_box <- st_box$fill  %||% palette$others %||% palette$panel_bg %||% "grey90"
+  col_box  <- st_line$color %||% palette$grid_major %||% "grey70"
+  
+  col_mean <- st_mean$color %||% palette$axis %||% "grey30"
+  col_ctry <- st_ctry$color %||% palette$country %||% palette$accent %||% "grey10"
+  
+  # ---- plot -------------------------------------------------------------
+  p <- ggplot2::ggplot(df_all, ggplot2::aes(x = .data$indicator_label, y = .data$value_raw)) +
+    ggplot2::geom_boxplot(
+      width = 0.55,
+      outlier.alpha = 0.20,
+      outlier.size = 1.2,
+      fill = fill_box,
+      color = col_box,
+      linewidth = 0.35,
+      alpha = st_box$alpha %||% 0.65,
+      show.legend = FALSE,
+      na.rm = TRUE
+    ) +
+    ggplot2::stat_summary(
+      fun = mean,
+      geom = "point",
+      shape = 4,
+      size = (st_mean$base_pt_size %||% 2.0) * (st_mean$size_mult %||% 1.0),
+      stroke = 0.8,
+      color = col_mean,
+      show.legend = FALSE,
+      na.rm = TRUE
+    )
+  
+  if (nrow(df_country) > 0) {
+    p <- p +
+      ggplot2::geom_point(
+        data = df_country,
+        ggplot2::aes(x = .data$indicator_label, y = .data$country_value),
+        inherit.aes = FALSE,
+        shape = 21,
+        size = (st_ctry$base_pt_size %||% 2.0) * 1.35 * (st_ctry$size_mult %||% 1.0),
+        fill = col_ctry,
+        color = col_ctry,
+        alpha = st_ctry$alpha %||% 0.95,
+        stroke = 0.25,
+        show.legend = FALSE,
+        na.rm = TRUE
+      ) +
+      ggplot2::geom_text(
+        data = df_country,
+        ggplot2::aes(x = .data$indicator_label, y = .data$country_value, label = .data$country_lbl),
+        inherit.aes = FALSE,
+        nudge_x = 0.18,
+        hjust = 0,
+        vjust = 0.5,
+        size = 3.2,
+        color = col_ctry,
+        show.legend = FALSE,
+        na.rm = TRUE
+      )
+  } else {
+    warn_active("Main country has no points at requested time_fix; plot will be shown without country markers.")
+  }
+  
+  if (nrow(df_peers) > 0) {
+    p <- p +
+      ggplot2::geom_point(
+        data = df_peers,
+        ggplot2::aes(x = .data$indicator_label, y = .data$value_raw),
+        inherit.aes = FALSE,
+        shape = 21,
+        size = (st_peer$base_pt_size %||% 2.0) * 1.10 * (st_peer$size_mult %||% 1.0),
+        fill = col_peer,
+        color = col_peer,
+        alpha = st_peer$alpha %||% 0.85,
+        stroke = 0.25,
+        show.legend = FALSE,
+        na.rm = TRUE
+      ) +
+      ggplot2::geom_text(
+        data = df_peers,
+        ggplot2::aes(x = .data$indicator_label, y = .data$value_raw, label = .data$country_lbl),
+        inherit.aes = FALSE,
+        nudge_x = 0.18,
+        hjust = 0,
+        vjust = 0.5,
+        size = 3.0,
+        color = col_peer,
+        show.legend = FALSE,
+        na.rm = TRUE
+      )
+  }
+  
+  plot_w <- suppressWarnings(as.numeric(params$width %||% 8))
+  if (!is.finite(plot_w) || plot_w <= 0) plot_w <- 8
+  if (plot_w > 60) plot_w <- plot_w / 96
+  plot_w <- max(4, min(14, plot_w))
+  
+  n_ind <- length(label_levels)
+  wrap_width <- max(8, floor((plot_w * 8) / max(1, n_ind)))  # грубая, но детерминированная эвристика
+  
+  p <- p +
+    ggplot2::scale_x_discrete(
+      expand = ggplot2::expansion(add = c(0.7, 0.7)),
+      labels = function(x) stringr::str_wrap(as.character(x), width = wrap_width)
+    ) +
+    ggplot2::coord_cartesian(clip = "off")
+  
+  # Viewport-only y limits
+  p <- apply_y_limits_viewport(
+    p = p,
+    ylim = ylim_vec,
+    do_sec = FALSE,
+    coeff = NA_real_
+  )
+  
+  # ---- finalize ---------------------------------------------------------
+  params2 <- params
+  params2$x_lab <- ""
+  params2$y_lab <- ""  # no y-axis title for this chart
+  
+  # keep time label for caption/title logic if needed
+  params2$time_fix_label <- params$time_fix_label %||% time_label
+  
+  # do not let global x-axis policy override our discrete x scale
+  params2$x_axis_kind <- NA_character_
+  
+  p <- p + ggplot2::labs(x = NULL, y = NULL)
+  
+  p <- finalize_plot_common(p, params2, style, legend = FALSE, plot_data = df_all)
+  
+  out <- list(graph = p, data = df_all)
+  
+  if (isTRUE(debug)) {
+    out$debug <- list(
+      meta = tibble::tibble(
+        n = nrow(df_all),
+        time_label = time_label,
+        freq = freq,
+        n_indicators = length(indicators),
+        indicators = paste(indicators, collapse = ", "),
+        n_country_points = nrow(df_country),
+        n_non_na = sum(is.finite(df_all$value_raw))
+      )
+    )
+  }
+  
+  out
+}

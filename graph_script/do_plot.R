@@ -24,7 +24,7 @@ source(here("graph_script","plot_types.R"))
 source(here("graph_script","plot_themes.R"))
 
 ##### Parameters and source names
-country_code3 <- "RUS"
+country_code3 <- "BRA"
 country_code2 <- countrycode::countrycode(country_code3, "iso3c", "iso2c", warn = FALSE)
 file_output <- "jpeg"
 horizontal_size <- c(1800, 900)
@@ -39,7 +39,7 @@ graph_types <- c("scatter_dynamic", "scatter_country_comparison", "scatter_befor
                  "bar_dynamic", "bar_country_comparison", "bar_country_comparison_norm", "bar_year_comparison", 
                  "structure_dynamic", "structure_country_comparison", "structure_country_comparison_norm",
                  "lines_indicator_comparison", "lines_country_comparison", 
-                 "density_fix", "distribution_dynamic", "distribution_year_comparison", "distribution_indicator_comparison",
+                 "density_fix", "distribution_dynamic", "distribution_time_comparison", "distribution_indicator_comparison",
                  "triangle")
 trend_types <- c("lm" ,"loess")
 orient_types <- c("horizontal", "vertical")
@@ -57,8 +57,8 @@ plotparam_fname <- here("assets", country_name, "Auto_report", "2_graphlib.xlsx"
 country_info <- getPeersCodes(country_iso3c = country_code3, peers_fname = peers_fname)
 
 ##### Importing plotting schedule and generating sources
-# source(here("graph_script","prepare_elements.R"))
-# source(here("graph_script","plot_types.R"))
+source(here("graph_script","prepare_elements.R"))
+source(here("graph_script","plot_types.R"))
 graphplan <- getPlotSchedule(plotparam_fname = plotparam_fname, dict = D$dict)
 
 ##### Check integrity of the plans

@@ -107,7 +107,6 @@ make_style_acra_light <- function() {
       margin_t = 8
     ),
     point_label = list(
-      size_mm = 10,        # base, later multiplied by compute_plot_scaling()
       face    = "plain",
       color_country = palette$country,
       color_peers   = palette$peers,
@@ -139,7 +138,8 @@ make_style_acra_light <- function() {
       direction = "horizontal",
       justification = "left",
       box = "horizontal",
-      title_blank = TRUE
+      title_blank = TRUE,
+      max_items_per_row = 4
     )
   )
   
@@ -187,7 +187,8 @@ make_style_acra_light <- function() {
     line   = list(size = 1.00, alpha = 1.00, linewidth = 1.00, linetype = "solid"),
     ribbon = list(size = 1.00, alpha = 0.30, linewidth = 1.00, linetype = "solid"),
     bar    = list(size = 1.00, alpha = 0.85, linewidth = 1.00, linetype = "solid"),
-    text   = list(size = 1.00, alpha = 1.00, linewidth = 1.00, linetype = "solid")
+    text   = list(size = 1.00, alpha = 1.00, linewidth = 1.00, linetype = "solid"),
+    point_label = list(size = 1.25, alpha = 1.00, linewidth = 1.00, linetype = "solid")
   )
   
   # --------------------------------------------------------------------

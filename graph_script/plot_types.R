@@ -456,6 +456,10 @@ finalize_plot_common <- function(p, params, style, legend = TRUE, plot_data = NU
     country_iso2c = params$country_iso2c %||% NULL
   )
   
+  if (isTRUE(legend)) {
+    p <- apply_legend_label_wrap_policy(p, params, style)
+  }
+  
   p
 }
 

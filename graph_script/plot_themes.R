@@ -139,7 +139,8 @@ make_style_acra_light <- function() {
       justification = "left",
       box = "horizontal",
       title_blank = TRUE,
-      max_items_per_row = 4
+      max_items_per_row = 4,
+      wrap_labels_width = 30
     )
   )
   
@@ -246,6 +247,224 @@ make_style_acra_light <- function() {
   )
 }
 
+make_style_acra_dark <- function() {
+  assert_packages(c("ggplot2", "rlang"))
+  
+  # --------------------------------------------------------------------
+  # Palette: extracted from provided ACRA dark charts (approximate)
+  # --------------------------------------------------------------------
+  palette <- list(
+    # canvas / infrastructure
+    bg         = "#333F4B",
+    panel_bg   = "#333F4B",
+    text       = "#E5EBED",
+    muted_text = "#B7C0C7",
+    axis       = "#AEB8BF",
+    grid_major = "#4A5661",
+    grid_minor = "#3E4A55",
+    
+    # roles (choose bright, contrast-safe colors for dark background)
+    # NOTE: These are semantic defaults; plot types may still map additional series.
+    country = "#36A7C4",  # cyan
+    peers   = "#9AC35B",  # green
+    others  = "#8A9EA7",  # muted grey-blue
+    accent  = "#4171A9",  # blue
+    
+    # reference lines / signals
+    zero_line   = "#AEB8BF",
+    target_line = "#4171A9",
+    warn        = unname(ACRA["red"]) # keep brand red for warnings
+  )
+  
+  # For multi-series palettes (e.g., time bins), reuse ACRA palette (brand-consistent),
+  # but it will sit on dark background, so it’s fine.
+  palettes <- list(
+    time_bins = unname(ACRA[c(
+      "sec1", "sec2", "sec3", "sec4", "sec5", "sec6", "sec7", "sec8",
+      "add1", "add2", "add3", "add4", "add5", "reddest", "orange", "brown",
+      "green", "dark"
+    )])
+  )
+  
+  # --------------------------------------------------------------------
+  # Typography: centralized control (finalize_plot_common uses these)
+  # --------------------------------------------------------------------
+  typography <- list(
+    base_family = "Nunito Sans",
+    base_size   = 11,
+    
+    title = list(
+      size = 14,
+      face = "bold",
+      lineheight = 1.05,
+      color = palette$text,
+      margin_b = 8
+    ),
+    subtitle = list(
+      size = 11,
+      face = "plain",
+      lineheight = 1.05,
+      color = palette$muted_text,
+      margin_b = 6
+    ),
+    axis_title = list(
+      size = 10,
+      face = "plain",
+      color = palette$text,
+      margin_t = 8,
+      margin_r = 8
+    ),
+    axis_text = list(
+      size = 9,
+      face = "plain",
+      color = palette$muted_text
+    ),
+    caption = list(
+      size = 9,
+      face = "plain",
+      lineheight = 1.10,
+      color = palette$muted_text,
+      margin_t = 8
+    ),
+    point_label = list(
+      size_mm = 10,
+      face    = "plain",
+      color_country = palette$country,
+      color_peers   = palette$peers,
+      alpha   = 1.0
+    ),
+    legend_text = list(
+      size = 9,
+      color = palette$text
+    )
+  )
+  
+  # --------------------------------------------------------------------
+  # Grid / axes policy
+  # --------------------------------------------------------------------
+  grid <- list(
+    major = list(show = TRUE,  color = palette$grid_major, linewidth = 0.30),
+    minor = list(show = FALSE, color = palette$grid_minor, linewidth = 0.20),
+    axis_line  = list(show = TRUE,  color = palette$axis, linewidth = 0.35),
+    axis_ticks = list(show = TRUE,  color = palette$axis, linewidth = 0.25)
+  )
+  
+  # --------------------------------------------------------------------
+  # Layout
+  # --------------------------------------------------------------------
+  layout <- list(
+    plot_margin = ggplot2::margin(t = 10, r = 10, b = 10, l = 10),
+    legend = list(
+      position = "bottom",
+      direction = "horizontal",
+      justification = "left",
+      box = "horizontal",
+      title_blank = TRUE
+    )
+  )
+  
+  # --------------------------------------------------------------------
+  # Annotations
+  # --------------------------------------------------------------------
+  annotations <- list(
+    time_tag = list(
+      show = TRUE,
+      position = "tr",
+      text_color = palette$axis,
+      size = 3.2,
+      hjust = 1.05,
+      vjust = 1.25
+    ),
+    trend = list(
+      ci_show = TRUE,
+      ci_alpha = 0.25,
+      ci_fill  = palette$grid_major,
+      line_color = palette$axis,
+      linewidth  = 0.60
+    ),
+    zero_line = list(
+      show = TRUE,
+      color = palette$zero_line,
+      linewidth = 0.30,
+      alpha = 0.60
+    )
+  )
+  
+  # --------------------------------------------------------------------
+  # Roles
+  # --------------------------------------------------------------------
+  roles <- list(
+    country = list(weight = 1.30, alpha = 1.00, label_show = TRUE,  z = 3),
+    peers   = list(weight = 1.10, alpha = 0.92, label_show = TRUE,  z = 2),
+    others  = list(weight = 0.80, alpha = 0.25, label_show = FALSE, z = 1)
+  )
+  
+  # --------------------------------------------------------------------
+  # Objects
+  # --------------------------------------------------------------------
+  objects <- list(
+    point  = list(size = 1.00, alpha = 1.00, linewidth = 1.00, linetype = "solid", shape = 16, stroke = 0),
+    line   = list(size = 1.00, alpha = 1.00, linewidth = 1.00, linetype = "solid"),
+    ribbon = list(size = 1.00, alpha = 0.30, linewidth = 1.00, linetype = "solid"),
+    bar    = list(size = 1.00, alpha = 0.85, linewidth = 1.00, linetype = "solid"),
+    text   = list(size = 1.00, alpha = 1.00, linewidth = 1.00, linetype = "solid")
+  )
+  
+  # --------------------------------------------------------------------
+  # Units
+  # --------------------------------------------------------------------
+  units <- list(
+    base_pt_size   = 2.0,
+    base_lab_mm    = 3.2,
+    base_linewidth = 0.6
+  )
+  
+  # --------------------------------------------------------------------
+  # gg_theme: minimal; finalize_plot_common remains the single authority
+  # --------------------------------------------------------------------
+  gg_theme <- ggplot2::theme_minimal(
+    base_size   = typography$base_size,
+    base_family = typography$base_family
+  ) +
+    ggplot2::theme(
+      plot.title.position   = "plot",
+      plot.caption.position = "plot",
+      
+      plot.background  = ggplot2::element_rect(fill = palette$bg, color = NA),
+      panel.background = ggplot2::element_rect(fill = palette$panel_bg, color = NA),
+      
+      text = ggplot2::element_text(color = palette$text),
+      
+      panel.grid.major = if (isTRUE(grid$major$show)) {
+        ggplot2::element_line(color = grid$major$color, linewidth = grid$major$linewidth)
+      } else ggplot2::element_blank(),
+      
+      panel.grid.minor = if (isTRUE(grid$minor$show)) {
+        ggplot2::element_line(color = grid$minor$color, linewidth = grid$minor$linewidth)
+      } else ggplot2::element_blank(),
+      
+      axis.line  = if (isTRUE(grid$axis_line$show))  ggplot2::element_line(color = grid$axis_line$color,  linewidth = grid$axis_line$linewidth) else ggplot2::element_blank(),
+      axis.ticks = if (isTRUE(grid$axis_ticks$show)) ggplot2::element_line(color = grid$axis_ticks$color, linewidth = grid$axis_ticks$linewidth) else ggplot2::element_blank(),
+      
+      legend.position = layout$legend$position
+    )
+  
+  list(
+    name = "acra_dark",
+    gg_theme = gg_theme,
+    
+    palette = palette,
+    palettes = palettes,
+    typography = typography,
+    grid = grid,
+    layout = layout,
+    annotations = annotations,
+    
+    roles = roles,
+    objects = objects,
+    units = units
+  )
+}
 
 make_style_bw <- function() {
   assert_packages(c("ggplot2"))
@@ -311,8 +530,8 @@ resolve_plot_style <- function(theme_name) {
   switch(
     nm,
     "acra_light" = make_style_acra_light(),
-    "bw"         = make_style_bw(),
-    # you can add: acra_dark / minimal / ipsum later
+    "acra_dark"  = make_style_acra_dark(),
+    "black_white"         = make_style_bw(),
     make_style_acra_light()
   )
 }

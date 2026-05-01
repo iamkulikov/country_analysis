@@ -2459,6 +2459,65 @@ apply_legend_wrap_policy <- function(p, params, style) {
 }
 
 
+apply_legend_label_wrap_policy <- function(p, params, style) {
+  assert_packages(c("ggplot2", "stringr"))
+  
+  params <- params %||% list()
+  style  <- style  %||% list()
+  
+  leg <- style$layout$legend %||% list()
+  if (!identical(leg$position %||% "bottom", "bottom")) return(p)
+  if (!identical(leg$direction %||% "horizontal", "horizontal")) return(p)
+  
+  # Default wrap width in characters; make it adaptive to plot width
+  wrap_width <- suppressWarnings(as.integer(leg$wrap_labels_width %||% 18L))
+  if (!is.finite(wrap_width) || wrap_width < 8) wrap_width <- 18L
+  
+  w <- suppressWarnings(as.numeric(params$width %||% NA_real_))
+  if (is.finite(w)) {
+    if (w <= 6) wrap_width <- min(wrap_width, 14L)
+    if (w <= 4) wrap_width <- min(wrap_width, 12L)
+  }
+  
+  legend_aes <- c("colour", "color", "fill", "shape", "linetype", "alpha", "size")
+  scales <- p$scales$scales %||% list()
+  
+  for (i in seq_along(scales)) {
+    sc <- scales[[i]]
+    if (!inherits(sc, "ScaleDiscrete")) next
+    if (!any((sc$aesthetics %||% character(0)) %in% legend_aes)) next
+    
+    # Extract current labels (could be NULL/waiver)
+    labs <- sc$labels
+    
+    # If labels are a function, we can wrap by composing it
+    if (is.function(labs)) {
+      f_old <- labs
+      sc$labels <- function(x) stringr::str_wrap(f_old(x), width = wrap_width)
+      scales[[i]] <- sc
+      next
+    }
+    
+    # If labels are NULL/waiver, use the breaks as-is (limits) then wrap
+    if (is.null(labs) || inherits(labs, "waiver")) {
+      sc$labels <- function(x) stringr::str_wrap(as.character(x), width = wrap_width)
+      scales[[i]] <- sc
+      next
+    }
+    
+    # If labels are a named vector (manual mapping), wrap the values
+    if (is.atomic(labs)) {
+      sc$labels <- stringr::str_wrap(as.character(labs), width = wrap_width)
+      scales[[i]] <- sc
+      next
+    }
+  }
+  
+  p$scales$scales <- scales
+  p
+}
+
+
 # ------------------------------------------------------------------------------
 # Improved fillGraphPlan()
 # ------------------------------------------------------------------------------

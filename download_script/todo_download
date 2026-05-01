@@ -20,7 +20,7 @@ Download_data:
 в tryImport разобраться с размером пакета при импорте из WDI и убрать костыль для снижения размера импорта
 
 Данные:
-проверить при обновлении пропущенное
+почему данные GFS до 2021 года шляпные? (дефициты огромные) это ВВП или компоненты?
 рабочие дни где-то взять
 разложение ВВП по секторам (и расходам тоже?): unstats.un.org/unsd/snaama/Downloads
 жесткость госрасходов и доля жестких госрасходов отсюда: https://www.imf.org/en/Publications/FM/Issues/2025/10/07/fiscal-monitor-october-2025
@@ -45,6 +45,7 @@ https://ourworldindata.org/explorers/incomes-across-distribution-lis?country=RUS
 Проверить, как получилось заполнение Еврозоны в месячных/дневных policy rate и курсах
 Добавить NIIP и структуру внешних активов/пассивов: https://www.brookings.edu/articles/the-external-wealth-of-nations-database/
 Убедиться, что нужно грузить из BIS только broad индекс NEER, что narrow не увеличивает покрытие
+где Швейцарский NEER?
 Валютная структура резервов: https://web.pdx.edu/~ito/IM_dataset.htm
 И еще одна: https://cepr.org/voxeu/columns/currency-denomination-foreign-exchange-reserves-taboo-past-towards-disclosure-and
 Из BIS что-то банковское
@@ -53,6 +54,7 @@ C Global Data Lab что-то выборочное?
 Penn World Tables 2025
 Ставки корпоративных налогов: https://github.com/TaxFoundation/worldwide-corporate-tax-rates
 Руками проставить модификаторы для выборки интересных стран
+Сделать утилиту для скачивания винтажей WEO - с октября 2025 поменялся формат
 
 Не забыть:
 все показатели с XDC выгружать еще и USD и EUR и склеить, потому что кажется, что это reporting currency именно и они ее в базе сами не ковертят

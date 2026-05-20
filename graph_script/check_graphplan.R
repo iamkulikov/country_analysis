@@ -114,7 +114,7 @@ checkGraphTypes <- function(graphplan, graph_types, warn_unknown = TRUE) {
     rlang::warn("checkGraphTypes: graphplan has no column 'graph_type'. Active rows will be marked invalid.")
     
     out <- gp |>
-      dplyr::mutate(check_types = dplyr::if_else(.data$active_flag, 0L, 1L)) |>
+      dplyr::mutate(check_types = 0L) |>
       dplyr::select(-dplyr::any_of(c(".row_id", "active_flag")))
     
     return(out)
@@ -130,7 +130,6 @@ checkGraphTypes <- function(graphplan, graph_types, warn_unknown = TRUE) {
         TRUE ~ FALSE
       ),
       check_types = dplyr::case_when(
-        !.data$active_flag ~ 1L,
         .data$ok_type ~ 1L,
         TRUE ~ 0L
       )
@@ -197,7 +196,7 @@ checkFreq <- function(graphplan, warn_unknown = TRUE) {
     rlang::warn("checkFreq: graphplan has no column 'data_frequency'. Active rows will be marked invalid.")
     
     out <- gp |>
-      dplyr::mutate(check_freq = dplyr::if_else(.data$active_flag, 0L, 1L)) |>
+      dplyr::mutate(check_freq = 0L) |>
       dplyr::select(-dplyr::any_of(c(".row_id", "active_flag")))
     
     return(out)
@@ -214,7 +213,6 @@ checkFreq <- function(graphplan, warn_unknown = TRUE) {
       ok_freq = !is.na(.data$freq_norm) & (.data$freq_norm %in% allowed),
       
       check_freq = dplyr::case_when(
-        !.data$active_flag ~ 1L,
         .data$ok_freq ~ 1L,
         TRUE ~ 0L
       )
@@ -268,7 +266,7 @@ checkUnique <- function(graphplan, active_only = FALSE, warn_invalid = TRUE) {
   if (!("graph_name" %in% names(gp))) {
     rlang::warn("checkUnique: graphplan has no column 'graph_name'. Active rows will be marked invalid.")
     out <- gp |>
-      dplyr::mutate(check_unique = dplyr::if_else(.data$active_flag, 0L, 1L)) |>
+      dplyr::mutate(check_unique = 0L) |>
       dplyr::select(-dplyr::any_of(c(".row_id", "active_flag")))
     return(out)
   }
@@ -296,7 +294,6 @@ checkUnique <- function(graphplan, active_only = FALSE, warn_invalid = TRUE) {
       ok_name_present = !is.na(.data$graph_name_norm),
       ok_unique = dplyr::coalesce(.data$n, 0L) == 1L,
       check_unique = dplyr::case_when(
-        !.data$active_flag ~ 1L,
         !.data$ok_name_present ~ 0L,
         .data$ok_unique ~ 1L,
         TRUE ~ 0L
@@ -481,13 +478,8 @@ checkAvailability <- function(graphplan, dict, warn_unavailable = TRUE) {
     out$missing <- replicate(nrow(out), character(0), simplify = FALSE)
   }
 
-  # Rows with no parsed indicators: active -> fail (0), inactive -> pass (1)
-  out$check_availability <- dplyr::if_else(
-    !out$active_flag,
-    1L,
-    dplyr::coalesce(out$check_availability, 0L)
-  )
-  
+  out$check_availability <- dplyr::coalesce(out$check_availability, 0L)
+
   # ---- Optional warnings (active only) ---------------------------------
   if (isTRUE(warn_unavailable)) {
     warn_tbl <- out |>
@@ -538,11 +530,7 @@ checkPeers <- function(graphplan, peer_groups, dict, warn_invalid = TRUE) {
   if (!("peers" %in% names(graphplan))) {
     rlang::warn("checkPeers: graphplan has no column 'peers'. Setting check_peers = 0 for active rows.")
     out <- tibble::as_tibble(graphplan) |>
-      dplyr::mutate(
-        active_flag = active_flag_vec(graphplan),
-        check_peers = dplyr::if_else(.data$active_flag, 0L, 1L)
-      ) |>
-      dplyr::select(-dplyr::any_of("active_flag"))
+      dplyr::mutate(check_peers = 0L)
     return(out)
   }
   
@@ -745,7 +733,6 @@ checkPeers <- function(graphplan, peer_groups, dict, warn_invalid = TRUE) {
       ok_unknown = dplyr::coalesce(.data$ok_unknown, TRUE), # TRUE if not in unknown_type table
       
       check_peers = dplyr::case_when(
-        !.data$active_flag ~ 1L,
         .data$ok_simple ~ 1L,
         (.data$has_colon & .data$type == "custom" & .data$ok_custom) ~ 1L,
         (.data$has_colon & .data$type %in% c("similar", "top", "low") & .data$ok_comp) ~ 1L,
@@ -755,7 +742,6 @@ checkPeers <- function(graphplan, peer_groups, dict, warn_invalid = TRUE) {
       ),
       
       reason = dplyr::case_when(
-        !.data$active_flag ~ NA_character_,
         .data$check_peers == 1L ~ NA_character_,
         .data$has_colon & !.data$ok_unknown ~ "unknown_type",
         .data$has_colon & .data$type == "custom" ~ dplyr::coalesce(.data$reason_custom, "custom_invalid"),
@@ -1211,7 +1197,7 @@ checkNumericParams <- function(graphplan, warn_invalid = TRUE) {
     ))
     
     out <- gp |>
-      dplyr::mutate(check_num = dplyr::if_else(.data$active_flag, 0L, 1L)) |>
+      dplyr::mutate(check_num = 0L) |>
       dplyr::select(-dplyr::any_of(c(".row_id", "active_flag")))
     
     return(out)
@@ -1231,7 +1217,6 @@ checkNumericParams <- function(graphplan, warn_invalid = TRUE) {
       ok_y_min = is_numeric_or_empty_vec(.data$y_min),
       ok_y_max = is_numeric_or_empty_vec(.data$y_max),
       check_num = dplyr::case_when(
-        !.data$active_flag ~ 1L,
         .data$ok_y_min & .data$ok_y_max ~ 1L,
         TRUE ~ 0L
       )
@@ -1326,7 +1311,7 @@ checkTrend <- function(graphplan, trend_types, warn_invalid = TRUE) {
     rlang::warn("checkTrend: graphplan has no column 'trend_type'. Active rows will be marked invalid.")
     
     out <- gp |>
-      dplyr::mutate(check_trend = dplyr::if_else(.data$active_flag, 0L, 1L)) |>
+      dplyr::mutate(check_trend = 0L) |>
       dplyr::select(-dplyr::any_of(c(".row_id", "active_flag")))
     
     return(out)
@@ -1342,7 +1327,6 @@ checkTrend <- function(graphplan, trend_types, warn_invalid = TRUE) {
         TRUE ~ .data$trend_type_norm %in% allowed
       ),
       check_trend = dplyr::case_when(
-        !.data$active_flag ~ 1L,
         .data$ok_trend ~ 1L,
         TRUE ~ 0L
       )
@@ -1420,7 +1404,7 @@ checkTheme <- function(graphplan, theme_types, warn_invalid = TRUE) {
     rlang::warn("checkTheme: graphplan has no column 'theme'. Active rows will be marked invalid.")
     
     out <- gp |>
-      dplyr::mutate(check_theme = dplyr::if_else(.data$active_flag, 0L, 1L)) |>
+      dplyr::mutate(check_theme = 0L) |>
       dplyr::select(-dplyr::any_of(c(".row_id", "active_flag")))
     
     return(out)
@@ -1436,7 +1420,6 @@ checkTheme <- function(graphplan, theme_types, warn_invalid = TRUE) {
         TRUE ~ .data$theme_norm %in% allowed
       ),
       check_theme = dplyr::case_when(
-        !.data$active_flag ~ 1L,
         .data$ok_theme ~ 1L,
         TRUE ~ 0L
       )
@@ -1515,7 +1498,7 @@ checkOrientation <- function(graphplan, orient_types, warn_invalid = TRUE) {
     rlang::warn("checkOrientation: graphplan has no column 'orientation'. Active rows will be marked invalid.")
     
     out <- gp |>
-      dplyr::mutate(check_orient = dplyr::if_else(.data$active_flag, 0L, 1L)) |>
+      dplyr::mutate(check_orient = 0L) |>
       dplyr::select(-dplyr::any_of(c(".row_id", "active_flag")))
     
     return(out)
@@ -1531,7 +1514,6 @@ checkOrientation <- function(graphplan, orient_types, warn_invalid = TRUE) {
         TRUE ~ .data$orient_norm %in% allowed
       ),
       check_orient = dplyr::case_when(
-        !.data$active_flag ~ 1L,
         .data$ok_orient ~ 1L,
         TRUE ~ 0L
       )

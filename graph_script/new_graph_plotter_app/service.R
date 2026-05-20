@@ -16,6 +16,364 @@ plotter_profile_enabled <- function() {
     identical(Sys.getenv("PLOTTER_PROFILE", ""), "1")
 }
 
+plotter_profile_all_buildable_enabled <- function() {
+  isTRUE(getOption("plotter.profile_all_buildable", FALSE)) ||
+    identical(Sys.getenv("PLOTTER_PROFILE_ALL_BUILDABLE", ""), "1")
+}
+
+#' Defer `rv$built` updates during incremental gallery build (phase 11.1).
+#' Default ON; set `GALLERY_DEFER_UI=0` or `options(gallery.defer_ui = FALSE)` to compare.
+gallery_defer_ui_enabled <- function() {
+  env <- Sys.getenv("GALLERY_DEFER_UI", "")
+  if (identical(env, "0")) return(FALSE)
+  if (identical(env, "1")) return(TRUE)
+  opt <- getOption("gallery.defer_ui", NA)
+  if (isTRUE(opt)) return(TRUE)
+  if (isFALSE(opt)) return(FALSE)
+  TRUE
+}
+
+plot_export_dpi <- 150L
+gallery_thumb_height_px <- 260L
+# Upper bound for editor preview (main panel col-8). R scales PNG for renderImage.
+# Visible height is min(editor_preview_max_height_px, calc(100vh - editor_preview_vh_chrome_rem)).
+editor_preview_max_width_px <- 640L
+editor_preview_max_height_px <- 450L
+editor_preview_vh_chrome_rem <- 14
+
+fit_image_display_dims <- function(graph_params, max_width_px, max_height_px) {
+  w <- as.numeric(graph_params$width %||% 1800)
+  h <- as.numeric(graph_params$height %||% 900)
+  if (!is.finite(w) || !is.finite(h) || w <= 0 || h <= 0) {
+    return(list(
+      width = as.integer(max_width_px),
+      height = as.integer(max_height_px)
+    ))
+  }
+  scale <- min(max_width_px / w, max_height_px / h)
+  list(
+    width = max(1L, round(w * scale)),
+    height = max(1L, round(h * scale))
+  )
+}
+
+gallery_thumb_dims <- function(graph_params, height_px = gallery_thumb_height_px) {
+  if (is.null(graph_params)) {
+    return(list(width = 600L, height = as.integer(height_px)))
+  }
+  w <- graph_params$width %||% 1800
+  h <- graph_params$height %||% 900
+  fit_image_display_dims(
+    list(width = w, height = h),
+    max_width_px = max(1L, round(height_px * w / h)),
+    max_height_px = as.integer(height_px)
+  )
+}
+
+editor_preview_display_dims <- function(graph_params) {
+  w <- as.numeric(graph_params$width %||% 1800)
+  h <- as.numeric(graph_params$height %||% 900)
+  max_h <- editor_preview_max_height_px
+  max_w <- editor_preview_max_width_px
+  # Landscape: width cap 640 would limit height to ~320 at 2:1; widen so height can use max_h.
+  if (is.finite(w) && is.finite(h) && h > 0 && w > h) {
+    max_w <- max(max_w, round(max_h * w / h))
+  }
+  fit_image_display_dims(
+    list(width = w, height = h),
+    max_width_px = max_w,
+    max_height_px = max_h
+  )
+}
+
+gallery_session_thumb_dir <- function(session) {
+  base <- file.path(tempdir(), "plotter_gallery_thumbs")
+  dir.create(base, recursive = TRUE, showWarnings = FALSE)
+  token <- session$token %||% paste0("pid_", Sys.getpid())
+  file.path(base, token)
+}
+
+gallery_thumb_path_for <- function(cache_dir, graph_name) {
+  safe <- gsub("[^A-Za-z0-9._-]", "_", graph_name %||% "graph")
+  file.path(cache_dir, paste0(safe, ".png"))
+}
+
+write_export_image <- function(plot,
+                               graph_params,
+                               dest_path,
+                               device = c("png", "jpeg"),
+                               dpi = plot_export_dpi) {
+  device <- match.arg(device)
+  w <- graph_params$width %||% 1800
+  h <- graph_params$height %||% 900
+  dir.create(dirname(dest_path), recursive = TRUE, showWarnings = FALSE)
+  args <- list(
+    filename = dest_path,
+    plot = plot,
+    device = device,
+    width = w,
+    height = h,
+    units = "px",
+    dpi = dpi
+  )
+  if (identical(device, "jpeg")) {
+    args$bg <- "white"
+  }
+  do.call(ggplot2::ggsave, args)
+  invisible(dest_path)
+}
+
+write_export_png <- function(plot, graph_params, dest_path, dpi = plot_export_dpi) {
+  write_export_image(plot, graph_params, dest_path, device = "png", dpi = dpi)
+}
+
+write_gallery_thumbnail <- function(graph, graph_params, dest_path) {
+  write_export_png(graph, graph_params, dest_path)
+}
+
+enrich_gallery_built_item <- function(item, cache_dir) {
+  if (!isTRUE(item$ok) || is.null(item$graph)) {
+    return(item)
+  }
+  path <- gallery_thumb_path_for(cache_dir, item$graph_name %||% "graph")
+  thumb_ok <- tryCatch({
+    write_gallery_thumbnail(item$graph, item$graph_params, path)
+    TRUE
+  }, error = function(e) {
+    item$thumb_error <- conditionMessage(e)
+    FALSE
+  })
+  if (!isTRUE(thumb_ok)) {
+    return(item)
+  }
+  c(item, list(thumb_path = path))
+}
+
+cleanup_gallery_thumb_dir <- function(cache_dir) {
+  if (!is.null(cache_dir) && nzchar(cache_dir) && dir.exists(cache_dir)) {
+    unlink(cache_dir, recursive = TRUE, force = TRUE)
+  }
+  invisible(NULL)
+}
+
+editor_session_preview_dir <- function(session) {
+  base <- file.path(tempdir(), "plotter_editor_preview")
+  dir.create(base, recursive = TRUE, showWarnings = FALSE)
+  token <- session$token %||% paste0("pid_", Sys.getpid())
+  file.path(base, token)
+}
+
+editor_preview_path <- function(cache_dir) {
+  file.path(cache_dir, "preview.png")
+}
+
+write_editor_preview <- function(built_item, cache_dir) {
+  path <- editor_preview_path(cache_dir)
+  write_export_png(built_item$graph, built_item$graph_params, path)
+  path
+}
+
+#' Ensure `preview_path` exists for editor `renderImage` (reuse gallery thumb when present).
+prepare_editor_preview_item <- function(built_item, session) {
+  if (!isTRUE(built_item$ok) || is.null(built_item$graph)) {
+    return(NULL)
+  }
+  preview_path <- built_item$preview_path %||% built_item$thumb_path
+  if (!is.null(preview_path) && nzchar(preview_path) && file.exists(preview_path)) {
+    return(c(built_item, list(preview_path = preview_path)))
+  }
+  preview_dir <- session$userData$editor_preview_dir
+  if (is.null(preview_dir)) {
+    preview_dir <- editor_session_preview_dir(session)
+    session$userData$editor_preview_dir <- preview_dir
+  }
+  dir.create(preview_dir, recursive = TRUE, showWarnings = FALSE)
+  preview_path <- tryCatch(
+    write_editor_preview(built_item, preview_dir),
+    error = function(e) {
+      built_item$preview_error <- conditionMessage(e)
+      NULL
+    }
+  )
+  if (is.null(preview_path)) {
+    return(NULL)
+  }
+  c(built_item, list(preview_path = preview_path))
+}
+
+graphplan_activate_all <- function(plan) {
+  out <- tibble::as_tibble(plan)
+  out$active <- 1L
+  out
+}
+
+graphplan_deactivate_all <- function(plan) {
+  out <- tibble::as_tibble(plan)
+  out$active <- 0L
+  out
+}
+
+#' Set `active = 1` for one graphplan row (phase 13).
+activate_graphplan_row <- function(plan, row_id) {
+  plan <- tibble::as_tibble(plan)
+  row_id <- as.integer(row_id)[1]
+  if (is.na(row_id) || row_id < 1L || row_id > nrow(plan)) {
+    rlang::abort(glue("activate_graphplan_row: invalid row_id {row_id}."))
+  }
+  if ("active" %in% names(plan)) {
+    plan$active[row_id] <- 1L
+  }
+  plan
+}
+
+#' Gallery card display status from validation + optional built cache (phase 13–14).
+#' @param row_active If FALSE, card is placed in the inactive gallery section regardless of check_status.
+gallery_display_status <- function(check_status, can_build, built_item = NULL, row_active = TRUE) {
+  if (!isTRUE(row_active)) {
+    return("inactive")
+  }
+  cs <- as.character(check_status)[1]
+  if (identical(cs, "warning")) {
+    return("warning")
+  }
+  if (!isTRUE(can_build)) {
+    return("validation_error")
+  }
+  if (is.null(built_item)) {
+    return("not_built")
+  }
+  if (isTRUE(built_item$ok)) {
+    return("built_ok")
+  }
+  "build_failed"
+}
+
+#' Badge label and CSS class for a gallery display status.
+gallery_status_badge <- function(display_status) {
+  switch(
+    display_status,
+    built_ok = list(label = "Built", class = "gallery-status-built"),
+    build_failed = list(label = "Build failed", class = "gallery-status-err"),
+    validation_error = list(label = "Validation error", class = "gallery-status-err"),
+    warning = list(label = "Warning", class = "gallery-status-warning"),
+    not_built = list(label = "Not built", class = "gallery-status-not-built"),
+    inactive = list(label = "Inactive", class = "gallery-status-inactive"),
+    list(label = as.character(display_status)[1], class = "gallery-status-inactive")
+  )
+}
+
+built_item_for_row <- function(built_list, row_id, graph_name = NULL) {
+  if (length(built_list) == 0L) {
+    return(NULL)
+  }
+  row_id <- as.integer(row_id)[1]
+  for (item in built_list) {
+    if (!is.null(item$row_id) && identical(as.integer(item$row_id), row_id)) {
+      return(item)
+    }
+  }
+  if (!is.null(graph_name) && nzchar(graph_name)) {
+    nm <- as.character(graph_name)[1]
+    if (nm %in% names(built_list)) {
+      return(built_list[[nm]])
+    }
+  }
+  NULL
+}
+
+#' Merge validation `row_status` with `rv$built` for Gallery UI (phase 13–14).
+build_gallery_manifest <- function(validation, built_list = list()) {
+  empty <- list(active = list(), inactive = list())
+  if (is.null(validation) || is.null(validation$row_status) ||
+      nrow(validation$row_status) == 0L) {
+    return(empty)
+  }
+  built_list <- as.list(built_list %||% list())
+  rs <- validation$row_status
+  active_cards <- list()
+  inactive_cards <- list()
+  for (i in seq_len(nrow(rs))) {
+    row <- rs[i, , drop = FALSE]
+    nm <- as.character(row$graph_name[[1]] %||% paste0("row_", row$row_id[[1]]))
+    rid <- as.integer(row$row_id[[1]])
+    built_item <- built_item_for_row(built_list, rid, nm)
+    row_active <- isTRUE(active_flag_vec(row)[1])
+    display_status <- gallery_display_status(
+      row$check_status[[1]],
+      row$can_build[[1]],
+      built_item,
+      row_active = row_active
+    )
+    card <- list(
+      graph_name = nm,
+      row_id = rid,
+      display_status = display_status,
+      check_status = as.character(row$check_status[[1]]),
+      can_build = isTRUE(row$can_build[[1]]),
+      messages = row$messages[[1]],
+      built_item = built_item
+    )
+    if (identical(display_status, "inactive")) {
+      inactive_cards[[nm]] <- card
+    } else {
+      active_cards[[nm]] <- card
+    }
+  }
+  list(active = active_cards, inactive = inactive_cards)
+}
+
+gallery_manifest_card <- function(manifest, graph_name) {
+  if (is.null(manifest)) {
+    return(NULL)
+  }
+  nm <- as.character(graph_name)[1]
+  manifest$active[[nm]] %||% manifest$inactive[[nm]]
+}
+
+#' Drop built cache entries that no longer match validation (inactive / not buildable).
+prune_built_list_for_validation <- function(built_list, validation) {
+  built_list <- as.list(built_list %||% list())
+  if (length(built_list) == 0L || is.null(validation) ||
+      is.null(validation$row_status) || nrow(validation$row_status) == 0L) {
+    return(built_list)
+  }
+  rs <- validation$row_status
+  # Vectorized: isTRUE() on a column is wrong (only TRUE for length-1 logical).
+  buildable <- !is.na(rs$can_build) & as.logical(rs$can_build)
+  keep_ids <- rs$row_id[buildable]
+  keep_names <- as.character(rs$graph_name[buildable])
+  keep <- vapply(
+    built_list,
+    function(item) {
+      rid <- item$row_id
+      if (!is.null(rid) && as.integer(rid) %in% keep_ids) {
+        return(TRUE)
+      }
+      nm <- item$graph_name %||% names(built_list)[1]
+      as.character(nm) %in% keep_names
+    },
+    logical(1)
+  )
+  built_list[keep]
+}
+
+remove_built_list_row <- function(built_list, row_id) {
+  built_list <- as.list(built_list %||% list())
+  if (length(built_list) == 0L) {
+    return(built_list)
+  }
+  row_id <- as.integer(row_id)[1]
+  built_list[!vapply(
+    built_list,
+    function(item) !is.null(item$row_id) && identical(as.integer(item$row_id), row_id),
+    logical(1)
+  )]
+}
+
+gallery_output_id_sanitize <- function(nm) {
+  paste0("gallery_plot_", gsub("[^A-Za-z0-9]", "_", nm))
+}
+
 #' Run `expr` and log elapsed time when profiling is enabled.
 profile_step <- function(label, expr, enabled = plotter_profile_enabled()) {
   if (!enabled) return(force(expr))
@@ -27,13 +385,279 @@ profile_step <- function(label, expr, enabled = plotter_profile_enabled()) {
   force(expr)
 }
 
+#' Lightweight DOM rebuild matching gallery `renderUI` (headless UI overhead proxy).
+gallery_ui_tag_list <- function(built_named_list, cards_per_row = 3L) {
+  if (!requireNamespace("htmltools", quietly = TRUE)) {
+    stop("gallery_ui_tag_list requires the htmltools package", call. = FALSE)
+  }
+  nms <- names(built_named_list)
+  if (length(nms) == 0L) {
+    return(htmltools::tagList())
+  }
+  row_groups <- split(nms, ceiling(seq_along(nms) / cards_per_row))
+  rows <- lapply(row_groups, function(group) {
+    cards <- lapply(group, function(nm) {
+      item <- built_named_list[[nm]]
+      ok <- isTRUE(item$ok)
+      htmltools::tags$div(
+        class = if (ok) "gallery-card" else "gallery-card gallery-card-error",
+        htmltools::tags$div(class = "gallery-card-title", nm),
+        if (ok) {
+          htmltools::tags$div(
+            class = "gallery-card-plot",
+            htmltools::tags$div(
+              class = "shiny-plot-output",
+              id = gallery_output_id_sanitize(nm)
+            )
+          )
+        } else {
+          htmltools::tags$p(
+            class = "text-danger small",
+            item$error %||% "build failed"
+          )
+        }
+      )
+    })
+    htmltools::tagList(cards)
+  })
+  htmltools::tagList(rows)
+}
+
+#' Per-graph `build_graph_row` timings (component A — pure compute).
+profile_gallery_compute_per_graph <- function(graphplan,
+                                              row_ids,
+                                              FD,
+                                              country_iso3c,
+                                              peers_fname,
+                                              verbose = FALSE) {
+  if (length(row_ids) == 0L) {
+    empty <- tibble::tibble(
+      graph_index = integer(0),
+      row_id = integer(0),
+      graph_name = character(0),
+      ok = logical(0),
+      seconds_build = numeric(0),
+      seconds_cumulative_build = numeric(0)
+    )
+    attr(empty, "built") <- list()
+    return(empty)
+  }
+
+  times <- vector("double", length(row_ids))
+  graph_names <- character(length(row_ids))
+  ok_flags <- logical(length(row_ids))
+  built <- list()
+
+  for (k in seq_along(row_ids)) {
+    rid <- row_ids[[k]]
+    row <- graphplan[rid, , drop = FALSE]
+    t0 <- proc.time()
+    item <- build_graph_row(
+      graphplan_row = row,
+      FD = FD,
+      country_iso3c = country_iso3c,
+      peers_fname = peers_fname,
+      verbose = verbose
+    )
+    times[k] <- (proc.time() - t0)[["elapsed"]]
+    key <- item$graph_name %||% paste0("row_", rid)
+    graph_names[k] <- key
+    ok_flags[k] <- isTRUE(item$ok)
+    built[[key]] <- c(
+      item,
+      list(row_id = rid, status = if (isTRUE(item$ok)) "ok" else "error")
+    )
+  }
+
+  out <- tibble::tibble(
+    graph_index = seq_along(row_ids),
+    row_id = unlist(row_ids, use.names = FALSE),
+    graph_name = graph_names,
+    ok = ok_flags,
+    seconds_build = round(times, 4),
+    seconds_cumulative_build = round(cumsum(times), 3)
+  )
+  attr(out, "built") <- built
+  class(out) <- c("gallery_per_graph_profile", class(out))
+  out
+}
+
+#' Simulate incremental `renderUI` cost: rebuild DOM for 1..n cards each step (O(n^2) proxy).
+simulate_gallery_renderui_steps <- function(built_list, cards_per_row = 3L) {
+  nms <- names(built_list)
+  n <- length(nms)
+  if (n == 0L) {
+    return(tibble::tibble(
+      step_i = integer(0),
+      n_cards = integer(0),
+      seconds_renderui = numeric(0),
+      seconds_cumulative_ui_sim = numeric(0)
+    ))
+  }
+  sec <- numeric(n)
+  for (i in seq_len(n)) {
+    subset <- built_list[seq_len(i)]
+    t0 <- proc.time()
+    invisible(gallery_ui_tag_list(subset, cards_per_row = cards_per_row))
+    sec[i] <- (proc.time() - t0)[["elapsed"]]
+  }
+  tibble::tibble(
+    step_i = seq_len(n),
+    n_cards = seq_len(n),
+    seconds_renderui = round(sec, 5),
+    seconds_cumulative_ui_sim = round(cumsum(sec), 3)
+  )
+}
+
+summarize_gallery_scale_profile <- function(per_graph_df,
+                                            ui_sim_df = NULL,
+                                            n_plan_rows = NA_integer_) {
+  n <- nrow(per_graph_df)
+  build_total <- if (n > 0L) sum(per_graph_df$seconds_build) else 0
+  build_mean <- if (n > 0L) mean(per_graph_df$seconds_build) else NA_real_
+  build_sd <- if (n > 1L) stats::sd(per_graph_df$seconds_build) else NA_real_
+
+  idx_mid <- if (n >= 10L) max(1L, floor(n / 2L)) else NA_integer_
+  idx_late <- if (n >= 10L) max(1L, floor(n * 0.9)) else NA_integer_
+  slope_build <- if (!is.na(idx_mid) && n > 0L) {
+    per_graph_df$seconds_build[idx_late] / per_graph_df$seconds_build[idx_mid]
+  } else {
+    NA_real_
+  }
+
+  ui_total <- NA_real_
+  ui_step_growth <- NA_real_
+  if (!is.null(ui_sim_df) && nrow(ui_sim_df) > 0L) {
+    ui_total <- sum(ui_sim_df$seconds_renderui)
+    if (n >= 10L) {
+      ui_step_growth <- ui_sim_df$seconds_renderui[idx_late] /
+        ui_sim_df$seconds_renderui[idx_mid]
+    }
+  }
+
+  compute_vs_ui_ratio <- if (!is.na(ui_total) && build_total > 0) {
+    ui_total / build_total
+  } else {
+    NA_real_
+  }
+
+  renderui_linear_coef <- NA_real_
+  if (!is.null(ui_sim_df) && nrow(ui_sim_df) >= 5L) {
+    fit <- stats::lm(seconds_renderui ~ step_i, data = ui_sim_df)
+    renderui_linear_coef <- unname(stats::coef(fit)[["step_i"]])
+  }
+
+  tibble::tibble(
+    n_plan_rows = n_plan_rows,
+    n_buildable = n,
+    n_built_ok = sum(per_graph_df$ok, na.rm = TRUE),
+    seconds_compute_total = round(build_total, 2),
+    seconds_compute_mean = round(build_mean, 4),
+    seconds_compute_sd = round(build_sd, 4),
+    seconds_ui_sim_total = round(ui_total, 2),
+    ui_sim_vs_compute_ratio = round(compute_vs_ui_ratio, 2),
+    build_time_slope_late_vs_mid = round(slope_build, 3),
+    renderui_step_slope_late_vs_mid = round(ui_step_growth, 3),
+    renderui_linear_coef_per_step = round(renderui_linear_coef, 6)
+  )
+}
+
+#' Theoretical interactive overhead if each `rv$built` assign re-renders all plots.
+estimate_renderplot_o_n2_seconds <- function(n_graphs, seconds_per_plot = 0.05) {
+  if (n_graphs <= 0L) return(0)
+  sum(seq_len(n_graphs)) * seconds_per_plot
+}
+
+#' Headless phase-10 research: compute (A) + simulated Shiny `renderUI` (B).
+run_plotter_gallery_scale_research <- function(FD,
+                                               plan,
+                                               country_iso3c,
+                                               peers_fname,
+                                               activate_all = TRUE,
+                                               verbose = FALSE,
+                                               write_csv_dir = NULL) {
+  plan_use <- if (isTRUE(activate_all)) graphplan_activate_all(plan) else plan
+  val <- validate_graphplan_for_app(
+    plan_use, FD, country_iso3c, peers_fname
+  )
+  build_ids <- val$row_status |>
+    dplyr::filter(.data$can_build) |>
+    dplyr::pull(.data$row_id)
+
+  message(glue::glue(
+    "Gallery scale research: {nrow(plan_use)} plan rows, ",
+    "{length(build_ids)} buildable (RUS / {country_iso3c})"
+  ))
+
+  t0 <- proc.time()
+  per_graph <- profile_gallery_compute_per_graph(
+    graphplan = plan_use,
+    row_ids = build_ids,
+    FD = FD,
+    country_iso3c = country_iso3c,
+    peers_fname = peers_fname,
+    verbose = verbose
+  )
+  compute_elapsed <- (proc.time() - t0)[["elapsed"]]
+  message(sprintf(
+    "[profile] gallery.per_graph_compute (%d rows): %.2fs",
+    length(build_ids),
+    compute_elapsed
+  ))
+
+  built <- attr(per_graph, "built", exact = TRUE)
+  t0 <- proc.time()
+  ui_sim <- simulate_gallery_renderui_steps(built)
+  ui_sim_elapsed <- (proc.time() - t0)[["elapsed"]]
+  message(sprintf(
+    "[profile] gallery.simulate_renderui_o_n2 (%d steps): %.2fs (cumulative sim %.2fs)",
+    nrow(ui_sim),
+    ui_sim_elapsed,
+    if (nrow(ui_sim) > 0L) max(ui_sim$seconds_cumulative_ui_sim) else 0
+  ))
+
+  summary_tbl <- summarize_gallery_scale_profile(
+    per_graph,
+    ui_sim_df = ui_sim,
+    n_plan_rows = nrow(plan_use)
+  )
+  attr(summary_tbl, "validation_summary") <- val$summary
+  attr(summary_tbl, "per_graph") <- per_graph
+  attr(summary_tbl, "ui_sim") <- ui_sim
+
+  if (!is.null(write_csv_dir) && dir.exists(write_csv_dir)) {
+    utils::write.csv(
+      per_graph,
+      file.path(write_csv_dir, "gallery_per_graph_compute.csv"),
+      row.names = FALSE
+    )
+    utils::write.csv(
+      ui_sim,
+      file.path(write_csv_dir, "gallery_renderui_simulation.csv"),
+      row.names = FALSE
+    )
+    utils::write.csv(
+      summary_tbl,
+      file.path(write_csv_dir, "gallery_scale_summary.csv"),
+      row.names = FALSE
+    )
+    message("Wrote CSV artifacts to ", write_csv_dir)
+  }
+
+  print(summary_tbl, row.names = FALSE)
+  invisible(summary_tbl)
+}
+
 #' Headless baseline for fixture RUS / 2_graphlib.xlsx (smoke_test or manual).
 run_plotter_profile_baseline <- function(FD,
                                          plan,
                                          country_iso3c,
                                          peers_fname,
                                          import_paths = NULL,
-                                         update_plot_reps = 5L) {
+                                         update_plot_reps = 5L,
+                                         profile_all_buildable = FALSE,
+                                         per_graph_timing = NULL,
+                                         simulate_gallery_ui = NULL) {
   rows <- list()
   add_row <- function(step, seconds) {
     rows[[length(rows) + 1L]] <<- tibble::tibble(
@@ -48,6 +672,13 @@ run_plotter_profile_baseline <- function(FD,
     add_row(step, (proc.time() - t0)[["elapsed"]])
     res
   }
+
+  profile_all <- isTRUE(profile_all_buildable) ||
+    plotter_profile_all_buildable_enabled()
+  if (is.null(per_graph_timing)) per_graph_timing <- profile_all
+  if (is.null(simulate_gallery_ui)) simulate_gallery_ui <- profile_all
+
+  plan_work <- if (profile_all) graphplan_activate_all(plan) else plan
 
   if (!is.null(import_paths)) {
     yqm <- import_paths$yqm_file %||% import_paths[["yqm"]]
@@ -65,32 +696,55 @@ run_plotter_profile_baseline <- function(FD,
   }
 
   val <- timed(
-    "import.validate_graphplan_for_app",
-    validate_graphplan_for_app(plan, FD, country_iso3c, peers_fname)
+    if (profile_all) {
+      "import.validate_graphplan_for_app (all active)"
+    } else {
+      "import.validate_graphplan_for_app"
+    },
+    validate_graphplan_for_app(plan_work, FD, country_iso3c, peers_fname)
   )
   build_ids <- val$row_status |>
     dplyr::filter(.data$can_build) |>
     dplyr::pull(.data$row_id)
   n_build <- length(build_ids)
 
+  built <- list()
   if (n_build > 0L) {
-    built <- timed(
-      glue::glue("gallery.build_valid_batch ({n_build} rows)"),
-      build_graphplan_rows(
-        graphplan = plan,
-        row_ids = build_ids,
-        FD = FD,
-        country_iso3c = country_iso3c,
-        peers_fname = peers_fname,
-        validation = val
+    if (isTRUE(per_graph_timing)) {
+      per_graph <- timed(
+        glue::glue("gallery.per_graph_compute ({n_build} rows)"),
+        profile_gallery_compute_per_graph(
+          graphplan = plan_work,
+          row_ids = build_ids,
+          FD = FD,
+          country_iso3c = country_iso3c,
+          peers_fname = peers_fname
+        )
       )
-    )
-  } else {
-    built <- list()
+      built <- attr(per_graph, "built", exact = TRUE)
+      if (isTRUE(simulate_gallery_ui)) {
+        timed(
+          glue::glue("gallery.simulate_renderui_o_n2 ({n_build} steps)"),
+          simulate_gallery_renderui_steps(built)
+        )
+      }
+    } else {
+      built <- timed(
+        glue::glue("gallery.build_valid_batch ({n_build} rows)"),
+        build_graphplan_rows(
+          graphplan = plan_work,
+          row_ids = build_ids,
+          FD = FD,
+          country_iso3c = country_iso3c,
+          peers_fname = peers_fname,
+          validation = val
+        )
+      )
+    }
   }
 
-  if (n_build > 0L) {
-    preview_row <- plan[build_ids[1], , drop = FALSE]
+  if (n_build > 0L && !isTRUE(per_graph_timing)) {
+    preview_row <- plan_work[build_ids[1], , drop = FALSE]
     t0 <- proc.time()
     preview_row_id <- build_ids[1]
     editor_cache_key <- NULL
@@ -127,7 +781,7 @@ run_plotter_profile_baseline <- function(FD,
     )
 
     saved_row_id <- build_ids[1]
-    save_plan <- plan
+    save_plan <- plan_work
     t0 <- proc.time()
     validation <- validate_graphplan_for_app(
       save_plan, FD, country_iso3c, peers_fname
@@ -146,6 +800,10 @@ run_plotter_profile_baseline <- function(FD,
   out <- dplyr::bind_rows(rows)
   attr(out, "summary") <- val$summary
   attr(out, "n_buildable") <- n_build
+  attr(out, "profile_all_buildable") <- profile_all
+  if (exists("per_graph", inherits = FALSE)) {
+    attr(out, "per_graph") <- per_graph
+  }
   out
 }
 
@@ -418,26 +1076,15 @@ check_rule_messages <- list(
   is_active <- isTRUE(active_flags[i])
   gname <- as.character(row$graph_name[[1]] %||% paste0("row_", i))
 
-  if (!is_active) {
-    return(tibble::tibble(
-      row_id = i,
-      graph_name = gname,
-      active = row$active[[1]] %||% 0L,
-      check_status = "inactive",
-      can_build = FALSE,
-      messages = NA_character_
-    ))
-  }
-
   checks_val <- row$checks[[1]]
   checks_ok <- !is.na(checks_val) && isTRUE(as.integer(checks_val) == 1L)
   status <- if (checks_ok) "valid" else "error"
   tibble::tibble(
     row_id = i,
     graph_name = gname,
-    active = row$active[[1]] %||% 1L,
+    active = row$active[[1]] %||% 0L,
     check_status = status,
-    can_build = checks_ok,
+    can_build = is_active && checks_ok,
     messages = if (checks_ok) NA_character_ else .row_check_messages(row)
   )
 }
@@ -570,7 +1217,7 @@ validate_graphplan_for_app <- function(graphplan,
     n_rows = n_rows,
     n_active = sum(active_flags),
     n_buildable = sum(can_build_flags),
-    n_errors = sum(active_flags & !checks_ok),
+    n_errors = sum(!checks_ok),
     n_warnings = 0L,
     n_inactive = sum(!active_flags)
   )
@@ -1003,16 +1650,43 @@ indicator_groups_content <- list(
   c("p_com", "p_oil", "p_metals", "p_agro")
 )
 
-editor_indicator_choices <- function(indicators_tbl,
+build_indicator_catalog_from_dict <- function(dict) {
+  name_col <- c("indicator", "indicator_name", "name", "indicator_label", "label_ru", "label_en")
+  name_col <- name_col[name_col %in% names(dict)] |>
+    purrr::pluck(1, .default = NA_character_)
+
+  dict |>
+    dplyr::filter(!is.na(.data$indicator_code), .data$indicator_code != "") |>
+    dplyr::filter(!is.na(.data$source_frequency), .data$source_frequency != "") |>
+    dplyr::mutate(
+      indicator_name = if (!is.na(name_col)) .data[[name_col]] else NA_character_,
+      node_id = glue::glue("{indicator_code}@{source_frequency}"),
+      label = dplyr::case_when(
+        !is.na(.data$indicator_name) & .data$indicator_name != "" ~
+          glue::glue("{node_id} — {indicator_name}"),
+        TRUE ~ node_id
+      )
+    ) |>
+    dplyr::distinct(.data$indicator_code, .data$source_frequency, .keep_all = TRUE) |>
+    dplyr::arrange(.data$indicator_code, .data$source_frequency) |>
+    dplyr::select(
+      node_id, label,
+      indicator_code, source_frequency,
+      indicator_name,
+      dplyr::any_of(c("theme", "source_name"))
+    )
+}
+
+editor_indicator_choices <- function(indicator_catalog,
                                    frequency = " ",
                                    ind_group = "",
                                    groups = indicator_groups,
                                    groups_content = indicator_groups_content) {
-  inds <- indicators_tbl
+  inds <- indicator_catalog
   if (!is.null(frequency) && frequency != " ") {
     inds <- inds |> dplyr::filter(.data$source_frequency == frequency)
   }
-  choices <- stats::setNames(inds$indicator_code, inds$indicator)
+  choices <- stats::setNames(inds$indicator_code, inds$label)
   selected <- NULL
   if (nzchar(ind_group %||% "")) {
     idx <- match(ind_group, groups)
@@ -1021,11 +1695,11 @@ editor_indicator_choices <- function(indicators_tbl,
   list(choices = choices, selected = selected)
 }
 
-sec_y_choices_from_indicators <- function(indicators_tbl, indicator_codes) {
+sec_y_choices_from_indicators <- function(indicator_catalog, indicator_codes) {
   codes <- indicator_codes[!is.na(indicator_codes) & indicator_codes != ""]
   if (length(codes) == 0) return(stats::setNames(character(), character()))
-  inds <- indicators_tbl |> dplyr::filter(.data$indicator_code %in% codes)
-  stats::setNames(inds$indicator_code, inds$indicator)
+  inds <- indicator_catalog |> dplyr::filter(.data$indicator_code %in% codes)
+  stats::setNames(inds$indicator_code, inds$label)
 }
 
 strip_graph_name_suffix <- function(graph_name, groups_map = NULL) {
@@ -1043,6 +1717,64 @@ graph_group_long_to_short <- function(graph_group_long, groups_map = NULL) {
   if (g %in% names(groups_map)) return(unname(groups_map[[g]]))
   if (g %in% unlist(groups_map)) return(g)
   unname(groups_map[[1]])
+}
+
+#' Resolve peer group / formula to concrete ISO2 peer codes for the Editor UI.
+#'
+#' Mirrors legacy `graph_plotter_app`: after choosing a preset or formula, the
+#' multiselect shows the expanded peer list from [fixPeers]. Returns `NULL` when
+#' the custom field should not be overwritten (`custom` mode or missing country).
+#'
+#' @param country_iso3c Single ISO3 code (e.g. from `rv$country_iso3c`).
+#' @param peers Editor `ed_peers` value: `none`, `custom`, `formula`, or a preset name.
+#' @param peers_formula Used when `peers == "formula"`.
+#' @param graph_type Editor graph type (needed for `distribution_dynamic`).
+#' @param peers_fname Path to `1_peers_params.xlsx`.
+#' @param data Loaded FD object (`importData` result).
+expand_editor_peer_selection_to_iso2c <- function(
+    country_iso3c,
+    peers,
+    peers_formula,
+    graph_type,
+    peers_fname,
+    data) {
+  if (is.null(peers)) peers <- "none"
+  peers <- as.character(peers)[1]
+  if (identical(peers, "custom")) {
+    return(NULL)
+  }
+  if (identical(peers, "none")) {
+    return(character(0))
+  }
+  iso3 <- country_iso3c[[1]] %||% country_iso3c
+  iso3 <- as.character(iso3)[1]
+  if (is.null(iso3) || !nzchar(iso3)) {
+    return(NULL)
+  }
+  ps <- if (identical(peers, "formula")) {
+    f <- as.character(peers_formula %||% "")[1]
+    if (!nzchar(f)) {
+      return(NULL)
+    }
+    f
+  } else {
+    pr <- peers_string_from_editor(peers, NULL, "", preset_list = peers_presets)
+    if (identical(pr, 0)) {
+      return(NULL)
+    }
+    as.character(pr)[1]
+  }
+  country_info <- get_peers_cached(iso3, peers_fname)
+  params <- list(
+    peers = ps,
+    graph_type = graph_type %||% NA_character_
+  )
+  fixPeers(
+    country_info = country_info,
+    params = params,
+    data = data,
+    warn_invalid = FALSE
+  )
 }
 
 peers_string_from_editor <- function(peers, peers_custom, peers_formula, preset_list = NULL) {
@@ -1308,18 +2040,16 @@ refresh_gallery_built_for_row <- function(built_list,
                                           graphplan,
                                           FD,
                                           country_iso3c,
-                                          peers_fname) {
-  built_list <- as.list(built_list %||% list())
-  for (nm in names(built_list)) {
-    item <- built_list[[nm]]
-    if (!is.null(item$row_id) && identical(item$row_id, row_id)) {
-      built_list[[nm]] <- NULL
-    }
-  }
+                                          peers_fname,
+                                          thumb_cache_dir = NULL) {
+  built_list <- remove_built_list_row(as.list(built_list %||% list()), row_id)
   if (is.null(country_iso3c) || is.null(row_id) || row_id < 1L || row_id > nrow(graphplan)) {
     return(list(built_list = built_list, editor_preview = NULL, error = NA_character_))
   }
   saved_row <- graphplan[row_id, , drop = FALSE]
+  if ("active" %in% names(saved_row) && !isTRUE(active_flag_vec(saved_row)[1])) {
+    return(list(built_list = built_list, editor_preview = NULL, error = NA_character_))
+  }
   built <- build_graph_row(
     graphplan_row = saved_row,
     FD = FD,
@@ -1327,10 +2057,12 @@ refresh_gallery_built_for_row <- function(built_list,
     peers_fname = peers_fname
   )
   if (isTRUE(built$ok)) {
-    built_list[[built$graph_name]] <- c(
-      built,
-      list(row_id = row_id, status = "ok")
-    )
+    item <- c(built, list(row_id = row_id, status = "ok"))
+    if (!is.null(thumb_cache_dir) && nzchar(thumb_cache_dir)) {
+      dir.create(thumb_cache_dir, recursive = TRUE, showWarnings = FALSE)
+      item <- enrich_gallery_built_item(item, thumb_cache_dir)
+    }
+    built_list[[built$graph_name]] <- item
     return(list(built_list = built_list, editor_preview = built, error = NA_character_))
   }
   err_name <- as.character(saved_row$graph_name[[1]] %||% paste0("row_", row_id))
@@ -1420,15 +2152,19 @@ export_built_graphs <- function(built,
     if (is.null(gp)) next
     filename <- paste0(gp$graph_name, ".", device)
     fpath <- file.path(dest_dir, filename)
-    ggplot2::ggsave(
-      filename = fpath,
-      plot = item$graph,
-      device = device,
-      width = gp$width,
-      height = gp$height,
-      units = "px",
-      dpi = dpi
-    )
+    if (identical(device, "png")) {
+      write_export_png(item$graph, gp, fpath, dpi = dpi)
+    } else {
+      ggplot2::ggsave(
+        filename = fpath,
+        plot = item$graph,
+        device = device,
+        width = gp$width,
+        height = gp$height,
+        units = "px",
+        dpi = dpi
+      )
+    }
     paths <- c(paths, fpath)
   }
   paths
@@ -1520,6 +2256,137 @@ graphplan_snapshot <- function(plan) {
       rep(1L, nrow(plan))
     }
   )
+}
+
+#' Full graphplan at import (no check artifacts) for row-level "Edited" comparison.
+graphplan_baseline_capture <- function(plan) {
+  if (is.null(plan) || nrow(plan) == 0L) {
+    return(NULL)
+  }
+  strip_graphplan_check_artifacts(tibble::as_tibble(migrate_graphplan_if_needed(plan)))
+}
+
+#' TRUE if gallery cache has an export-fidelity PNG thumbnail for this row.
+graphplan_row_built_in_gallery <- function(built_list, row_id) {
+  built_list <- as.list(built_list %||% list())
+  if (length(built_list) == 0L) {
+    return(FALSE)
+  }
+  rid <- as.integer(row_id)[1]
+  if (is.na(rid)) {
+    return(FALSE)
+  }
+  for (item in built_list) {
+    if (!is.null(item$row_id) && identical(as.integer(item$row_id), rid)) {
+      path <- item$thumb_path
+      return(isTRUE(item$ok) && !is.null(path) && nzchar(path) && isTRUE(file.exists(path)))
+    }
+  }
+  FALSE
+}
+
+#' User-semantic graphplan columns for "Edited" (phase 17.4, path B).
+#'
+#' Excludes `active` so Activate/Deactivate alone does not mark a row Edited.
+#' Columns outside [graphplan_columns] (e.g. derived `source_name`) are ignored
+#' for baseline comparison so system fills there do not flip Edited.
+graphplan_edited_u_cols <- function() {
+  setdiff(graphplan_columns, "active")
+}
+
+#' Canonicalize graphplan row(s) before "Edited" comparison (phase 17.4).
+#'
+#' [validate_graphplan_for_app] runs `check*` on the **entire** plan. In particular
+#' [checkAvailability] and [checkPeers] assign `data_frequency <- tolower(trim(...))`
+#' for every row. The import baseline is captured **before** that pass, so path B
+#' would otherwise mark almost all rows Edited after the first Validate/Save even
+#' when the user changed nothing. [align_graphplan_types] aligns 0/1 and empty
+#' strings with the same coercion used when updating rows.
+canonicalize_graphplan_row_for_edited_compare <- function(row_df) {
+  row_df <- strip_graphplan_check_artifacts(tibble::as_tibble(row_df))
+  row_df <- migrate_graphplan_if_needed(row_df)
+  row_df <- align_graphplan_types(row_df)
+  if ("data_frequency" %in% names(row_df)) {
+    row_df <- dplyr::mutate(
+      row_df,
+      data_frequency = {
+        x <- stringr::str_trim(as.character(.data$data_frequency))
+        x <- dplyr::na_if(x, "")
+        stringr::str_to_lower(x)
+      }
+    )
+  }
+  row_df
+}
+
+#' Path B (phase 17.4): row differs from import baseline on user-semantic columns only.
+#'
+#' Ignores `active`, check artifacts, and columns outside [graphplan_edited_u_cols].
+#' Rows added after baseline (`row_id > nrow(baseline)`) count as Edited.
+graphplan_row_edited_b_vs_baseline <- function(row_id, current_plan, baseline_plan) {
+  if (is.null(baseline_plan) || nrow(baseline_plan) == 0L) {
+    return(FALSE)
+  }
+  row_id <- as.integer(row_id)[1]
+  if (is.na(row_id) || row_id < 1L) {
+    return(FALSE)
+  }
+  if (row_id > nrow(baseline_plan)) {
+    return(TRUE)
+  }
+  if (is.null(current_plan) || nrow(current_plan) < row_id) {
+    return(FALSE)
+  }
+  ucols <- graphplan_edited_u_cols()
+  cr <- canonicalize_graphplan_row_for_edited_compare(current_plan[row_id, , drop = FALSE])
+  br <- canonicalize_graphplan_row_for_edited_compare(baseline_plan[row_id, , drop = FALSE])
+  cn <- sort(intersect(intersect(names(cr), names(br)), ucols))
+  if (length(cn) == 0L) {
+    return(FALSE)
+  }
+  !identical(
+    editor_row_fingerprint(cr[, cn, drop = FALSE]),
+    editor_row_fingerprint(br[, cn, drop = FALSE])
+  )
+}
+
+#' Path A (phase 17.4): editor save changed at least one U-column vs pre-save row.
+#'
+#' Compares stripped rows on [graphplan_edited_u_cols] only (so `active`-only saves
+#' return FALSE). Uses the editor-produced row before validation merge.
+meaningful_editor_save_for_edited_flag <- function(before_row, after_row) {
+  before_row <- canonicalize_graphplan_row_for_edited_compare(before_row)
+  after_row <- canonicalize_graphplan_row_for_edited_compare(after_row)
+  ucols <- graphplan_edited_u_cols()
+  cn <- sort(intersect(ucols, intersect(names(before_row), names(after_row))))
+  if (length(cn) == 0L) {
+    return(FALSE)
+  }
+  !identical(
+    editor_row_fingerprint(before_row[, cn, drop = FALSE]),
+    editor_row_fingerprint(after_row[, cn, drop = FALSE])
+  )
+}
+
+#' Hybrid "Edited" flag (phase 17.4): editor commit touches OR baseline drift on U-cols.
+#'
+#' @param editor_touch_row_ids Integer vector of `row_id` values that had a qualifying
+#'   **Save to graphplan** in this session (path A). Reset on new xlsx load.
+graphplan_row_edited_hybrid <- function(row_id,
+                                        current_plan,
+                                        baseline_plan,
+                                        editor_touch_row_ids = integer(0)) {
+  row_id <- as.integer(row_id)[1]
+  touch <- as.integer(editor_touch_row_ids %||% integer(0))
+  if (!is.na(row_id) && row_id %in% touch) {
+    return(TRUE)
+  }
+  graphplan_row_edited_b_vs_baseline(row_id, current_plan, baseline_plan)
+}
+
+#' Legacy wrapper: same as [graphplan_row_edited_hybrid] with no editor touch ids (B-path only).
+graphplan_row_edited_excluding_active <- function(row_id, current_plan, baseline_plan) {
+  graphplan_row_edited_hybrid(row_id, current_plan, baseline_plan, integer(0))
 }
 
 graphplan_change_summary <- function(baseline, current) {

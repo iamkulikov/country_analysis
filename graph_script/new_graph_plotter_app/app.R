@@ -65,24 +65,48 @@ country_iso3c_from_id <- function(country_id) {
   countrycode::countrycode(country_id, "iso2c", "iso3c", warn = FALSE)
 }
 
-indicators_tbl <- FD$dict |>
-  dplyr::select(indicator, indicator_code, source_frequency) |>
-  dplyr::distinct()
+country_label_from_id <- function(country_id, choices = country_choices) {
+  cid <- as.character(country_id)[1]
+  if (is.null(cid) || is.na(cid) || !nzchar(cid)) {
+    return(NA_character_)
+  }
+  idx <- match(cid, choices, nomatch = 0L)
+  if (idx < 1L) {
+    return(cid)
+  }
+  nm <- names(choices)[idx]
+  if (is.null(nm) || !nzchar(nm)) cid else nm
+}
+
+country_label_from_iso3c <- function(iso3c, choices = country_choices) {
+  iso3 <- as.character(iso3c)[1]
+  if (is.null(iso3) || is.na(iso3) || !nzchar(iso3)) {
+    return(NA_character_)
+  }
+  cid <- countrycode::countrycode(iso3, "iso3c", "iso2c", warn = FALSE)
+  if (is.null(cid) || is.na(cid) || !nzchar(cid)) {
+    return(NA_character_)
+  }
+  country_label_from_id(cid, choices)
+}
+
+indicator_catalog <- build_indicator_catalog_from_dict(FD$dict)
 
 indicator_choices <- stats::setNames(
-  indicators_tbl$indicator_code,
-  indicators_tbl$indicator
+  indicator_catalog$indicator_code,
+  indicator_catalog$label
 )
 
 graph_group_choices <- stats::setNames(unname(graph_groups), names(graph_groups))
 
-ensure_indicator_choices <- function(choices, codes, indicators_tbl) {
+ensure_indicator_choices <- function(choices, codes, indicator_catalog) {
   codes <- codes[!is.na(codes) & nzchar(codes)]
   missing <- setdiff(codes, unname(choices))
   if (!length(missing)) return(choices)
-  extra_rows <- indicators_tbl |>
-    dplyr::filter(.data$indicator_code %in% missing)
-  c(choices, stats::setNames(extra_rows$indicator_code, extra_rows$indicator))
+  extra_rows <- indicator_catalog |>
+    dplyr::filter(.data$indicator_code %in% missing) |>
+    dplyr::distinct(.data$indicator_code, .keep_all = TRUE)
+  c(choices, stats::setNames(extra_rows$indicator_code, extra_rows$label))
 }
 
 # --------------------------- UI -----------------------------------------------
@@ -99,6 +123,32 @@ ui <- bslib::page_navbar(
     shinyjs::useShinyjs(),
     tags$style(HTML("
       .import-top-row { align-items: stretch; }
+      .graphplan-bulk-toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.35rem 0.5rem;
+        margin-top: 0.5rem;
+      }
+      .graphplan-bulk-toolbar .btn { margin: 0; }
+      .gallery-build-row .btn { margin: 0; }
+      .editor-toolbar-row .editor-country-context {
+        display: flex;
+        flex-direction: column;
+        justify-content: flex-end;
+        min-height: 34px;
+        padding-bottom: 2px;
+        font-size: 0.9rem;
+        font-weight: 600;
+        color: #495057;
+        line-height: 1.25;
+      }
+      .gallery-build-row .shiny-text-output {
+        margin: 0;
+        color: #6c757d;
+        font-size: 0.9rem;
+        line-height: 1.4;
+      }
       .import-summary-col {
         display: flex;
         flex-direction: column;
@@ -110,6 +160,20 @@ ui <- bslib::page_navbar(
         gap: 0.75rem;
         flex: 1;
         align-content: flex-start;
+      }
+      .import-summary-cards--two-rows {
+        flex-direction: column;
+        flex-wrap: nowrap;
+      }
+      .validation-summary-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+        width: 100%;
+      }
+      .validation-summary-row .validation-metric-card {
+        flex: 1 1 calc(50% - 0.375rem);
+        min-width: 7rem;
       }
       .validation-metric-card {
         flex: 1 1 calc(50% - 0.375rem);
@@ -135,6 +199,23 @@ ui <- bslib::page_navbar(
       .validation-metric-errors { background-color: #f8d7da; border-color: #f5c6cb; }
       .validation-metric-inactive { background-color: #e2e3e5; border-color: #d6d8db; }
       .validation-metric-total { background-color: #f8f9fa; }
+      /* Import validation DT (phase 17.3): active row tint; Status/Details keep priority styles */
+      #validation_table table.dataTable tbody tr.import-validation-row-active td:not(.dt-col-status) {
+        box-shadow: inset 0 0 0 9999px rgba(13, 110, 253, 0.09);
+      }
+      #validation_table table.dataTable tbody tr.import-validation-row-error td.dt-col-details {
+        background-color: #f8d7da !important;
+        color: #721c24;
+      }
+      .gallery-status-import-error { background: #dc3545; }
+      .gallery-card-badges {
+        display: inline-flex;
+        flex-wrap: wrap;
+        gap: 0.35rem;
+        align-items: center;
+        margin-left: auto;
+        flex-shrink: 0;
+      }
       .editor-mode-toolbar {
         display: flex;
         flex-wrap: wrap;
@@ -150,10 +231,58 @@ ui <- bslib::page_navbar(
         font-weight: 600;
         background: #e9ecef;
         color: #495057;
-        margin-left: auto;
+        flex: 1 1 100%;
       }
-      .editor-tsv-row .form-group { margin-bottom: 0; }
-    "))
+      .editor-toolbar-row {
+        align-items: flex-end;
+        margin-bottom: 0.75rem;
+      }
+      .editor-toolbar-row .form-group { margin-bottom: 0; }
+      .editor-toolbar-row .btn {
+        margin-top: 0;
+        height: 34px;
+        line-height: 1.2;
+      }
+      .editor-preview-plot {
+        width: 100%;
+        max-width: 100%;
+        overflow: hidden;
+        border-radius: 4px;
+        background: #f8f9fa;
+        margin-bottom: 0.75rem;
+        line-height: 0;
+        text-align: center;
+      }
+      .editor-preview-plot--empty {
+        min-height: 0;
+        padding: 0;
+        background: transparent;
+      }
+      .editor-preview-plot .shiny-image-output {
+        display: inline-block;
+        max-width: 100%;
+        max-height: var(--editor-preview-max-h);
+        margin: 0 auto;
+        overflow: hidden;
+      }
+      .editor-preview-plot img {
+        max-width: 100%;
+        max-height: var(--editor-preview-max-h);
+        object-fit: contain;
+        display: block;
+        margin: 0 auto;
+      }
+    ")),
+    tags$style(HTML(glue(
+      ".editor-preview-plot {{",
+      "  --editor-preview-max-h: min({editor_preview_max_height_px}px, calc(100vh - {editor_preview_vh_chrome_rem}rem));",
+      "}}",
+      ".editor-preview-plot .shiny-image-output,",
+      ".editor-preview-plot img {{",
+      "  max-height: var(--editor-preview-max-h);",
+      "}}",
+      .sep = "\n"
+    )))
   ),
 
   bslib::nav_panel(
@@ -176,7 +305,12 @@ ui <- bslib::page_navbar(
             selected = default_country_id,
             options  = list(placeholder = "Select country")
           ),
-          actionButton("validate_btn", "Validate", class = "btn-primary")
+          div(
+            class = "graphplan-bulk-toolbar",
+            actionButton("validate_btn", "Validate", class = "btn-primary"),
+            actionButton("import_make_all_active_btn", "Make all active"),
+            actionButton("import_make_all_inactive_btn", "Make all inactive")
+          )
         ),
         column(
           6,
@@ -186,6 +320,10 @@ ui <- bslib::page_navbar(
       ),
       fluidRow(
         column(12, DT::dataTableOutput("validation_table"))
+      ),
+      div(
+        style = "position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden;",
+        textInput("validation_row_action", label = NULL, value = "")
       )
     )
   ),
@@ -206,29 +344,94 @@ ui <- bslib::page_navbar(
           height: 100%;
         }
         .gallery-card-title {
+          display: flex;
+          align-items: center;
+          gap: 0.35rem;
           font-size: 0.85rem;
           font-weight: 600;
           margin: 0 0 8px;
+          min-width: 0;
+        }
+        .gallery-card-title .gallery-card-name {
           overflow: hidden;
           text-overflow: ellipsis;
           white-space: nowrap;
+          min-width: 0;
+          flex: 1 1 auto;
         }
         .gallery-card-plot {
           width: 100%;
+          min-height: 260px;
           overflow: hidden;
           border-radius: 4px;
           background: #f8f9fa;
+          display: flex;
+          align-items: center;
+          justify-content: center;
         }
-        .gallery-card-plot .shiny-plot-output img {
-          width: 100% !important;
-          height: auto !important;
+        .gallery-card-plot .shiny-image-output {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          max-width: 100%;
+          max-height: 260px;
+          height: 260px;
+          width: 100%;
+          margin: 0;
+        }
+        .gallery-card-plot img,
+        .gallery-card-plot .shiny-image-output img {
+          max-height: 260px;
+          width: auto;
+          max-width: 100%;
+          height: auto;
           object-fit: contain;
+          display: block;
+          margin: 0;
+        }
+        .gallery-build-row {
+          display: flex;
+          flex-wrap: wrap;
+          align-items: center;
+          gap: 0.75rem 1rem;
+          margin: 0 0 0.75rem;
+        }
+        .gallery-build-row .shiny-text-output {
+          margin: 0;
+          color: #6c757d;
+          font-size: 0.9rem;
+          line-height: 1.4;
         }
         .gallery-card-error { margin-bottom: 18px; }
         .gallery-card-actions { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 4px; }
         .gallery-card-actions .btn { font-size: 0.75rem; padding: 2px 8px; }
-        .gallery-status-ok { background: #198754; }
+        .gallery-status-built { background: #198754; }
         .gallery-status-err { background: #dc3545; }
+        .gallery-status-warning { background: #ffc107; color: #212529; }
+        .gallery-status-not-built { background: #6c757d; }
+        .gallery-status-inactive { background: #adb5bd; color: #212529; }
+        .gallery-card-placeholder {
+          min-height: 4rem;
+          padding: 0.5rem 0.25rem;
+          font-size: 0.8rem;
+          color: #6c757d;
+        }
+        .gallery-inactive-section {
+          margin-top: 1.5rem;
+          padding-top: 1rem;
+          border-top: 2px solid #dee2e6;
+        }
+        .gallery-inactive-heading {
+          font-size: 1rem;
+          font-weight: 600;
+          margin: 0 0 0.75rem;
+          color: #495057;
+        }
+        .gallery-card-inactive {
+          background: #f8f9fa;
+          border-color: #dee2e6;
+        }
+        #validation_table tbody tr { cursor: pointer; }
       ")),
       div(
         style = "position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden;",
@@ -238,8 +441,13 @@ ui <- bslib::page_navbar(
         style = "position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden;",
         downloadButton("gallery_single_download", "Download graph")
       ),
-      actionButton("build_valid_btn", "Build valid graphs"),
-      br(), br(),
+      tags$div(
+        class = "gallery-build-row",
+        actionButton("build_valid_btn", "Build active and valid"),
+        actionButton("gallery_make_all_active_btn", "Make all active"),
+        actionButton("gallery_make_all_inactive_btn", "Make all inactive"),
+        textOutput("gallery_build_status")
+      ),
       uiOutput("gallery_ui")
     )
   ),
@@ -248,15 +456,15 @@ ui <- bslib::page_navbar(
     title = "Graph editor",
     value = "tab_editor",
     fluidPage(
-      div(
-        class = "editor-mode-toolbar",
-        actionButton("ed_new_graph", "New graph", class = "btn-default"),
-        actionButton("ed_save_row", "Save to graphplan", class = "btn-primary"),
-        uiOutput("editor_mode_ui")
-      ),
       sidebarLayout(
         sidebarPanel(
           width = 4,
+          div(
+            class = "editor-mode-toolbar",
+            actionButton("ed_new_graph", "New graph", class = "btn-default"),
+            actionButton("ed_save_row", "Save to graphplan", class = "btn-primary"),
+            uiOutput("editor_mode_ui")
+          ),
           selectizeInput(
             "ed_graph_type", "Graph type",
             choices = graph_types,
@@ -340,22 +548,33 @@ ui <- bslib::page_navbar(
         mainPanel(
           width = 8,
           fluidRow(
-            class = "editor-tsv-row",
+            class = "editor-toolbar-row",
             column(2, actionButton("ed_plot_btn", "Update plot", class = "btn-primary")),
-            column(2, actionButton("ed_fill_btn", "Help with defaults")),
-            column(2, actionButton("ed_import_row_btn", "Import row (TSV)")),
-            column(6, textInput("ed_graph_plan_tsv", "Graph plan row (TSV)", ""))
+            column(2, actionButton("ed_import_row_btn", "Import row")),
+            column(2, actionButton("ed_export_row_btn", "Export row")),
+            column(
+              4,
+              textInput(
+                "ed_graph_plan_tsv",
+                label = NULL,
+                value = "",
+                placeholder = "Graph plan row"
+              )
+            ),
+            column(
+              2,
+              div(
+                class = "editor-country-context",
+                textOutput("editor_country_context")
+              )
+            )
           ),
-          br(),
-          plotOutput("ed_graph_plot", height = "480px"),
-          br(),
+          uiOutput("ed_graph_plot_ui"),
           fluidRow(
             column(4, downloadButton("ed_download_png", "Download png")),
-            column(4, downloadButton("ed_download_data", "Download data")),
-            column(4, actionButton("ed_export_row_btn", "Export row (TSV)"))
+            column(4, downloadButton("ed_download_jpeg", "Download jpeg")),
+            column(4, downloadButton("ed_download_data", "Download data"))
           ),
-          verbatimTextOutput("ed_row_validation"),
-          br(),
           fluidRow(
             column(5, textAreaInput("ed_graph_title", "Graph title", "Graph Title", rows = 2)),
             column(2, selectizeInput("ed_graph_group", "Graph group", choices = graph_group_choices)),
@@ -434,9 +653,13 @@ server <- function(input, output, session) {
     editor_bootstrapped = FALSE,
     editor_selectize_ready = FALSE,
     gallery_download_name = NULL,
+    gallery_build_progress = NULL,
     dirty           = FALSE,
     plan_validation_revision = 0L,
-    editor_validation_cache_key = NULL
+    editor_validation_cache_key = NULL,
+    editor_touch_row_ids = integer(0),
+    gallery_status_country_label = NULL,
+    editor_context_country_label = NULL
   )
 
   bump_plan_validation_revision <- function(from_revision = NULL) {
@@ -460,6 +683,27 @@ server <- function(input, output, session) {
     rv$country_iso3c <- country_iso3c_from_id(input$country_choice)
     bump_plan_validation_revision()
   }, ignoreNULL = FALSE)
+
+  note_gallery_built_country <- function(country_iso3c) {
+    lab <- country_label_from_iso3c(country_iso3c)
+    if (!is.null(lab) && !is.na(lab) && nzchar(lab)) {
+      rv$gallery_status_country_label <- lab
+    }
+    invisible(lab)
+  }
+
+  note_editor_plot_country <- function(country_iso3c) {
+    lab <- country_label_from_iso3c(country_iso3c)
+    if (!is.null(lab) && !is.na(lab) && nzchar(lab)) {
+      rv$editor_context_country_label <- lab
+    }
+    invisible(lab)
+  }
+
+  output$editor_country_context <- renderText({
+    lab <- rv$editor_context_country_label
+    if (is.null(lab) || is.na(lab) || !nzchar(lab)) "—" else lab
+  })
 
   navigate_to_tab <- function(tab_value) {
     bslib::nav_select(id = "main_nav", selected = tab_value, session = session)
@@ -487,15 +731,23 @@ server <- function(input, output, session) {
 
   observeEvent(input$graphplan_file, {
     req(input$graphplan_file)
-    imported <- read_graphplan_file(input$graphplan_file$datapath, dict = FD$dict)
-    rv$graphplan <- imported$plan
-    rv$graphplan_info <- imported$info
-    rv$graphplan_baseline <- graphplan_snapshot(imported$plan)
-    rv$validation <- NULL
-    rv$built <- list()
-    rv$dirty <- TRUE
-    bump_plan_validation_revision()
-    clear_editor_validation_cache()
+    withProgress(message = "Loading graphplan...", value = 0, {
+      incProgress(0.12, detail = "Reading workbook")
+      imported <- read_graphplan_file(input$graphplan_file$datapath, dict = FD$dict)
+      incProgress(0.72, detail = "Updating session state")
+      rv$graphplan <- imported$plan
+      rv$graphplan_info <- imported$info
+      rv$graphplan_baseline <- graphplan_baseline_capture(imported$plan)
+      rv$validation <- NULL
+      rv$built <- list()
+      rv$gallery_status_country_label <- NULL
+      reset_gallery_thumb_cache()
+      rv$dirty <- TRUE
+      bump_plan_validation_revision()
+      clear_editor_validation_cache()
+      rv$editor_touch_row_ids <- integer(0)
+      incProgress(1, detail = "Done")
+    })
     showNotification("Graphplan loaded.", type = "message")
   }, ignoreInit = TRUE)
 
@@ -506,28 +758,36 @@ server <- function(input, output, session) {
     )
     iso3 <- country_iso3c_from_id(input$country_choice)
     rv$country_iso3c <- iso3
-    rv$validation <- profile_step(
-      "import.validate_graphplan_for_app",
-      validate_graphplan_for_app(
-        graphplan     = rv$graphplan,
-        FD            = FD,
-        country_iso3c = iso3,
-        peers_fname   = peers_fname
+    withProgress(message = "Validating graphplan...", value = 0, {
+      incProgress(0.12, detail = "Running row checks")
+      rv$validation <- profile_step(
+        "import.validate_graphplan_for_app",
+        validate_graphplan_for_app(
+          graphplan     = rv$graphplan,
+          FD            = FD,
+          country_iso3c = iso3,
+          peers_fname   = peers_fname
+        )
       )
-    )
-    rv$graphplan <- rv$validation$plan
-    bump_plan_validation_revision()
-    clear_editor_validation_cache()
+      incProgress(0.78, detail = "Updating plan and gallery state")
+      rv$graphplan <- rv$validation$plan
+      rv$built <- prune_built_list_for_validation(rv$built, rv$validation)
+      bump_plan_validation_revision()
+      clear_editor_validation_cache()
+      incProgress(1, detail = "Complete")
+    })
     s <- rv$validation$summary
+    rs <- rv$validation$row_status
+    n_valid <- sum(rs$check_status == "valid", na.rm = TRUE)
     showModal(modalDialog(
       title = "Validation complete",
       tags$p(glue(
-        "Active: {s$n_active}, buildable: {s$n_buildable}, ",
-        "errors: {s$n_errors}, inactive: {s$n_inactive}"
+        "Active: {s$n_active[[1]]}, inactive: {s$n_inactive[[1]]}, ",
+        "errors: {s$n_errors[[1]]}, buildable (valid rows): {n_valid}"
       )),
       footer = tagList(
         modalButton("Fix issues first"),
-        actionButton("validate_build_continue", "Build valid graphs", class = "btn-primary")
+        actionButton("validate_build_continue", "Build active and valid", class = "btn-primary")
       ),
       easyClose = TRUE
     ))
@@ -537,6 +797,65 @@ server <- function(input, output, session) {
     removeModal()
     shinyjs::click("build_valid_btn")
   })
+
+  unlink_built_gallery_thumbs <- function(built_list) {
+    for (item in as.list(built_list %||% list())) {
+      path <- item$thumb_path
+      if (!is.null(path) && nzchar(path) && file.exists(path)) {
+        unlink(path, force = TRUE)
+      }
+    }
+    invisible(NULL)
+  }
+
+  set_graphplan_all_active_state <- function(make_active) {
+    shiny::validate(
+      shiny::need(!is.null(rv$graphplan) && nrow(rv$graphplan) > 0L,
+                  "Load a graphplan first.")
+    )
+    n <- nrow(rv$graphplan)
+    if (isTRUE(make_active)) {
+      rv$graphplan <- graphplan_activate_all(rv$graphplan)
+      msg <- glue("All {n} rows set active.")
+    } else {
+      unlink_built_gallery_thumbs(rv$built)
+      rv$graphplan <- graphplan_deactivate_all(rv$graphplan)
+      rv$built <- list()
+      msg <- glue("All {n} rows set inactive.")
+    }
+    rv$dirty <- TRUE
+    if (!is.null(rv$country_iso3c)) {
+      rv$validation <- validate_graphplan_for_app(
+        rv$graphplan, FD, rv$country_iso3c, peers_fname
+      )
+      rv$graphplan <- rv$validation$plan
+      rv$built <- prune_built_list_for_validation(rv$built, rv$validation)
+      bump_plan_validation_revision()
+      clear_editor_validation_cache()
+    } else {
+      showNotification(
+        "Select a country and Validate on Import to refresh the status table.",
+        type = "warning"
+      )
+    }
+    showNotification(msg, type = "message")
+  }
+
+  observeEvent(input$import_make_all_active_btn, {
+    set_graphplan_all_active_state(TRUE)
+  }, ignoreInit = TRUE)
+
+  observeEvent(input$import_make_all_inactive_btn, {
+    set_graphplan_all_active_state(FALSE)
+  }, ignoreInit = TRUE)
+
+  observeEvent(input$gallery_make_all_active_btn, {
+    set_graphplan_all_active_state(TRUE)
+  }, ignoreInit = TRUE)
+
+  observeEvent(input$gallery_make_all_inactive_btn, {
+    set_graphplan_all_active_state(FALSE)
+  }, ignoreInit = TRUE)
 
   validation_metric_card <- function(label, value, card_class) {
     tags$div(
@@ -551,25 +870,57 @@ server <- function(input, output, session) {
       return(NULL)
     }
     s <- rv$validation$summary
+    rs <- rv$validation$row_status
+    n_valid <- sum(rs$check_status == "valid", na.rm = TRUE)
     tags$div(
-      class = "import-summary-cards",
-      validation_metric_card("Active", s$n_active[[1]], "validation-metric-active"),
-      validation_metric_card("Buildable", s$n_buildable[[1]], "validation-metric-buildable"),
-      validation_metric_card("Errors", s$n_errors[[1]], "validation-metric-errors"),
-      validation_metric_card("Inactive", s$n_inactive[[1]], "validation-metric-inactive"),
-      validation_metric_card("Total rows", s$n_rows[[1]], "validation-metric-total")
+      class = "import-summary-cards import-summary-cards--two-rows",
+      tags$div(
+        class = "validation-summary-row",
+        validation_metric_card("Active", s$n_active[[1]], "validation-metric-active"),
+        validation_metric_card("Inactive", s$n_inactive[[1]], "validation-metric-inactive")
+      ),
+      tags$div(
+        class = "validation-summary-row",
+        validation_metric_card("Errors", s$n_errors[[1]], "validation-metric-errors"),
+        validation_metric_card("Buildable", n_valid, "validation-metric-buildable")
+      )
     )
   })
 
   output$validation_table <- DT::renderDataTable({
     req(rv$validation)
+    req(rv$graphplan)
     rs <- rv$validation$row_status
+    rs$Built <- vapply(
+      rs$row_id,
+      function(rid) graphplan_row_built_in_gallery(rv$built, rid),
+      logical(1)
+    )
+    rs$Edited <- vapply(
+      rs$row_id,
+      function(rid) {
+        graphplan_row_edited_hybrid(
+          rid,
+          rv$graphplan,
+          rv$graphplan_baseline,
+          rv$editor_touch_row_ids
+        )
+      },
+      logical(1)
+    )
+    col_order <- c(
+      "row_id", "graph_name", "active", "check_status", "can_build",
+      "Built", "Edited", "messages"
+    )
+    rs <- rs[, intersect(col_order, names(rs)), drop = FALSE]
     display_names <- c(
       row_id = "Row",
       graph_name = "Graph",
       active = "Active",
       check_status = "Status",
-      can_build = "Build",
+      can_build = "Planned to build",
+      Built = "Built",
+      Edited = "Edited",
       messages = "Details"
     )
     for (nm in names(display_names)) {
@@ -577,14 +928,61 @@ server <- function(input, output, session) {
         names(rs)[names(rs) == nm] <- display_names[[nm]]
       }
     }
+    idx_active <- match("Active", names(rs)) - 1L
+    idx_status <- match("Status", names(rs)) - 1L
+    idx_details <- match("Details", names(rs)) - 1L
+    if (anyNA(c(idx_active, idx_status))) {
+      idx_active <- NA_integer_
+      idx_status <- NA_integer_
+    }
+    if (is.na(idx_details)) {
+      idx_details <- NA_integer_
+    }
+    col_defs <- list(list(className = "dt-center", targets = 0L))
+    if (!is.na(idx_status)) {
+      col_defs <- c(col_defs, list(list(className = "dt-col-status", targets = idx_status)))
+    }
+    if (!is.na(idx_details)) {
+      col_defs <- c(col_defs, list(list(className = "dt-col-details", targets = idx_details)))
+    }
+    row_cb <- if (!is.na(idx_active) && !is.na(idx_status)) {
+      DT::JS(sprintf(
+        "function(row, data) {
+          var av = data[%d], st = data[%d];
+          if (av === 1 || av === '1' || av === true) $(row).addClass('import-validation-row-active');
+          if (st === 'error') $(row).addClass('import-validation-row-error');
+        }",
+        idx_active,
+        idx_status
+      ))
+    } else {
+      NULL
+    }
+    dt_opts <- list(
+      paging = FALSE,
+      scrollX = TRUE,
+      dom = "t",
+      columnDefs = col_defs
+    )
+    if (!is.null(row_cb)) {
+      dt_opts$rowCallback <- row_cb
+    }
     DT::datatable(
       rs,
-      options = list(
-        paging = FALSE,
-        scrollX = TRUE,
-        dom = "t"
-      ),
-      rownames = FALSE
+      options = dt_opts,
+      selection = "none",
+      rownames = FALSE,
+      callback = DT::JS(
+        "table.on('click', 'tbody tr', function() {",
+        "  var data = table.row(this).data();",
+        "  if (!data || data.length < 1) return;",
+        "  var rowId = parseInt(data[0], 10);",
+        "  if (isNaN(rowId)) return;",
+        "  Shiny.setInputValue('validation_row_action',",
+        "    JSON.stringify({action: 'edit', row_id: rowId, t: Date.now()}),",
+        "    {priority: 'event'});",
+        "});"
+      )
     ) |>
       DT::formatStyle(
         "Status",
@@ -595,30 +993,242 @@ server <- function(input, output, session) {
       )
   })
 
+  parse_validation_row_action <- function(raw) {
+    if (is.null(raw)) {
+      return(NULL)
+    }
+    raw_chr <- trimws(as.character(raw))
+    if (!nzchar(raw_chr)) {
+      return(NULL)
+    }
+    if (is.list(raw) && !is.null(raw$action)) {
+      act <- raw
+    } else {
+      act <- tryCatch(
+        jsonlite::fromJSON(raw_chr, simplifyVector = FALSE),
+        error = function(e) NULL
+      )
+    }
+    if (is.null(act)) {
+      return(NULL)
+    }
+    action <- as.character(act$action %||% act[["action"]] %||% "")[1]
+    row_id <- suppressWarnings(as.integer(act$row_id %||% act[["row_id"]]))
+    if (!nzchar(action) || is.na(row_id)) {
+      return(NULL)
+    }
+    list(action = action, row_id = row_id)
+  }
+
+  observeEvent(input$validation_row_action, {
+    act <- parse_validation_row_action(input$validation_row_action)
+    if (is.null(act) || !identical(act$action, "edit")) {
+      return()
+    }
+    req(rv$validation)
+    rs <- rv$validation$row_status
+    row_match <- rs[rs$row_id == act$row_id, , drop = FALSE]
+    if (nrow(row_match) == 0L) {
+      showNotification("Validation row not found.", type = "error")
+      return()
+    }
+    gname <- as.character(row_match$graph_name[[1]])
+    manifest <- build_gallery_manifest(rv$validation, rv$built)
+    card <- gallery_manifest_card(manifest, gname)
+    built_item <- card$built_item %||% NULL
+    open_graph_in_editor(act$row_id, graph_name = gname, built_item = built_item)
+  }, ignoreInit = TRUE)
+
+  gallery_manifest <- reactive({
+    build_gallery_manifest(rv$validation, rv$built)
+  })
+
   gallery_output_id <- function(nm) {
     paste0("gallery_plot_", gsub("[^A-Za-z0-9]", "_", nm))
   }
+
+  gallery_build_active <- reactiveVal(FALSE)
 
   cancel_gallery_build_job <- function() {
     job <- session$userData$gallery_build_job
     if (!is.null(job)) {
       job$cancelled <- TRUE
+      session$userData$gallery_build_job <- job
     }
+    gallery_build_active(FALSE)
+    rv$gallery_build_progress <- NULL
+  }
+
+  finish_gallery_build_job <- function(job) {
+    if (!is.null(job$progress)) {
+      try(job$progress$close(), silent = TRUE)
+    }
+    rv$built <- job$built
+    note_gallery_built_country(job$country_iso3c)
+    session$userData$gallery_build_job <- NULL
+    gallery_build_active(FALSE)
+    rv$gallery_build_progress <- NULL
+    if (plotter_profile_enabled()) {
+      total_sec <- (proc.time() - job$t0)[["elapsed"]]
+      message(sprintf(
+        "[profile] gallery.build_valid_batch (%d rows): %.2fs (defer_ui=%s)",
+        job$n,
+        total_sec,
+        isTRUE(job$defer_ui)
+      ))
+      if (!is.null(job$profile_times) && length(job$profile_times) > 0L) {
+        pt <- dplyr::bind_rows(job$profile_times)
+        build_sum <- sum(pt$seconds_build, na.rm = TRUE)
+        assign_sum <- sum(pt$seconds_rv_assign, na.rm = TRUE)
+        message(sprintf(
+          "[profile] gallery.per_graph_build_sum: %.2fs; rv_built_assign_sum: %.2fs; other: %.2fs",
+          build_sum,
+          assign_sum,
+          max(0, total_sec - build_sum - assign_sum)
+        ))
+      }
+    }
+    showNotification(
+      paste("Built", length(job$built), "graph(s)."),
+      type = "message"
+    )
+  }
+
+  process_gallery_build_step <- function() {
+    job <- session$userData$gallery_build_job
+    if (is.null(job) || isTRUE(job$cancelled)) {
+      if (!is.null(job)) {
+        try(job$progress$close(), silent = TRUE)
+      }
+      session$userData$gallery_build_job <- NULL
+      gallery_build_active(FALSE)
+      rv$gallery_build_progress <- NULL
+      return(invisible(FALSE))
+    }
+
+    job$i <- job$i + 1L
+    idx <- job$i
+
+    if (idx > job$n) {
+      finish_gallery_build_job(job)
+      return(invisible(FALSE))
+    }
+
+    rid <- job$can_build_ids[[idx]]
+    gname <- job$row_meta$graph_name[[idx]] %||% paste0("row_", rid)
+    rv$gallery_build_progress <- list(
+      i = idx,
+      n = job$n,
+      graph_name = gname,
+      row_id = rid
+    )
+    job$progress$set(
+      idx - 1L,
+      message = "Building graphs...",
+      detail = glue::glue("Graph {idx}/{job$n}: row {rid} — {gname}")
+    )
+
+    row <- job$graphplan[rid, , drop = FALSE]
+    t_build <- proc.time()
+    item <- tryCatch(
+      build_graph_row(
+        graphplan_row = row,
+        FD = FD,
+        country_iso3c = job$country_iso3c,
+        peers_fname = peers_fname
+      ),
+      error = function(e) {
+        showNotification(
+          glue::glue("Build failed at row {rid}: {conditionMessage(e)}"),
+          type = "error",
+          duration = NULL
+        )
+        NULL
+      }
+    )
+    if (is.null(item)) {
+      job$cancelled <- TRUE
+      session$userData$gallery_build_job <- job
+      cancel_gallery_build_job()
+      return(invisible(FALSE))
+    }
+
+    sec_build <- (proc.time() - t_build)[["elapsed"]]
+    key <- item$graph_name %||% paste0("row_", rid)
+    built_item <- c(
+      item,
+      list(row_id = rid, status = if (isTRUE(item$ok)) "ok" else "error")
+    )
+    if (isTRUE(item$ok)) {
+      built_item <- tryCatch(
+        enrich_gallery_built_item(built_item, job$thumb_dir),
+        error = function(e) {
+          showNotification(
+            glue::glue("Thumbnail failed for '{key}': {conditionMessage(e)}"),
+            type = "warning"
+          )
+          built_item
+        }
+      )
+    }
+    job$built[[key]] <- built_item
+    sec_assign <- 0
+    if (!isTRUE(job$defer_ui)) {
+      t_assign <- proc.time()
+      rv$built <- job$built
+      sec_assign <- (proc.time() - t_assign)[["elapsed"]]
+    }
+    if (!is.null(job$profile_times)) {
+      job$profile_times[[idx]] <- list(
+        graph_index = idx,
+        row_id = rid,
+        graph_name = key,
+        seconds_build = round(sec_build, 4),
+        seconds_rv_assign = round(sec_assign, 4)
+      )
+    }
+    session$userData$gallery_build_job <- job
+
+    job$progress$set(
+      idx,
+      message = "Building graphs...",
+      detail = glue::glue("Done {idx}/{job$n}: {gname}")
+    )
+    invisible(TRUE)
+  }
+
+  observe({
+    if (!gallery_build_active()) {
+      return()
+    }
+    invalidateLater(50, session)
+    process_gallery_build_step()
+  })
+
+  gallery_thumb_cache_dir <- function() {
+    cache <- session$userData$gallery_thumb_dir
+    if (!is.null(cache) && nzchar(cache)) {
+      return(cache)
+    }
+    cache <- gallery_session_thumb_dir(session)
+    session$userData$gallery_thumb_dir <- cache
+    cache
+  }
+
+  reset_gallery_thumb_cache <- function() {
+    cleanup_gallery_thumb_dir(session$userData$gallery_thumb_dir)
+    session$userData$gallery_thumb_dir <- gallery_session_thumb_dir(session)
+    dir.create(session$userData$gallery_thumb_dir, recursive = TRUE, showWarnings = FALSE)
+    invisible(session$userData$gallery_thumb_dir)
   }
 
   start_incremental_gallery_build <- function(can_build_ids,
                                               row_meta,
                                               build_graphplan,
                                               build_country_iso3c) {
-    if (!requireNamespace("later", quietly = TRUE)) {
-      showNotification(
-        "Incremental gallery build requires the later package (bundled with shiny).",
-        type = "error"
-      )
-      return(invisible(FALSE))
-    }
-
     cancel_gallery_build_job()
+    reset_gallery_thumb_cache()
+    thumb_dir <- gallery_thumb_cache_dir()
 
     n_build <- length(can_build_ids)
     job <- list(
@@ -630,6 +1240,9 @@ server <- function(input, output, session) {
       graphplan = build_graphplan,
       country_iso3c = build_country_iso3c,
       built = list(),
+      defer_ui = gallery_defer_ui_enabled(),
+      profile_times = if (plotter_profile_enabled()) list() else NULL,
+      thumb_dir = thumb_dir,
       t0 = proc.time(),
       progress = shiny::Progress$new(
         session,
@@ -644,71 +1257,8 @@ server <- function(input, output, session) {
     )
     session$userData$gallery_build_job <- job
     rv$built <- list()
-
-    build_step <- function() {
-      shiny::withReactiveDomain(session, {
-        job <- session$userData$gallery_build_job
-        if (is.null(job) || isTRUE(job$cancelled)) {
-          if (!is.null(job)) job$progress$close()
-          session$userData$gallery_build_job <- NULL
-          return()
-        }
-
-        job$i <- job$i + 1L
-        idx <- job$i
-
-        if (idx > job$n) {
-          job$progress$close()
-          rv$built <- job$built
-          session$userData$gallery_build_job <- NULL
-          if (plotter_profile_enabled()) {
-            message(sprintf(
-              "[profile] gallery.build_valid_batch (%d rows): %.2fs",
-              job$n,
-              (proc.time() - job$t0)[["elapsed"]]
-            ))
-          }
-          showNotification(
-            paste("Built", length(job$built), "graph(s)."),
-            type = "message"
-          )
-          return()
-        }
-
-        rid <- job$can_build_ids[[idx]]
-        gname <- job$row_meta$graph_name[[idx]] %||% paste0("row_", rid)
-        job$progress$set(
-          idx - 1L,
-          message = "Building graphs...",
-          detail = glue::glue("Graph {idx}/{job$n}: row {rid} — {gname}")
-        )
-
-        row <- job$graphplan[rid, , drop = FALSE]
-        item <- build_graph_row(
-          graphplan_row = row,
-          FD = FD,
-          country_iso3c = job$country_iso3c,
-          peers_fname = peers_fname
-        )
-        key <- item$graph_name %||% paste0("row_", rid)
-        job$built[[key]] <- c(
-          item,
-          list(row_id = rid, status = if (isTRUE(item$ok)) "ok" else "error")
-        )
-        rv$built <- job$built
-        session$userData$gallery_build_job <- job
-
-        job$progress$set(
-          idx,
-          message = "Building graphs...",
-          detail = glue::glue("Done {idx}/{job$n}: {gname}")
-        )
-
-        later::later(build_step, delay = 0.05)
-      })
-    }
-
-    later::later(build_step, delay = 0)
+    rv$gallery_build_progress <- list(i = 0L, n = n_build, graph_name = NA_character_, row_id = NA_integer_)
+    gallery_build_active(TRUE)
     invisible(TRUE)
   }
 
@@ -751,8 +1301,6 @@ server <- function(input, output, session) {
       )
     })
   })
-
-  gallery_thumb_height <- "260px"
 
   gallery_action_js <- function(action, graph_name) {
     payload <- jsonlite::toJSON(
@@ -836,19 +1384,19 @@ server <- function(input, output, session) {
         )
       }
 
+      built_for_preview <- NULL
       if (!is.null(edit_built_item) && isTRUE(edit_built_item$ok) && !is.null(edit_built_item$graph)) {
-        rv$editor_preview <- edit_built_item
+        built_for_preview <- edit_built_item
       } else if (!is.null(edit_country_iso3c)) {
-        built <- build_graph_row(row, FD, edit_country_iso3c, peers_fname)
-        if (isTRUE(built$ok)) {
-          rv$editor_preview <- built
-        } else {
+        built_for_preview <- build_graph_row(row, FD, edit_country_iso3c, peers_fname)
+        if (!isTRUE(built_for_preview$ok)) {
           rv$editor_preview <- NULL
           showNotification(
-            built$error %||% "Could not build graph in editor.",
+            built_for_preview$error %||% "Could not build graph in editor.",
             type = "warning",
             duration = NULL
           )
+          built_for_preview <- NULL
         }
       } else {
         rv$editor_preview <- NULL
@@ -856,6 +1404,19 @@ server <- function(input, output, session) {
           "Select country on Import tab to preview the graph.",
           type = "warning"
         )
+      }
+
+      if (!is.null(built_for_preview)) {
+        preview_item <- prepare_editor_preview_item(built_for_preview, session)
+        if (is.null(preview_item)) {
+          rv$editor_preview <- NULL
+          showNotification(
+            built_for_preview$preview_error %||% "Could not render editor preview.",
+            type = "warning"
+          )
+        } else {
+          rv$editor_preview <- preview_item
+        }
       }
 
       showNotification(
@@ -867,11 +1428,19 @@ server <- function(input, output, session) {
     invisible(TRUE)
   }
 
-  gallery_card_ui <- function(nm, item) {
-    status_badge <- if (isTRUE(item$ok)) {
-      tags$span(class = "badge gallery-status-ok", "ok")
+  gallery_card_ui <- function(card) {
+    nm <- card$graph_name
+    badge_info <- gallery_status_badge(card$display_status)
+    status_badge <- tags$span(
+      class = paste("badge", badge_info$class),
+      badge_info$label
+    )
+    show_import_error_badge <- identical(as.character(card$check_status)[1], "error") &&
+      !identical(card$display_status, "validation_error")
+    import_error_badge <- if (show_import_error_badge) {
+      tags$span(class = "badge gallery-status-import-error", "Error")
     } else {
-      tags$span(class = "badge gallery-status-err", "error")
+      NULL
     }
     actions <- tags$div(
       class = "gallery-card-actions",
@@ -880,74 +1449,236 @@ server <- function(input, output, session) {
         onclick = gallery_action_js("edit", nm),
         "Edit"
       ),
-      tags$a(
-        class = "btn btn-warning btn-sm", href = "#",
-        onclick = gallery_action_js("deactivate", nm),
-        "Deactivate"
-      ),
-      if (isTRUE(item$ok)) {
+      if (identical(card$display_status, "inactive")) {
         tags$a(
-          class = "btn btn-info btn-sm", href = "#",
-          onclick = gallery_action_js("download", nm),
-          "Download"
+          class = "btn btn-success btn-sm", href = "#",
+          onclick = gallery_action_js("activate", nm),
+          "Activate"
+        )
+      } else {
+        tagList(
+          tags$a(
+            class = "btn btn-warning btn-sm", href = "#",
+            onclick = gallery_action_js("deactivate", nm),
+            "Deactivate"
+          ),
+          if (identical(card$display_status, "built_ok")) {
+            tags$a(
+              class = "btn btn-info btn-sm", href = "#",
+              onclick = gallery_action_js("download", nm),
+              "Download"
+            )
+          }
         )
       }
     )
-    if (isTRUE(item$ok)) {
-      column(
-        width = 4,
-        tags$div(
-          class = "gallery-card",
-          tags$div(
-            class = "gallery-card-title",
-            tags$span(nm, title = nm),
-            status_badge
-          ),
-          tags$div(
-            class = "gallery-card-plot",
-            plotOutput(gallery_output_id(nm), height = gallery_thumb_height)
-          ),
-          actions
+    card_class <- "gallery-card"
+    if (!identical(card$display_status, "built_ok")) {
+      card_class <- paste(card_class, "gallery-card-error")
+    }
+    if (identical(card$display_status, "inactive")) {
+      card_class <- paste(card_class, "gallery-card-inactive")
+    }
+    title_line <- tags$div(
+      class = "gallery-card-title",
+      tags$span(class = "gallery-card-name", nm, title = nm),
+      tags$div(class = "gallery-card-badges", status_badge, import_error_badge)
+    )
+    body <- if (identical(card$display_status, "built_ok")) {
+      tags$div(
+        class = "gallery-card-plot",
+        imageOutput(
+          gallery_output_id(nm),
+          height = paste0(gallery_thumb_height_px, "px")
         )
       )
     } else {
-      column(
-        width = 4,
-        tags$div(
-          class = "gallery-card gallery-card-error",
-          tags$div(class = "gallery-card-title", tags$strong(nm), status_badge),
-          tags$p(class = "text-danger small", item$error %||% "build failed"),
-          actions
-        )
+      msg <- switch(
+        card$display_status,
+        build_failed = card$built_item$error %||% "Build failed",
+        validation_error = card$messages %||% "Validation error",
+        warning = card$messages %||% "Warning",
+        not_built = "Not built yet. Use \"Build active and valid\" to render.",
+        inactive = glue::glue("Row {card$row_id} — inactive (not built)"),
+        card$messages %||% ""
+      )
+      tags$div(
+        class = "gallery-card-placeholder",
+        if (identical(card$display_status, "inactive") ||
+            identical(card$display_status, "not_built")) {
+          tags$p(class = "text-muted small", msg)
+        } else {
+          tags$p(class = "text-danger small", msg)
+        }
       )
     }
+    column(
+      width = 4,
+      tags$div(class = card_class, title_line, body, actions)
+    )
   }
 
-  output$gallery_ui <- renderUI({
-    if (length(rv$built) == 0) {
-      return(p("No graphs built yet. Validate and use \"Build valid graphs\"."))
+  gallery_manifest_grid <- function(cards_named) {
+    nms <- names(cards_named)
+    if (length(nms) == 0L) {
+      return(NULL)
     }
-    nms <- names(rv$built)
     row_groups <- split(nms, ceiling(seq_along(nms) / 3L))
-    rows <- lapply(row_groups, function(group) {
-      fluidRow(class = "gallery-grid", lapply(group, function(nm) {
-        gallery_card_ui(nm, rv$built[[nm]])
-      }))
-    })
-    do.call(tagList, rows)
+    do.call(
+      tagList,
+      lapply(row_groups, function(group) {
+        fluidRow(
+          class = "gallery-grid",
+          lapply(group, function(nm) {
+            gallery_card_ui(cards_named[[nm]])
+          })
+        )
+      })
+    )
+  }
+
+  output$gallery_build_status <- renderText({
+    prog <- rv$gallery_build_progress
+    if (!is.null(prog) && isTRUE(gallery_build_active())) {
+      if (is.null(prog$i) || prog$i < 1L) {
+        return(glue::glue("Preparing to build {prog$n} graph(s)…"))
+      }
+      return(glue::glue("Building graph {prog$i} of {prog$n}…"))
+    }
+    if (is.null(rv$validation)) {
+      return("")
+    }
+    manifest <- gallery_manifest()
+    n_built <- sum(vapply(
+      manifest$active,
+      function(c) identical(c$display_status, "built_ok"),
+      logical(1)
+    ))
+    n_inactive <- length(manifest$inactive)
+    country_lab <- rv$gallery_status_country_label
+    country_suffix <- if (!is.null(country_lab) && !is.na(country_lab) && nzchar(country_lab)) {
+      glue::glue(" ({country_lab})")
+    } else {
+      ""
+    }
+    parts <- character()
+    if (n_built > 0L) {
+      parts <- c(parts, glue::glue("{n_built} built{country_suffix}"))
+    }
+    if (n_inactive > 0L) {
+      parts <- c(parts, glue::glue("{n_inactive} inactive"))
+    }
+    if (length(parts) == 0L) {
+      return("")
+    }
+    paste(parts, collapse = ", ")
+  })
+
+  output$gallery_ui <- renderUI({
+    prog <- rv$gallery_build_progress
+    if (!is.null(prog) && isTRUE(gallery_build_active())) {
+      detail <- if (is.null(prog$i) || prog$i < 1L) {
+        glue::glue("Preparing {prog$n} graph(s)…")
+      } else if (!is.null(prog$graph_name) && !is.na(prog$graph_name)) {
+        glue::glue("Graph {prog$i} of {prog$n}: {prog$graph_name}")
+      } else {
+        glue::glue("Graph {prog$i} of {prog$n}")
+      }
+      return(tagList(
+        tags$div(
+          class = "alert alert-info",
+          tags$strong("Building gallery…"),
+          tags$p(detail),
+          tags$p(
+            class = "text-muted small",
+            "Thumbnails appear when the batch finishes."
+          )
+        )
+      ))
+    }
+    if (is.null(rv$validation)) {
+      return(p("Run validation on the Import tab to see the graph plan in the gallery."))
+    }
+    manifest <- gallery_manifest()
+    active_grid <- gallery_manifest_grid(manifest$active)
+    inactive_grid <- gallery_manifest_grid(manifest$inactive)
+    if (is.null(active_grid) && is.null(inactive_grid)) {
+      return(p("No rows in graphplan."))
+    }
+    inactive_section <- if (is.null(inactive_grid)) {
+      NULL
+    } else {
+      tags$div(
+        class = "gallery-inactive-section",
+        tags$h4(
+          class = "gallery-inactive-heading",
+          glue::glue("Inactive ({length(manifest$inactive)})")
+        ),
+        inactive_grid
+      )
+    }
+    tagList(active_grid, inactive_section)
   })
 
   observe({
-    for (nm in names(rv$built)) {
+    manifest <- gallery_manifest()
+    sig_store <- session$userData$gallery_plot_thumb_sig
+    if (is.null(sig_store) || !is.list(sig_store)) {
+      sig_store <- list()
+    }
+    ok_names <- character()
+    for (nm in names(manifest$active)) {
+      if (identical(manifest$active[[nm]]$display_status, "built_ok")) {
+        ok_names <- c(ok_names, nm)
+      }
+    }
+    if (length(sig_store) > 0L) {
+      sig_store <- sig_store[names(sig_store) %in% ok_names]
+    }
+    for (nm in names(manifest$active)) {
+      card <- manifest$active[[nm]]
+      if (!identical(card$display_status, "built_ok")) {
+        next
+      }
+      item <- card$built_item
+      path <- item$thumb_path %||% ""
+      sig <- paste(
+        path,
+        as.integer(item$row_id %||% 0L),
+        isTRUE(item$ok),
+        sep = "\x1e"
+      )
+      prev_sig <- sig_store[[nm]] %||% NA_character_
+      if (identical(prev_sig, sig)) {
+        next
+      }
+      sig_store[[nm]] <- sig
       local({
         plot_name <- nm
         oid <- gallery_output_id(plot_name)
-        output[[oid]] <- renderPlot({
-          req(rv$built[[plot_name]]$ok, rv$built[[plot_name]]$graph)
-          rv$built[[plot_name]]$graph
-        })
+        output[[oid]] <- renderImage(
+          {
+            m <- gallery_manifest()
+            c <- m$active[[plot_name]]
+            req(!is.null(c), identical(c$display_status, "built_ok"))
+            item <- c$built_item
+            req(!is.null(item), isTRUE(item$ok))
+            path <- item$thumb_path
+            req(!is.null(path), nzchar(path), file.exists(path))
+            dims <- gallery_thumb_dims(item$graph_params)
+            list(
+              src = normalizePath(path, winslash = "/", mustWork = TRUE),
+              contentType = "image/png",
+              width = dims$width,
+              height = dims$height,
+              alt = plot_name
+            )
+          },
+          deleteFile = FALSE
+        )
       })
     }
+    session$userData$gallery_plot_thumb_sig <- sig_store
   })
 
   observeEvent(input$gallery_action, {
@@ -961,28 +1692,81 @@ server <- function(input, output, session) {
       return()
     }
     action <- as.character(act$action %||% act[["action"]] %||% "")
-    item <- rv$built[[nm]]
-    if (is.null(item)) {
-      showNotification(glue("Graph '{nm}' not found in gallery cache."), type = "error")
+    req(rv$validation)
+    manifest <- gallery_manifest()
+    card <- gallery_manifest_card(manifest, nm)
+    if (is.null(card)) {
+      showNotification(glue("Graph '{nm}' not found in gallery."), type = "error")
+      return()
+    }
+    item <- card$built_item
+
+    if (identical(action, "edit")) {
+      open_graph_in_editor(
+        card$row_id,
+        graph_name = nm,
+        built_item = if (identical(card$display_status, "built_ok")) item else NULL
+      )
       return()
     }
 
-    if (identical(action, "edit")) {
-      if (is.null(item$row_id)) {
-        showNotification("Cannot open graph in editor (missing row id).", type = "error")
+    if (identical(action, "activate")) {
+      if (is.null(rv$graphplan)) {
+        showNotification("Cannot activate (no graphplan).", type = "error")
         return()
       }
-      open_graph_in_editor(item$row_id, graph_name = nm, built_item = item)
+      rv$graphplan <- activate_graphplan_row(rv$graphplan, card$row_id)
+      rv$dirty <- TRUE
+      if (!is.null(rv$country_iso3c)) {
+        rv$validation <- validate_graphplan_for_app(
+          rv$graphplan, FD, rv$country_iso3c, peers_fname
+        )
+        rv$graphplan <- rv$validation$plan
+        rv$built <- prune_built_list_for_validation(rv$built, rv$validation)
+        rid <- card$row_id
+        rs_one <- rv$validation$row_status[
+          rv$validation$row_status$row_id == rid,
+          ,
+          drop = FALSE
+        ]
+        if (nrow(rs_one) == 1L && isTRUE(rs_one$can_build[[1]])) {
+          cs <- as.character(rs_one$check_status[[1]])[1]
+          if (!is.na(cs) && cs %in% c("valid", "warning")) {
+            fres <- refresh_gallery_built_for_row(
+              rv$built,
+              rid,
+              rv$graphplan,
+              FD,
+              rv$country_iso3c,
+              peers_fname,
+              gallery_thumb_cache_dir()
+            )
+            rv$built <- fres$built_list
+            note_gallery_built_country(rv$country_iso3c)
+          }
+        }
+        bump_plan_validation_revision()
+        clear_editor_validation_cache()
+      }
+      showNotification(
+        glue("Activated '{nm}'. Review validation on Import; use Edit to open the row in the editor."),
+        type = "message"
+      )
       return()
     }
 
     if (identical(action, "deactivate")) {
-      if (is.null(item$row_id) || is.null(rv$graphplan)) {
+      if (is.null(rv$graphplan)) {
         showNotification("Cannot deactivate (no graphplan).", type = "error")
         return()
       }
-      rv$graphplan <- soft_delete_row(rv$graphplan, item$row_id)
-      rv$built[[nm]] <- NULL
+      rid <- card$row_id
+      if (!is.null(item) && !is.null(item$thumb_path) &&
+          nzchar(item$thumb_path) && file.exists(item$thumb_path)) {
+        unlink(item$thumb_path, force = TRUE)
+      }
+      rv$graphplan <- soft_delete_row(rv$graphplan, rid)
+      rv$built <- remove_built_list_row(rv$built, rid)
       rv$dirty <- TRUE
       if (!is.null(rv$country_iso3c)) {
         rv$validation <- profile_step(
@@ -992,6 +1776,7 @@ server <- function(input, output, session) {
           )
         )
         rv$graphplan <- rv$validation$plan
+        rv$built <- prune_built_list_for_validation(rv$built, rv$validation)
         bump_plan_validation_revision()
         clear_editor_validation_cache()
       }
@@ -1000,7 +1785,7 @@ server <- function(input, output, session) {
     }
 
     if (identical(action, "download")) {
-      if (!isTRUE(item$ok)) {
+      if (!identical(card$display_status, "built_ok") || is.null(item) || !isTRUE(item$ok)) {
         showNotification("Graph is not available for download.", type = "warning")
         return()
       }
@@ -1019,15 +1804,7 @@ server <- function(input, output, session) {
     content = function(file) {
       item <- rv$built[[rv$gallery_download_name]]
       req(item$ok, item$graph, item$graph_params)
-      ggplot2::ggsave(
-        filename = file,
-        plot = item$graph,
-        device = "png",
-        width = item$graph_params$width,
-        height = item$graph_params$height,
-        units = "px",
-        dpi = 150
-      )
+      write_export_png(item$graph, item$graph_params, file)
     }
   )
 
@@ -1066,6 +1843,35 @@ server <- function(input, output, session) {
     )
   }
 
+  sync_ed_peers_custom_from_peer_mode <- function(peers = input$ed_peers,
+                                                  peers_formula = input$ed_peers_formula,
+                                                  graph_type = input$ed_graph_type) {
+    # `apply_editor_state` can run inside `session$onFlushed` (e.g. Edit from Gallery);
+    # reactive reads must use isolate there — observers are fine too.
+    country_iso3c <- shiny::isolate({
+      rv$country_iso3c %||% country_iso3c_from_id(input$country_choice %||% "")
+    })
+    expanded <- expand_editor_peer_selection_to_iso2c(
+      country_iso3c = country_iso3c,
+      peers = peers,
+      peers_formula = peers_formula,
+      graph_type = graph_type,
+      peers_fname = peers_fname,
+      data = FD
+    )
+    if (is.null(expanded)) {
+      return(invisible(NULL))
+    }
+    valid <- intersect(expanded, unname(country_choices))
+    updateSelectizeInput(
+      session,
+      "ed_peers_custom",
+      choices = country_choices,
+      selected = valid
+    )
+    invisible(NULL)
+  }
+
   apply_editor_state <- function(session, state, indicator_choices, country_choices) {
     updateTextInput(session, "ed_graph_name_suffix", value = state$graph_name_suffix %||% "")
     updateTextAreaInput(session, "ed_graph_title", value = state$graph_title %||% "")
@@ -1073,12 +1879,12 @@ server <- function(input, output, session) {
     updateSelectizeInput(session, "ed_graph_group", selected = state$graph_group_short)
     updateSelectizeInput(session, "ed_data_frequency", selected = state$data_frequency)
     ic <- editor_indicator_choices(
-      indicators_tbl,
+      indicator_catalog,
       frequency = state$data_frequency %||% " ",
       ind_group = ""
     )
     sel_inds <- state$indicators %||% character()
-    ind_choices <- ensure_indicator_choices(ic$choices, sel_inds, indicators_tbl)
+    ind_choices <- ensure_indicator_choices(ic$choices, sel_inds, indicator_catalog)
     updateSelectizeInput(
       session, "ed_indicators",
       choices = ind_choices,
@@ -1087,7 +1893,6 @@ server <- function(input, output, session) {
     updateTextInput(session, "ed_time_fix", value = state$time_fix %||% "")
     updateSelectizeInput(session, "ed_peers", selected = state$peers)
     updateTextInput(session, "ed_peers_formula", value = state$peers_formula %||% "")
-    updateSelectizeInput(session, "ed_peers_custom", selected = state$peers_custom)
     updateCheckboxInput(session, "ed_all", value = state$all)
     updateTextInput(session, "ed_x_min", value = state$x_min %||% "")
     updateTextInput(session, "ed_x_max", value = state$x_max %||% "")
@@ -1095,8 +1900,8 @@ server <- function(input, output, session) {
     updateNumericInput(session, "ed_y_max", value = state$y_max)
     updateSelectInput(session, "ed_trend_type", selected = state$trend_type %||% "")
     updateSelectInput(session, "ed_theme", selected = state$theme %||% "ipsum")
-    sec_choices <- sec_y_choices_from_indicators(indicators_tbl, sel_inds)
-    sec_choices <- ensure_indicator_choices(sec_choices, state$sec_y_ind %||% character(), indicators_tbl)
+    sec_choices <- sec_y_choices_from_indicators(indicator_catalog, sel_inds)
+    sec_choices <- ensure_indicator_choices(sec_choices, state$sec_y_ind %||% character(), indicator_catalog)
     updateSelectizeInput(
       session, "ed_sec_y_axis_ind",
       choices = sec_choices,
@@ -1114,13 +1919,25 @@ server <- function(input, output, session) {
     updateSelectInput(session, "ed_orientation", selected = state$orientation)
     updateCheckboxInput(session, "ed_show_title", value = state$show_title)
     updateCheckboxInput(session, "ed_active", value = state$active)
+    if (identical(state$peers, "custom")) {
+      updateSelectizeInput(
+        session, "ed_peers_custom",
+        selected = state$peers_custom %||% character()
+      )
+    } else {
+      sync_ed_peers_custom_from_peer_mode(
+        peers = state$peers,
+        peers_formula = state$peers_formula,
+        graph_type = state$graph_type
+      )
+    }
   }
 
   output$editor_mode_ui <- renderUI({
     label <- if (rv$editor_mode == "edit" && !is.null(rv$selected_row_id)) {
-      glue("Edit row {rv$selected_row_id}")
+      glue("Job: edit row {rv$selected_row_id}")
     } else {
-      "New graph"
+      "Job: new graph"
     }
     tags$span(class = "editor-mode-badge", label)
   })
@@ -1131,7 +1948,7 @@ server <- function(input, output, session) {
                                        selected_indicators = NULL) {
     if (is.null(freq)) freq <- input$ed_data_frequency
     if (is.null(ind_group)) ind_group <- input$ed_ind_group
-    ic <- editor_indicator_choices(indicators_tbl, frequency = freq, ind_group = ind_group)
+    ic <- editor_indicator_choices(indicator_catalog, frequency = freq, ind_group = ind_group)
     selected <- if (!is.null(selected_indicators)) {
       selected_indicators
     } else if (!is.null(ic$selected)) {
@@ -1141,13 +1958,18 @@ server <- function(input, output, session) {
     } else {
       character()
     }
-    ind_choices <- ensure_indicator_choices(ic$choices, selected, indicators_tbl)
+    ind_choices <- ensure_indicator_choices(ic$choices, selected, indicator_catalog)
     updateSelectizeInput(
       session, "ed_indicators",
       choices = ind_choices,
       selected = selected
     )
   }
+
+  observeEvent(input$ed_peers, sync_ed_peers_custom_from_peer_mode(), ignoreNULL = FALSE)
+  observeEvent(input$ed_graph_type, sync_ed_peers_custom_from_peer_mode(), ignoreNULL = FALSE)
+  observeEvent(input$country_choice, sync_ed_peers_custom_from_peer_mode(), ignoreNULL = FALSE)
+  observeEvent(input$ed_peers_formula, sync_ed_peers_custom_from_peer_mode(), ignoreNULL = FALSE)
 
   observeEvent(
     list(input$ed_data_frequency, input$ed_ind_group),
@@ -1156,12 +1978,12 @@ server <- function(input, output, session) {
   )
 
   observeEvent(input$ed_indicators, {
-    sec_choices <- sec_y_choices_from_indicators(indicators_tbl, input$ed_indicators)
+    sec_choices <- sec_y_choices_from_indicators(indicator_catalog, input$ed_indicators)
     sec_selected <- intersect(
       input$ed_sec_y_axis_ind %||% character(),
       unname(sec_choices)
     )
-    sec_choices <- ensure_indicator_choices(sec_choices, sec_selected, indicators_tbl)
+    sec_choices <- ensure_indicator_choices(sec_choices, sec_selected, indicator_catalog)
     updateSelectizeInput(
       session, "ed_sec_y_axis_ind",
       choices = sec_choices,
@@ -1177,6 +1999,12 @@ server <- function(input, output, session) {
 
   observeEvent(input$ed_new_graph, {
     rv$editor_preview <- NULL
+    preview_path <- editor_preview_path(
+      session$userData$editor_preview_dir %||% editor_session_preview_dir(session)
+    )
+    if (file.exists(preview_path)) {
+      unlink(preview_path, force = TRUE)
+    }
     clear_editor_validation_cache()
     rv$selected_row_id <- NULL
     rv$editor_mode <- "new"
@@ -1195,13 +2023,6 @@ server <- function(input, output, session) {
       ind_group = "",
       selected_indicators = st$indicators
     )
-  })
-
-  observeEvent(input$ed_fill_btn, {
-    st <- collect_editor_state()
-    st <- apply_editor_fill_defaults(st)
-    apply_editor_state(session, st, indicator_choices, country_choices)
-    clear_editor_validation_cache()
   })
 
   observeEvent(input$ed_import_row_btn, {
@@ -1279,17 +2100,55 @@ server <- function(input, output, session) {
       rv$editor_preview <- NULL
       return()
     }
-    rv$editor_preview <- built
+    preview_item <- prepare_editor_preview_item(built, session)
+    if (is.null(preview_item)) {
+      rv$editor_preview <- NULL
+      showNotification(
+        built$preview_error %||% "Preview PNG failed.",
+        type = "warning"
+      )
+      return()
+    }
+    rv$editor_preview <- preview_item
+    note_editor_plot_country(rv$country_iso3c)
   })
 
-  output$ed_row_validation <- renderPrint({
-    rv$editor_row_validation
+  output$ed_graph_plot_ui <- renderUI({
+    preview <- rv$editor_preview
+    if (is.null(preview) || !isTRUE(preview$ok)) {
+      return(tags$div(class = "editor-preview-plot editor-preview-plot--empty"))
+    }
+    path <- preview$preview_path
+    if (is.null(path) || !nzchar(path) || !file.exists(path)) {
+      return(tags$div(class = "editor-preview-plot editor-preview-plot--empty"))
+    }
+    dims <- editor_preview_display_dims(preview$graph_params)
+    tags$div(
+      class = "editor-preview-plot",
+      imageOutput(
+        "ed_graph_plot",
+        height = paste0(dims$height, "px"),
+        width = paste0(dims$width, "px")
+      )
+    )
   })
 
-  output$ed_graph_plot <- renderPlot({
-    req(rv$editor_preview$ok, rv$editor_preview$graph)
-    rv$editor_preview$graph
-  })
+  output$ed_graph_plot <- renderImage(
+    {
+      req(rv$editor_preview$ok)
+      path <- rv$editor_preview$preview_path
+      req(!is.null(path), nzchar(path), file.exists(path))
+      dims <- editor_preview_display_dims(rv$editor_preview$graph_params)
+      list(
+        src = normalizePath(path, winslash = "/", mustWork = TRUE),
+        contentType = "image/png",
+        width = dims$width,
+        height = dims$height,
+        alt = rv$editor_preview$graph_params$graph_name %||% "preview"
+      )
+    },
+    deleteFile = FALSE
+  )
 
   output$ed_download_png <- downloadHandler(
     filename = function() {
@@ -1297,10 +2156,31 @@ server <- function(input, output, session) {
       paste0(g, ".png")
     },
     content = function(file) {
-      gp <- rv$editor_preview$graph_params
-      ggplot2::ggsave(
-        filename = file, plot = rv$editor_preview$graph,
-        device = "png", width = gp$width, height = gp$height, units = "px", dpi = 150
+      preview_path <- rv$editor_preview$preview_path
+      if (!is.null(preview_path) && nzchar(preview_path) && file.exists(preview_path)) {
+        file.copy(preview_path, file, overwrite = TRUE)
+      } else {
+        write_export_png(
+          rv$editor_preview$graph,
+          rv$editor_preview$graph_params,
+          file
+        )
+      }
+    }
+  )
+
+  output$ed_download_jpeg <- downloadHandler(
+    filename = function() {
+      g <- rv$editor_preview$graph_params$graph_name %||% "graph"
+      paste0(g, ".jpeg")
+    },
+    content = function(file) {
+      req(rv$editor_preview$ok, rv$editor_preview$graph, rv$editor_preview$graph_params)
+      write_export_image(
+        rv$editor_preview$graph,
+        rv$editor_preview$graph_params,
+        file,
+        device = "jpeg"
       )
     }
   )
@@ -1331,7 +2211,8 @@ server <- function(input, output, session) {
       row_id = rv$selected_row_id,
       editor_mode = rv$editor_mode
     )
-    if (!is.null(row_val) && !isTRUE(row_val$can_build)) {
+    row_is_inactive <- !isTRUE(active_flag_vec(row)[1])
+    if (!row_is_inactive && !is.null(row_val) && !isTRUE(row_val$can_build)) {
       showNotification(
         glue("Row not saved: {row_val$messages %||% 'validation failed'}"),
         type = "error", duration = NULL
@@ -1386,7 +2267,8 @@ server <- function(input, output, session) {
               graphplan     = graphplan,
               FD            = FD,
               country_iso3c = save_country_iso3c,
-              peers_fname   = peers_fname
+              peers_fname   = peers_fname,
+              thumb_cache_dir = gallery_thumb_cache_dir()
             )
           )
 
@@ -1406,13 +2288,35 @@ server <- function(input, output, session) {
         rv$dirty <- TRUE
         rv$validation <- save_result$validation
         gallery_refresh <- save_result$gallery_refresh
-        rv$built <- gallery_refresh$built_list
-        rv$editor_preview <- gallery_refresh$editor_preview
+        rv$built <- prune_built_list_for_validation(
+          gallery_refresh$built_list,
+          save_result$validation
+        )
+        if (!is.null(gallery_refresh$editor_preview)) {
+          rv$editor_preview <- prepare_editor_preview_item(
+            gallery_refresh$editor_preview,
+            session
+          )
+        } else {
+          rv$editor_preview <- NULL
+        }
         rv$plan_validation_revision <- save_next_revision
         rv$editor_validation_cache_key <- NULL
         rv$editor_row_validation <- NULL
         incProgress(1)
       })
+      sid <- as.integer(save_result$saved_row_id)
+      prev_touch <- shiny::isolate(rv$editor_touch_row_ids %||% integer(0))
+      if (identical(save_editor_mode, "edit") && !is.null(save_selected_row_id)) {
+        br <- save_graphplan[save_selected_row_id, , drop = FALSE]
+        if (isTRUE(meaningful_editor_save_for_edited_flag(br, save_row))) {
+          rv$editor_touch_row_ids <- sort(unique(c(prev_touch, sid)))
+        } else {
+          rv$editor_touch_row_ids <- setdiff(prev_touch, sid)
+        }
+      } else {
+        rv$editor_touch_row_ids <- sort(unique(c(prev_touch, sid)))
+      }
       showNotification(save_msg, type = "message")
       if (!is.null(gallery_refresh) && !is.na(gallery_refresh$error)) {
         showNotification(

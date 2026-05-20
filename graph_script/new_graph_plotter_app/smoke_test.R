@@ -1,8 +1,14 @@
-# Smoke tests for new_graph_plotter_app.
+# Smoke tests for new_graph_plotter_app (phase 9 regression — headless).
 # Run from repo root: Rscript graph_script/new_graph_plotter_app/smoke_test.R
+#
+# Manual UI checklist: UI_CHECKLIST.md in this folder.
 #
 # Profile baseline (optional):
 #   PLOTTER_PROFILE=1 Rscript graph_script/new_graph_plotter_app/smoke_test.R
+# Full buildable scale (phase 10):
+#   PLOTTER_PROFILE=1 PLOTTER_PROFILE_ALL_BUILDABLE=1 Rscript .../smoke_test.R
+# Dedicated scale research + report:
+#   Rscript graph_script/new_graph_plotter_app/profile_gallery_scale.R
 # or in R: options(plotter.profile = TRUE) before sourcing.
 #
 # Fixture: 2_graphlib.xlsx in app folder (136 rows, 4 active for RUS).
@@ -72,14 +78,30 @@ s <- val$summary
 stopifnot(
   s$n_active[[1]] == 4L,
   s$n_buildable[[1]] == 4L,
-  s$n_errors[[1]] == 0L
+  s$n_errors[[1]] == 1L
 )
-message("Fixture validation (RUS, default active): 4 active, 4 buildable, 0 errors")
+message("Fixture validation (RUS, default active): 4 active, 4 buildable, 1 error row (inactive invalid)")
+
+bl <- graphplan_baseline_capture(plan)
+stopifnot(nrow(bl) == nrow(plan), !graphplan_row_edited_excluding_active(1L, plan, bl))
+stopifnot(graphplan_row_edited_hybrid(1L, plan, bl, 1L))
+stopifnot(!meaningful_editor_save_for_edited_flag(plan[1, , drop = FALSE], {
+  x <- plan[1, , drop = FALSE]
+  x$active[[1]] <- 0L
+  x
+}))
+stopifnot(meaningful_editor_save_for_edited_flag(plan[1, , drop = FALSE], {
+  x <- plan[1, , drop = FALSE]
+  x$graph_title[[1]] <- paste0(x$graph_title[[1]], " (smoke)")
+  x
+}))
+stopifnot(sum(val$row_status$check_status == "valid") == 135L)
+message("Baseline capture + hybrid Edited (17.4) helpers: OK")
 
 broken <- val$row_status |>
   dplyr::filter(.data$graph_name == fixture_broken_graph_name)
-stopifnot(nrow(broken) == 1L, broken$check_status[[1]] == "inactive")
-message("Broken row present as inactive: ", fixture_broken_graph_name)
+stopifnot(nrow(broken) == 1L, broken$check_status[[1]] == "error")
+message("Broken row inactive but status=error (would fail if activated): ", fixture_broken_graph_name)
 
 plan_broken_on <- plan
 plan_broken_on$active[broken$row_id[[1]]] <- 1L
@@ -94,6 +116,32 @@ stopifnot(
   grepl("Indicator not available", err_row$messages[[1]])
 )
 message("Broken row error when active=1: OK")
+
+manifest_default <- build_gallery_manifest(val, list())
+stopifnot(
+  length(manifest_default$inactive) >= 1L,
+  manifest_default$inactive[[fixture_broken_graph_name]]$display_status == "inactive",
+  sum(vapply(
+    manifest_default$active,
+    function(c) c$display_status == "not_built",
+    logical(1)
+  )) == 4L
+)
+message("Gallery manifest (validate, no build): inactive + not_built active: OK")
+
+plan_activated <- activate_graphplan_row(plan, broken$row_id[[1]])
+val_activated <- validate_graphplan_for_app(
+  plan_activated, FD, fixture_country_iso3c, peers_fname
+)
+manifest_activated <- build_gallery_manifest(val_activated, list())
+activated_card <- manifest_activated$active[[fixture_broken_graph_name]]
+stopifnot(
+  activated_card$display_status == "validation_error",
+  grepl("Indicator not available", activated_card$messages[[1]])
+)
+message("Gallery manifest after activate (validation error card): OK")
+
+stopifnot(!graphplan_row_edited_b_vs_baseline(broken$row_id[[1]], plan_activated, bl))
 
 build_ids <- val$row_status |>
   dplyr::filter(.data$can_build) |>
@@ -124,6 +172,45 @@ for (rid in build_ids) {
   built_list[[b$graph_name]] <- c(b, list(row_id = rid, status = "ok"))
 }
 message("Built ", length(built_list), " active fixture graphs: OK")
+
+pruned_ok <- prune_built_list_for_validation(built_list, val)
+stopifnot(
+  length(pruned_ok) == length(built_list),
+  setequal(names(pruned_ok), names(built_list))
+)
+message("prune_built_list_for_validation keeps all buildable rows: OK")
+
+thumb_tmp <- tempfile("gallery_thumbs_smoke_")
+dir.create(thumb_tmp)
+first_nm <- names(built_list)[1]
+enriched <- enrich_gallery_built_item(built_list[[first_nm]], thumb_tmp)
+stopifnot(
+  !is.null(enriched$thumb_path),
+  file.exists(enriched$thumb_path)
+)
+gp <- enriched$graph_params
+thumb_img <- png::readPNG(enriched$thumb_path, info = TRUE)
+png_dim <- attr(thumb_img, "dim")
+stopifnot(
+  png_dim[1] == gp$width,
+  png_dim[2] == gp$height
+)
+dims <- gallery_thumb_dims(gp)
+stopifnot(
+  dims$height == gallery_thumb_height_px,
+  dims$width == max(1L, round(gallery_thumb_height_px * gp$width / gp$height))
+)
+stopifnot(isTRUE(gallery_defer_ui_enabled()))
+cleanup_gallery_thumb_dir(thumb_tmp)
+horiz_dims <- editor_preview_display_dims(list(width = 1800, height = 900))
+vert_dims <- editor_preview_display_dims(list(width = 850, height = 850))
+stopifnot(
+  horiz_dims$height == editor_preview_max_height_px,
+  horiz_dims$width == round(editor_preview_max_height_px * 1800 / 900),
+  vert_dims$height == editor_preview_max_height_px,
+  vert_dims$width == vert_dims$height
+)
+message("Gallery export-fidelity thumbnails + display dims: OK")
 
 tmp <- tempfile("export_smoke_")
 dir.create(tmp)
@@ -209,7 +296,12 @@ stopifnot(!import_in_server)
 message("app.R: importData only at startup (not in server): OK")
 
 if (plotter_profile_enabled()) {
-  message("--- Profile baseline (typical RUS fixture) ---")
+  profile_all <- plotter_profile_all_buildable_enabled()
+  message(if (profile_all) {
+    "--- Profile baseline (all buildable rows, phase 10) ---"
+  } else {
+    "--- Profile baseline (typical RUS fixture) ---"
+  })
   timing <- run_plotter_profile_baseline(
     FD = FD,
     plan = plan,
@@ -222,10 +314,14 @@ if (plotter_profile_enabled()) {
       format = "auto",
       add_time = TRUE
     ),
-    update_plot_reps = 5L
+    update_plot_reps = if (profile_all) 0L else 5L,
+    profile_all_buildable = profile_all,
+    per_graph_timing = profile_all,
+    simulate_gallery_ui = profile_all
   )
   print_plotter_profile_baseline(timing)
-  stopifnot(nrow(timing) >= 4L)
+  min_steps <- if (profile_all) 3L else 4L
+  stopifnot(nrow(timing) >= min_steps)
   message("Profile baseline recorded ", nrow(timing), " step(s).")
 }
 

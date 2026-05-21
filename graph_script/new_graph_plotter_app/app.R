@@ -1,7 +1,5 @@
-# Dependencies (deploy comment; install manually as needed):
-# shiny, bslib, shinyjs, shinyWidgets, here, dplyr, tidyr, readxl, writexl,
-# openxlsx, DT, ggplot2, ggthemes, countrycode, stringr, glue, rlang, purrr,
-# showtext, svglite, cli, tibble — plus packages from assert_packages in plotting files.
+# Dependencies: see DEPLOY.md (Connect Cloud allowlist vs self-hosted manifest).
+# Cloud-minimal plotting_libs — legacy graph_plotter packages removed (reshape2, etc.).
 
 library(shiny)
 library(bslib)
@@ -15,15 +13,15 @@ library(openxlsx)
 library(jsonlite)
 
 plotting_libs <- c(
-  "dplyr", "reshape2", "ggplot2", "ggthemes", "countrycode", "readxl", "tidyr",
-  "data.table", "writexl", "unikn", "ggtext", "svglite", "stringr", "directlabels",
-  "fanplot", "forcats", "glue", "readr", "showtext", "ggfan", "purrr", "tibble", "cli"
+  "ggplot2", "countrycode", "readxl", "tidyr", "writexl", "ggtext",
+  "stringr", "purrr", "tibble", "cli"
 )
 for (lib in plotting_libs) {
   suppressPackageStartupMessages(library(lib, character.only = TRUE))
 }
 
 here::i_am("app.R")
+source(here("deploy_paths.R"))
 source(here("check_graphplan.R"))
 source(here("prepare_elements.R"))
 source(here("plot_themes.R"))
@@ -31,10 +29,11 @@ source(here("plot_types.R"))
 source(here("service.R"))
 
 # Constants aligned with graph_script/do_plot.R (also defined in service.R for helpers)
-sheet_keys   <- c(y = "y", q = "q", m = "m")
-peers_fname  <- here("1_peers_params.xlsx")
-data_fname   <- here("Filled_DB.rds")
-data_d_fname <- here("Filled_DB_d.rds")
+sheet_keys <- c(y = "y", q = "q", m = "m")
+deploy_paths <- assert_deploy_data_files(resolve_deploy_paths())
+peers_fname  <- deploy_paths$peers_fname
+data_fname   <- deploy_paths$data_fname
+data_d_fname <- deploy_paths$data_d_fname
 
 # Filled DB loads once at app startup (module scope). Server must use `FD` only —
 # do not call importData() in shinyServer (grep app.R: importData appears only here).
@@ -132,16 +131,53 @@ ui <- bslib::page_navbar(
       }
       .graphplan-bulk-toolbar .btn { margin: 0; }
       .gallery-build-row .btn { margin: 0; }
-      .editor-toolbar-row .editor-country-context {
+      .editor-preview-card .editor-toolbar-row {
         display: flex;
-        flex-direction: column;
-        justify-content: flex-end;
-        min-height: 34px;
+        flex-wrap: wrap;
+        align-items: flex-end;
+        gap: 0.45rem 0.6rem;
+        margin-bottom: 0.65rem;
+        max-width: 100%;
+        overflow-x: hidden;
+      }
+      .editor-toolbar-actions {
+        display: flex;
+        flex-wrap: nowrap;
+        gap: 0.35rem;
+        flex: 0 0 auto;
+      }
+      .editor-toolbar-actions .btn {
+        margin: 0;
+        white-space: nowrap;
+        font-size: 0.875rem;
+        padding: 0.375rem 0.55rem;
+      }
+      .editor-toolbar-tsv {
+        flex: 1 1 10rem;
+        min-width: 0;
+        max-width: 100%;
+      }
+      .editor-toolbar-tsv .form-group {
+        margin-bottom: 0;
+      }
+      .editor-toolbar-country {
+        flex: 0 1 auto;
+        min-width: 0;
+        max-width: min(12rem, 35%);
+      }
+      .editor-toolbar-country .editor-country-context,
+      .editor-toolbar-country .shiny-text-output {
+        display: block;
+        margin: 0;
         padding-bottom: 2px;
-        font-size: 0.9rem;
+        min-height: 34px;
+        line-height: 34px;
+        font-size: 0.85rem;
         font-weight: 600;
         color: #495057;
-        line-height: 1.25;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
       }
       .gallery-build-row .shiny-text-output {
         margin: 0;
@@ -233,16 +269,6 @@ ui <- bslib::page_navbar(
         color: #495057;
         flex: 1 1 100%;
       }
-      .editor-toolbar-row {
-        align-items: flex-end;
-        margin-bottom: 0.75rem;
-      }
-      .editor-toolbar-row .form-group { margin-bottom: 0; }
-      .editor-toolbar-row .btn {
-        margin-top: 0;
-        height: 34px;
-        line-height: 1.2;
-      }
       .editor-preview-plot {
         width: 100%;
         max-width: 100%;
@@ -272,6 +298,55 @@ ui <- bslib::page_navbar(
         display: block;
         margin: 0 auto;
       }
+      .editor-layout.bslib-sidebar-layout {
+        margin-top: 0;
+      }
+      .editor-layout .editor-sidebar,
+      .editor-layout .editor-sidebar > .sidebar-content {
+        overflow-x: hidden;
+        max-width: 100%;
+      }
+      .editor-layout .editor-sidebar .form-group,
+      .editor-layout .editor-sidebar .selectize-control {
+        max-width: 100%;
+        min-width: 0;
+      }
+      .editor-layout .editor-sidebar .bslib-grid {
+        margin-left: 0;
+        margin-right: 0;
+      }
+      .editor-layout .editor-main {
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+        min-width: 0;
+        padding-top: 0;
+      }
+      .editor-preview-card .card-body {
+        padding: 0.5rem 0.75rem;
+        background: #f8f9fa;
+      }
+      .editor-preview-card .editor-preview-plot {
+        margin-bottom: 0;
+        border: 1px solid #dee2e6;
+        border-radius: 6px;
+        background: #fff;
+      }
+      .editor-input-label {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.2rem;
+        flex-wrap: wrap;
+      }
+      .editor-hint-btn {
+        font-size: 0.75rem;
+        font-weight: 700;
+        line-height: 1;
+        min-width: 1.1rem;
+        text-decoration: none !important;
+        color: #6c757d !important;
+      }
+      .editor-hint-btn:hover { color: #0d6efd !important; }
     ")),
     tags$style(HTML(glue(
       ".editor-preview-plot {{",
@@ -309,7 +384,8 @@ ui <- bslib::page_navbar(
             class = "graphplan-bulk-toolbar",
             actionButton("validate_btn", "Validate", class = "btn-primary"),
             actionButton("import_make_all_active_btn", "Make all active"),
-            actionButton("import_make_all_inactive_btn", "Make all inactive")
+            actionButton("import_make_all_inactive_btn", "Make all inactive"),
+            actionButton("import_new_graph_btn", "New graph", class = "btn-default")
           )
         ),
         column(
@@ -396,6 +472,52 @@ ui <- bslib::page_navbar(
           gap: 0.75rem 1rem;
           margin: 0 0 0.75rem;
         }
+        .gallery-build-row-main {
+          display: flex;
+          flex-wrap: wrap;
+          align-items: center;
+          gap: 0.75rem 1rem;
+          flex: 1 1 auto;
+          min-width: 0;
+        }
+        .gallery-view-toggle {
+          margin-left: auto;
+          flex: 0 0 auto;
+        }
+        .gallery-view-toggle .control-label {
+          display: none;
+        }
+        .gallery-view-toggle .shiny-options-group {
+          margin: 0;
+        }
+        .gallery-view-toggle .radio {
+          margin: 0 0 0 0.75rem;
+        }
+        .gallery-view-toggle .radio label {
+          font-size: 0.875rem;
+          font-weight: 500;
+        }
+        .gallery-layout-fullsize .gallery-grid > [class*='col-'] {
+          flex: 0 0 100%;
+          max-width: 100%;
+          width: 100%;
+        }
+        .gallery-layout-fullsize .gallery-card {
+          height: auto;
+        }
+        .gallery-layout-fullsize .gallery-card-plot {
+          min-height: 280px;
+        }
+        .gallery-layout-fullsize .gallery-card-plot .shiny-image-output {
+          max-height: min(72vh, 920px);
+          height: auto !important;
+        }
+        .gallery-layout-fullsize .gallery-card-plot img,
+        .gallery-layout-fullsize .gallery-card-plot .shiny-image-output img {
+          max-height: min(72vh, 920px);
+          width: auto;
+          max-width: 100%;
+        }
         .gallery-build-row .shiny-text-output {
           margin: 0;
           color: #6c757d;
@@ -443,10 +565,24 @@ ui <- bslib::page_navbar(
       ),
       tags$div(
         class = "gallery-build-row",
-        actionButton("build_valid_btn", "Build active and valid"),
-        actionButton("gallery_make_all_active_btn", "Make all active"),
-        actionButton("gallery_make_all_inactive_btn", "Make all inactive"),
-        textOutput("gallery_build_status")
+        tags$div(
+          class = "gallery-build-row-main",
+          actionButton("build_valid_btn", "Build active and valid", class = "btn-primary"),
+          actionButton("gallery_make_all_active_btn", "Make all active"),
+          actionButton("gallery_make_all_inactive_btn", "Make all inactive"),
+          actionButton("gallery_new_graph_btn", "New graph", class = "btn-default"),
+          textOutput("gallery_build_status")
+        ),
+        tags$div(
+          class = "gallery-view-toggle",
+          radioButtons(
+            "gallery_view_mode",
+            label = NULL,
+            choices = c("Preview" = "preview", "Full size" = "fullsize"),
+            selected = "preview",
+            inline = TRUE
+          )
+        )
       ),
       uiOutput("gallery_ui")
     )
@@ -455,134 +591,260 @@ ui <- bslib::page_navbar(
   bslib::nav_panel(
     title = "Graph editor",
     value = "tab_editor",
-    fluidPage(
-      sidebarLayout(
-        sidebarPanel(
-          width = 4,
-          div(
-            class = "editor-mode-toolbar",
-            actionButton("ed_new_graph", "New graph", class = "btn-default"),
-            actionButton("ed_save_row", "Save to graphplan", class = "btn-primary"),
-            uiOutput("editor_mode_ui")
-          ),
-          selectizeInput(
-            "ed_graph_type", "Graph type",
-            choices = graph_types,
-            options = list(placeholder = "Select graph type")
-          ),
-          selectizeInput(
-            "ed_data_frequency", "Data freq",
-            choices = c(" ", "y", "q", "m", "d")
-          ),
-          selectInput(
-            "ed_ind_group", "Indicator group",
-            choices = indicator_groups,
-            selected = ""
-          ),
-          selectizeInput(
-            "ed_indicators", "Indicators",
-            choices = NULL,
-            multiple = TRUE,
-            options = list(
-              placeholder = "Select indicators",
-              maxOptions = 200
+    bslib::layout_sidebar(
+      class = "editor-layout",
+      fillable = TRUE,
+      sidebar = bslib::sidebar(
+        class = "editor-sidebar",
+        width = 460,
+        padding = "0.75rem",
+        div(
+          class = "editor-mode-toolbar",
+          actionButton("ed_new_graph", "New graph", class = "btn-default"),
+          actionButton("ed_save_row", "Save to graphplan", class = "btn-primary"),
+          uiOutput("editor_mode_ui")
+        ),
+        bslib::accordion(
+          id = "editor_params_accordion",
+          open = c("Basic", "Indicators", "Peers", "Style"),
+          multiple = TRUE,
+          bslib::accordion_panel(
+            "Basic",
+            selectizeInput(
+              "ed_graph_type", "Graph type",
+              choices = graph_types,
+              selected = editor_default_graph_type,
+              options = list(placeholder = "Select graph type")
+            ),
+            bslib::layout_columns(
+              col_widths = c(4, 8),
+              selectizeInput(
+                "ed_data_frequency", "Data freq",
+                choices = c(" ", "y", "q", "m", "d")
+              ),
+              textInput(
+                "ed_time_fix",
+                label = editor_input_label("Time fix", "ed_time_fix"),
+                value = ""
+              )
             )
           ),
-          textInput("ed_time_fix", "Time fix", ""),
-          h4("Peers"),
-          fluidRow(
-            column(
-              6,
-              selectizeInput("ed_peers", "Peer group", choices = peers_choice)
+          bslib::accordion_panel(
+            "Indicators",
+            selectInput(
+              "ed_ind_group", "Indicator group",
+              choices = indicator_groups,
+              selected = ""
             ),
-            column(6, textInput("ed_peers_formula", "Formula", ""))
+            selectizeInput(
+              "ed_indicators", "Indicators",
+              choices = NULL,
+              multiple = TRUE,
+              options = list(
+                placeholder = "Select indicators",
+                maxOptions = 200
+              )
+            )
           ),
-          selectizeInput(
-            "ed_peers_custom", "Custom peers (ISO2)",
-            choices = country_choices,
-            multiple = TRUE,
-            options = list(placeholder = "Custom peer countries")
-          ),
-          checkboxInput("ed_all", "Show all countries", FALSE),
-          h4("Style"),
-          fluidRow(
-            column(3, textInput("ed_x_min", "X min", "")),
-            column(3, textInput("ed_x_max", "X max", "")),
-            column(3, numericInput("ed_y_min", "Y min", value = NA, width = "100%")),
-            column(3, numericInput("ed_y_max", "Y max", value = NA, width = "100%"))
-          ),
-          fluidRow(
-            column(4, selectInput("ed_trend_type", "Trend", choices = trend_types_ui, selected = "")),
-            column(8, selectInput("ed_theme", "Style preset", choices = theme_types, selected = "ipsum"))
-          ),
-          fluidRow(
-            column(
-              8,
+          bslib::accordion_panel(
+            "Peers",
+            bslib::layout_columns(
+              col_widths = c(5, 7),
               selectizeInput(
-                "ed_sec_y_axis_ind", "2nd Y-axis",
+                "ed_peers",
+                label = editor_input_label("Peer group", "ed_peers"),
+                choices = peers_choice,
+                selected = editor_default_peers
+              ),
+              textInput(
+                "ed_peers_formula",
+                label = editor_input_label("Formula", "ed_peers_formula"),
+                value = ""
+              )
+            ),
+            selectizeInput(
+              "ed_peers_custom",
+              label = editor_input_label("Custom peers (ISO2)", "ed_peers_custom"),
+              choices = country_choices,
+              multiple = TRUE,
+              options = list(placeholder = "Custom peer countries")
+            ),
+            checkboxInput("ed_all", "Show all countries", FALSE)
+          ),
+          bslib::accordion_panel(
+            "Style",
+            bslib::layout_columns(
+              col_widths = c(6, 6),
+              textInput(
+                "ed_x_min",
+                label = editor_input_label("X min", "ed_x_min"),
+                value = ""
+              ),
+              textInput(
+                "ed_x_max",
+                label = editor_input_label("X max", "ed_x_max"),
+                value = ""
+              )
+            ),
+            bslib::layout_columns(
+              col_widths = c(6, 6),
+              textInput("ed_y_min", "Y min", ""),
+              textInput("ed_y_max", "Y max", "")
+            ),
+            bslib::layout_columns(
+              col_widths = c(4, 8),
+              selectInput(
+                "ed_trend_type",
+                label = editor_input_label("Trend", "ed_trend_type"),
+                choices = trend_types_ui,
+                selected = ""
+              ),
+              selectInput(
+                "ed_theme",
+                "Style preset",
+                choices = theme_types,
+                selected = editor_default_theme
+              )
+            ),
+            bslib::layout_columns(
+              col_widths = c(8, 4),
+              selectizeInput(
+                "ed_sec_y_axis_ind",
+                label = editor_input_label("2nd Y-axis", "ed_sec_y_axis_ind"),
                 choices = NULL,
                 multiple = TRUE,
-                options = list(
-                  placeholder = "Optional",
-                  maxOptions = 200
+                options = list(placeholder = "Optional", maxOptions = 200)
+              ),
+              numericInput(
+                "ed_sec_y_axis_coeff",
+                label = editor_input_label("Axis mult", "ed_sec_y_axis_coeff"),
+                value = NA,
+                width = "100%"
+              )
+            ),
+            bslib::layout_columns(
+              col_widths = c(4, 3, 5),
+              checkboxInput("ed_x_log", "X log", FALSE),
+              checkboxInput("ed_y_log", "Y log", FALSE),
+              checkboxInput(
+                "ed_swap_axis",
+                label = editor_input_label("Swap axis", "ed_swap_axis"),
+                value = FALSE
+              )
+            ),
+            bslib::layout_columns(
+              col_widths = c(4, 3, 5),
+              checkboxInput(
+                "ed_recession",
+                label = editor_input_label("Recession", "ed_recession"),
+                value = FALSE
+              ),
+              checkboxInput(
+                "ed_index",
+                label = editor_input_label("Index", "ed_index"),
+                value = FALSE
+              ),
+              checkboxInput(
+                "ed_long_legend",
+                label = editor_input_label("Long legend", "ed_long_legend"),
+                value = FALSE
+              )
+            ),
+            bslib::layout_columns(
+              col_widths = c(6, 6),
+              checkboxInput(
+                "ed_short_names",
+                label = editor_input_label("Short indicator names", "ed_short_names"),
+                value = FALSE
+              ),
+              checkboxInput(
+                "ed_vert_lab",
+                label = editor_input_label("Vertical X labels", "ed_vert_lab"),
+                value = FALSE
+              )
+            )
+          )
+        )
+      ),
+      div(
+        class = "editor-main",
+        bslib::card(
+          class = "editor-preview-card",
+          full_screen = TRUE,
+          bslib::card_body(
+            div(
+              class = "editor-toolbar-row",
+              div(
+                class = "editor-toolbar-actions",
+                actionButton("ed_plot_btn", "Update plot", class = "btn-primary"),
+                actionButton("ed_import_row_btn", "Import row"),
+                actionButton("ed_export_row_btn", "Export row")
+              ),
+              div(
+                class = "editor-toolbar-tsv",
+                textInput(
+                  "ed_graph_plan_tsv",
+                  label = NULL,
+                  value = "",
+                  placeholder = "Graph plan row"
+                )
+              ),
+              div(
+                class = "editor-toolbar-country",
+                div(
+                  class = "editor-country-context",
+                  textOutput("editor_country_context")
                 )
               )
             ),
-            column(4, numericInput("ed_sec_y_axis_coeff", "Axis mult", value = NA, width = "100%"))
-          ),
-          fluidRow(
-            column(4, checkboxInput("ed_x_log", "X log", FALSE)),
-            column(3, checkboxInput("ed_y_log", "Y log", FALSE)),
-            column(5, checkboxInput("ed_swap_axis", "Swap axis", FALSE))
-          ),
-          fluidRow(
-            column(4, checkboxInput("ed_recession", "Recession", FALSE)),
-            column(3, checkboxInput("ed_index", "Index", FALSE)),
-            column(5, checkboxInput("ed_long_legend", "Long legend", FALSE))
-          ),
-          fluidRow(
-            column(6, checkboxInput("ed_short_names", "Short indicator names", FALSE)),
-            column(6, checkboxInput("ed_vert_lab", "Vertical X labels", FALSE))
+            uiOutput("ed_graph_plot_ui")
           )
         ),
-        mainPanel(
-          width = 8,
-          fluidRow(
-            class = "editor-toolbar-row",
-            column(2, actionButton("ed_plot_btn", "Update plot", class = "btn-primary")),
-            column(2, actionButton("ed_import_row_btn", "Import row")),
-            column(2, actionButton("ed_export_row_btn", "Export row")),
-            column(
-              4,
+        bslib::card(
+          class = "editor-downloads-card",
+          bslib::card_body(
+            bslib::layout_columns(
+              col_widths = c(4, 4, 4),
+              downloadButton("ed_download_png", "Download png"),
+              downloadButton("ed_download_jpeg", "Download jpeg"),
+              downloadButton("ed_download_data", "Download data")
+            )
+          )
+        ),
+        bslib::card(
+          class = "editor-metadata-card",
+          bslib::card_header("Output metadata"),
+          bslib::card_body(
+            bslib::layout_columns(
+              col_widths = c(5, 2, 3, 2),
+              textAreaInput("ed_graph_title", "Graph title", "Graph Title", rows = 2),
+              selectizeInput(
+                "ed_graph_group",
+                label = editor_input_label("Graph group", "ed_graph_group"),
+                choices = graph_group_choices
+              ),
               textInput(
-                "ed_graph_plan_tsv",
-                label = NULL,
-                value = "",
-                placeholder = "Graph plan row"
+                "ed_graph_name_suffix",
+                label = editor_input_label("File name suffix", "ed_graph_name_suffix"),
+                value = "goodgraph"
+              ),
+              selectInput(
+                "ed_orientation",
+                label = editor_input_label("Orientation", "ed_orientation"),
+                choices = orient_types,
+                selected = editor_default_orientation
               )
             ),
-            column(
-              2,
-              div(
-                class = "editor-country-context",
-                textOutput("editor_country_context")
+            bslib::layout_columns(
+              col_widths = c(6, 6),
+              checkboxInput("ed_show_title", "Show title", TRUE),
+              checkboxInput(
+                "ed_active",
+                label = editor_input_label("Active row", "ed_active"),
+                value = TRUE
               )
             )
-          ),
-          uiOutput("ed_graph_plot_ui"),
-          fluidRow(
-            column(4, downloadButton("ed_download_png", "Download png")),
-            column(4, downloadButton("ed_download_jpeg", "Download jpeg")),
-            column(4, downloadButton("ed_download_data", "Download data"))
-          ),
-          fluidRow(
-            column(5, textAreaInput("ed_graph_title", "Graph title", "Graph Title", rows = 2)),
-            column(2, selectizeInput("ed_graph_group", "Graph group", choices = graph_group_choices)),
-            column(3, textInput("ed_graph_name_suffix", "File name suffix", "goodgraph")),
-            column(2, selectInput("ed_orientation", "Orientation", choices = orient_types))
-          ),
-          checkboxInput("ed_show_title", "Show title", TRUE),
-          checkboxInput("ed_active", "Active row", TRUE)
+          )
         )
       )
     )
@@ -623,14 +885,18 @@ ui <- bslib::page_navbar(
         column(
           6,
           h4("Graphplan"),
-          helpText("Exports library + info sheets (2_graphlib.xlsx format). Does not modify Filled_DB.rds."),
           downloadButton("download_graphplan_xlsx", "Download graphplan (xlsx)", class = "btn-primary"),
           downloadButton("download_recipes_tsv", "Download recipes (TSV)"),
           checkboxInput("export_recipes_active_only", "Recipes: active rows only", FALSE)
         )
       ),
       fluidRow(
-        column(12, h4("Report"), verbatimTextOutput("export_report"))
+        column(
+          12,
+          class = "import-summary-col",
+          style = "margin-top: 1.25rem;",
+          uiOutput("export_summary_ui")
+        )
       )
     )
   )
@@ -642,6 +908,7 @@ server <- function(input, output, session) {
   rv <- reactiveValues(
     graphplan       = NULL,
     graphplan_info  = NULL,
+    graphplan_title_row = NULL,
     graphplan_baseline = NULL,
     country_iso3c   = country_iso3c_from_id(default_country_id),
     validation      = NULL,
@@ -737,6 +1004,7 @@ server <- function(input, output, session) {
       incProgress(0.72, detail = "Updating session state")
       rv$graphplan <- imported$plan
       rv$graphplan_info <- imported$info
+      rv$graphplan_title_row <- imported$title_row
       rv$graphplan_baseline <- graphplan_baseline_capture(imported$plan)
       rv$validation <- NULL
       rv$built <- list()
@@ -910,7 +1178,7 @@ server <- function(input, output, session) {
     )
     col_order <- c(
       "row_id", "graph_name", "active", "check_status", "can_build",
-      "Built", "Edited", "messages"
+      "Built", "limits", "peers", "Edited", "messages"
     )
     rs <- rs[, intersect(col_order, names(rs)), drop = FALSE]
     display_names <- c(
@@ -920,6 +1188,8 @@ server <- function(input, output, session) {
       check_status = "Status",
       can_build = "Planned to build",
       Built = "Built",
+      limits = "Limits",
+      peers = "Peers",
       Edited = "Edited",
       messages = "Details"
     )
@@ -1518,6 +1788,25 @@ server <- function(input, output, session) {
     )
   }
 
+  gallery_layout_class <- function() {
+    if (identical(input$gallery_view_mode %||% "preview", "fullsize")) {
+      "gallery-layout-fullsize"
+    } else {
+      "gallery-layout-preview"
+    }
+  }
+
+  observeEvent(input$gallery_view_mode, {
+    layout_cls <- gallery_layout_class()
+    shinyjs::runjs(glue::glue(
+      "var el = document.getElementById('gallery_layout_root');",
+      "if (el) {{",
+      "  el.classList.remove('gallery-layout-preview', 'gallery-layout-fullsize');",
+      "  el.classList.add('{layout_cls}');",
+      "}}"
+    ))
+  }, ignoreInit = TRUE)
+
   gallery_manifest_grid <- function(cards_named) {
     nms <- names(cards_named)
     if (length(nms) == 0L) {
@@ -1617,7 +1906,13 @@ server <- function(input, output, session) {
         inactive_grid
       )
     }
-    tagList(active_grid, inactive_section)
+    layout_cls <- isolate(gallery_layout_class())
+    tags$div(
+      id = "gallery_layout_root",
+      class = paste("gallery-layout-root", layout_cls),
+      active_grid,
+      inactive_section
+    )
   })
 
   observe({
@@ -1896,8 +2191,8 @@ server <- function(input, output, session) {
     updateCheckboxInput(session, "ed_all", value = state$all)
     updateTextInput(session, "ed_x_min", value = state$x_min %||% "")
     updateTextInput(session, "ed_x_max", value = state$x_max %||% "")
-    updateNumericInput(session, "ed_y_min", value = state$y_min)
-    updateNumericInput(session, "ed_y_max", value = state$y_max)
+    updateTextInput(session, "ed_y_min", value = state$y_min %||% "")
+    updateTextInput(session, "ed_y_max", value = state$y_max %||% "")
     updateSelectInput(session, "ed_trend_type", selected = state$trend_type %||% "")
     updateSelectInput(session, "ed_theme", selected = state$theme %||% "ipsum")
     sec_choices <- sec_y_choices_from_indicators(indicator_catalog, sel_inds)
@@ -1997,7 +2292,7 @@ server <- function(input, output, session) {
     update_editor_indicators(freq = "y", ind_group = "", keep_selected = FALSE)
   })
 
-  observeEvent(input$ed_new_graph, {
+  reset_editor_for_new_graph <- function() {
     rv$editor_preview <- NULL
     preview_path <- editor_preview_path(
       session$userData$editor_preview_dir %||% editor_session_preview_dir(session)
@@ -2008,13 +2303,7 @@ server <- function(input, output, session) {
     clear_editor_validation_cache()
     rv$selected_row_id <- NULL
     rv$editor_mode <- "new"
-    st <- graphplan_row_to_editor_state(
-      tibble::tibble(
-        graph_name = "ec_newgraph", graph_title = "Graph Title",
-        graph_type = graph_types[1], graph_group = "macro",
-        data_frequency = "y", indicators = "gdp_g", active = 1L
-      )
-    )
+    st <- graphplan_row_to_editor_state(editor_new_graph_seed_row())
     apply_editor_state(session, st, indicator_choices, country_choices)
     updateTextInput(session, "ed_graph_plan_tsv", value = "")
     updateSelectInput(session, "ed_ind_group", selected = "")
@@ -2023,6 +2312,23 @@ server <- function(input, output, session) {
       ind_group = "",
       selected_indicators = st$indicators
     )
+    sync_ed_peers_custom_from_peer_mode(
+      peers = st$peers,
+      peers_formula = st$peers_formula,
+      graph_type = st$graph_type
+    )
+  }
+
+  observeEvent(input$ed_new_graph, reset_editor_for_new_graph())
+
+  observeEvent(input$import_new_graph_btn, {
+    navigate_to_editor_tab()
+    run_after_tab_switch(reset_editor_for_new_graph())
+  })
+
+  observeEvent(input$gallery_new_graph_btn, {
+    navigate_to_editor_tab()
+    run_after_tab_switch(reset_editor_for_new_graph())
   })
 
   observeEvent(input$ed_import_row_btn, {
@@ -2190,7 +2496,24 @@ server <- function(input, output, session) {
       paste0(rv$editor_preview$graph_params$graph_name %||% "graph", "_data.xlsx")
     },
     content = function(file) {
-      writexl::write_xlsx(rv$editor_preview$data, path = file)
+      shiny::validate(
+        shiny::need(isTRUE(rv$editor_preview$ok), "Build the plot before downloading data."),
+        shiny::need(!is.null(rv$editor_preview$data), "No graph data available.")
+      )
+      export_graph_data_workbook(
+        item = rv$editor_preview,
+        path = file,
+        country_iso3c = rv$country_iso3c,
+        graphplan_row = editor_inputs_to_graphplan_row(
+          collect_editor_state(),
+          dict = FD$dict
+        ),
+        dict = FD$dict,
+        peers_iso2c = rv$editor_preview$peers_iso2c,
+        country_iso2c = rv$editor_preview$country_iso2c,
+        country_label = country_label_from_iso3c(rv$country_iso3c),
+        fd = FD
+      )
     }
   )
 
@@ -2332,17 +2655,7 @@ server <- function(input, output, session) {
     rv$editor_bootstrapped <- TRUE
     if (is.null(rv$graphplan)) {
       rv$editor_mode <- "new"
-      st <- graphplan_row_to_editor_state(
-        tibble::tibble(
-          graph_name = "ec_newgraph",
-          graph_title = "Graph Title",
-          graph_type = graph_types[1],
-          graph_group = "macro",
-          data_frequency = "y",
-          indicators = "gdp_g",
-          active = 1L
-        )
-      )
+      st <- graphplan_row_to_editor_state(editor_new_graph_seed_row())
       apply_editor_state(session, st, indicator_choices, country_choices)
     }
   })
@@ -2356,6 +2669,82 @@ server <- function(input, output, session) {
       "export_selected_graphs",
       choices = built_names,
       selected = selected
+    )
+  })
+
+  export_button_ids <- c(
+    "download_graphs_zip",
+    "download_graph_data_xlsx",
+    "download_graphplan_xlsx",
+    "download_recipes_tsv"
+  )
+  export_in_progress <- reactiveVal(FALSE)
+
+  set_export_buttons_disabled <- function(disabled) {
+    for (id in export_button_ids) {
+      if (disabled) {
+        shinyjs::disable(id)
+      } else {
+        shinyjs::enable(id)
+      }
+    }
+  }
+
+  with_export_feedback <- function(label, expr) {
+    if (isTRUE(export_in_progress())) {
+      shiny::validate(shiny::need(FALSE, "Another export is in progress."))
+    }
+    export_in_progress(TRUE)
+    set_export_buttons_disabled(TRUE)
+    notice_id <- showNotification(
+      paste0("Preparing ", label, "..."),
+      duration = NULL,
+      closeButton = FALSE
+    )
+    on.exit({
+      export_in_progress(FALSE)
+      set_export_buttons_disabled(FALSE)
+      removeNotification(notice_id)
+    }, add = TRUE)
+    tryCatch(
+      {
+        result <- force(expr)
+        showNotification(paste0(label, " ready."), type = "message")
+        result
+      },
+      error = function(e) {
+        showNotification(
+          paste0(label, " failed: ", conditionMessage(e)),
+          type = "error",
+          duration = NULL
+        )
+        stop(e)
+      }
+    )
+  }
+
+  output$export_summary_ui <- renderUI({
+    country_lab <- country_label_from_iso3c(
+      rv$country_iso3c %||% country_iso3c_from_id(input$country_choice %||% "")
+    )
+    s <- compute_export_summary_ui_data(
+      graphplan = rv$graphplan,
+      validation = rv$validation,
+      built = rv$built,
+      editor_touch_row_ids = rv$editor_touch_row_ids,
+      graphplan_baseline = rv$graphplan_baseline,
+      country_label = country_lab
+    )
+    tags$div(
+      class = "import-summary-cards",
+      validation_metric_card("Planned to build", s$planned, "validation-metric-buildable"),
+      validation_metric_card("Edited", s$edited, "validation-metric-total"),
+      validation_metric_card("Built", s$built, "validation-metric-active"),
+      tags$div(
+        class = "validation-metric-card validation-metric-total",
+        tags$div(class = "validation-metric-value", s$country),
+        tags$div(class = "validation-metric-label", "Country")
+      )
     )
   })
 
@@ -2373,66 +2762,74 @@ server <- function(input, output, session) {
     )
   }
 
-  output$export_report <- renderPrint({
-    compute_export_report(
-      graphplan      = rv$graphplan,
-      validation     = rv$validation,
-      built          = rv$built,
-      dirty          = rv$dirty,
-      baseline       = rv$graphplan_baseline,
-      export_scope   = input$export_scope %||% "all_built",
-      selected_names = input$export_selected_graphs %||% character()
-    )
-  })
-
   output$download_graphs_zip <- downloadHandler(
     filename = function() paste0("graphs_", Sys.Date(), ".zip"),
     content = function(file) {
-      scoped <- export_built_for_download()
-      shiny::validate(shiny::need(length(scoped) > 0, "No graphs match the export scope."))
-      export_built_graphs_zip(
-        built    = scoped,
-        zip_path = file,
-        device   = input$export_device
-      )
+      with_export_feedback("Graph zip export", {
+        scoped <- export_built_for_download()
+        shiny::validate(shiny::need(length(scoped) > 0, "No graphs match the export scope."))
+        export_built_graphs_zip(
+          built    = scoped,
+          zip_path = file,
+          device   = input$export_device
+        )
+      })
     }
   )
 
   output$download_graph_data_xlsx <- downloadHandler(
     filename = function() paste0("graph_data_", Sys.Date(), ".xlsx"),
     content = function(file) {
-      scoped <- export_built_for_download()
-      shiny::validate(shiny::need(length(scoped) > 0, "No graphs match the export scope."))
-      export_graph_data_xlsx(scoped, path = file)
-      shiny::validate(shiny::need(file.exists(file) && file.info(file)$size > 0,
-                                  "No graph data available for export."))
+      with_export_feedback("Graph data export", {
+        scoped <- export_built_for_download()
+        shiny::validate(shiny::need(length(scoped) > 0, "No graphs match the export scope."))
+        export_graph_data_xlsx(
+          scoped,
+          path = file,
+          country_iso3c = rv$country_iso3c
+        )
+        shiny::validate(shiny::need(
+          file.exists(file) && file.info(file)$size > 0,
+          "No graph data available for export."
+        ))
+      })
     }
   )
 
   output$download_graphplan_xlsx <- downloadHandler(
     filename = function() "2_graphlib.xlsx",
     content = function(file) {
-      shiny::validate(shiny::need(!is.null(rv$graphplan), "No graphplan to export."))
-      info <- rv$graphplan_info
-      if (is.null(info)) info <- default_graphplan_info()
-      export_graphplan_xlsx(
-        plan = rv$graphplan,
-        path = file,
-        info = info
-      )
+      with_export_feedback("Graphplan export", {
+        shiny::validate(shiny::need(!is.null(rv$graphplan), "No graphplan to export."))
+        info <- default_graphplan_info()
+        title_row <- graphplan_export_title_row(
+          country_iso3c = rv$country_iso3c,
+          country_label = country_label_from_iso3c(rv$country_iso3c),
+          base = rv$graphplan_title_row,
+          fd = FD
+        )
+        export_graphplan_xlsx(
+          plan = rv$graphplan,
+          path = file,
+          info = info,
+          title_row = title_row
+        )
+      })
     }
   )
 
   output$download_recipes_tsv <- downloadHandler(
     filename = function() paste0("graphplan_recipes_", Sys.Date(), ".tsv"),
     content = function(file) {
-      shiny::validate(shiny::need(!is.null(rv$graphplan), "No graphplan to export."))
-      text <- export_graphplan_recipes_text(
-        plan = rv$graphplan,
-        include_inactive = !isTRUE(input$export_recipes_active_only)
-      )
-      shiny::validate(shiny::need(nzchar(text), "No rows to export as recipes."))
-      writeLines(text, con = file, useBytes = TRUE)
+      with_export_feedback("Recipes export", {
+        shiny::validate(shiny::need(!is.null(rv$graphplan), "No graphplan to export."))
+        text <- export_graphplan_recipes_text(
+          plan = rv$graphplan,
+          include_inactive = !isTRUE(input$export_recipes_active_only)
+        )
+        shiny::validate(shiny::need(nzchar(text), "No rows to export as recipes."))
+        writeLines(text, con = file, useBytes = TRUE)
+      })
     }
   )
 }

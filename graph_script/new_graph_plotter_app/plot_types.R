@@ -2324,7 +2324,7 @@ barYearComparison <- function(data,
                               verbose = TRUE,
                               warn_invalid = TRUE,
                               debug = FALSE) {
-  assert_packages(c("dplyr", "tidyr", "ggplot2", "stringr", "rlang", "tibble", "forcats", "purrr"))
+  assert_packages(c("dplyr", "tidyr", "ggplot2", "stringr", "rlang", "tibble", "purrr"))
   
   params <- graph_params %||% list(active = 1L)
   style  <- resolve_plot_style(params$theme_name %||% "acra_light")

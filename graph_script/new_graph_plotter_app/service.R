@@ -8,6 +8,9 @@ library(tibble)
 library(readxl)
 library(writexl)
 library(openxlsx)
+library(jsonlite)
+library(base64enc)
+library(countrycode)
 
 # ---------- profiling (options(plotter.profile = TRUE) or PLOTTER_PROFILE=1) ----
 
@@ -980,6 +983,28 @@ graph_types <- c(
   "distribution_indicator_comparison", "triangle"
 )
 
+#' Defaults for **New graph** in the Editor UI.
+editor_default_graph_type <- "bar_country_comparison"
+editor_default_peers <- "default"
+editor_default_theme <- "acra_light"
+editor_default_orientation <- "horizontal"
+
+#' Minimal graphplan row used when starting a new graph in the Editor.
+editor_new_graph_seed_row <- function() {
+  tibble::tibble(
+    graph_name       = "ec_newgraph",
+    graph_title      = "Graph Title",
+    graph_type       = editor_default_graph_type,
+    graph_group      = "macro",
+    data_frequency   = "y",
+    indicators       = "gdp_g",
+    peers            = editor_default_peers,
+    theme            = editor_default_theme,
+    orientation      = editor_default_orientation,
+    active           = 1L
+  )
+}
+
 trend_types   <- c("lm", "loess")
 orient_types  <- c("horizontal", "vertical")
 theme_types   <- c("ipsum", "acra_light", "acra_dark", "black_white", "economist", "minimal")
@@ -1071,6 +1096,41 @@ check_rule_messages <- list(
   list(plan = plan, cols_ok = TRUE, empty_ok = TRUE)
 }
 
+graphplan_limit_field_filled <- function(x) {
+  if (is.null(x) || length(x) == 0L) {
+    return(FALSE)
+  }
+  if (is.character(x)) {
+    v <- stringr::str_trim(as.character(x)[1])
+    return(!is.na(v) && nzchar(v))
+  }
+  num <- suppressWarnings(as.numeric(x)[1])
+  isTRUE(is.finite(num))
+}
+
+#' Import table Limits column: `auto` when axis/time limits unset, else `manual`.
+graphplan_limits_display_mode <- function(row) {
+  fields <- c("time_fix", "x_min", "x_max", "y_min", "y_max")
+  filled <- vapply(
+    fields,
+    function(nm) {
+      if (!nm %in% names(row)) {
+        return(FALSE)
+      }
+      graphplan_limit_field_filled(row[[nm]])
+    },
+    logical(1)
+  )
+  if (any(filled)) "manual" else "auto"
+}
+
+#' Import table Peers column: `manual` for none/custom, else `auto`.
+graphplan_peers_display_mode <- function(row) {
+  pv <- if ("peers" %in% names(row)) row$peers[[1]] else NULL
+  mode <- parse_peers_for_editor(pv)$peers
+  if (mode %in% c("none", "custom")) "manual" else "auto"
+}
+
 .graphplan_row_status_one <- function(plan, i, active_flags) {
   row <- plan[i, , drop = FALSE]
   is_active <- isTRUE(active_flags[i])
@@ -1083,6 +1143,8 @@ check_rule_messages <- list(
     row_id = i,
     graph_name = gname,
     active = row$active[[1]] %||% 0L,
+    limits = graphplan_limits_display_mode(row),
+    peers = graphplan_peers_display_mode(row),
     check_status = status,
     can_build = is_active && checks_ok,
     messages = if (checks_ok) NA_character_ else .row_check_messages(row)
@@ -1101,6 +1163,7 @@ check_rule_messages <- list(
   if (length(indices) == 0L) {
     return(tibble::tibble(
       row_id = integer(), graph_name = character(), active = integer(),
+      limits = character(), peers = character(),
       check_status = character(), can_build = logical(), messages = character()
     ))
   }
@@ -1158,6 +1221,7 @@ validate_graphplan_for_app <- function(graphplan,
       plan = tibble::tibble(),
       row_status = tibble::tibble(
         row_id = integer(), graph_name = character(), active = integer(),
+        limits = character(), peers = character(),
         check_status = character(), can_build = logical(), messages = character()
       ),
       summary = empty_summary
@@ -1192,6 +1256,12 @@ validate_graphplan_for_app <- function(graphplan,
       row_id = seq_len(n_rows),
       graph_name = as.character(plan$graph_name %||% paste0("row_", seq_len(n_rows))),
       active = if ("active" %in% names(plan)) plan$active else rep(1L, n_rows),
+      limits = vapply(seq_len(n_rows), function(i) {
+        graphplan_limits_display_mode(plan[i, , drop = FALSE])
+      }, character(1)),
+      peers = vapply(seq_len(n_rows), function(i) {
+        graphplan_peers_display_mode(plan[i, , drop = FALSE])
+      }, character(1)),
       check_status = "error",
       can_build = FALSE,
       messages = global_msg
@@ -1279,6 +1349,9 @@ build_graph_row <- function(graphplan_row,
         data = theplot$data,
         graph_params = graph_params,
         graph_name = graph_params$graph_name,
+        graphplan_row = tibble::as_tibble(graphplan_row[1, , drop = FALSE]),
+        country_iso2c = country_info$country_iso2c,
+        peers_iso2c = peers_iso2c,
         warnings = character(0),
         error = NA_character_
       )
@@ -1377,14 +1450,22 @@ migrate_graphplan_if_needed <- function(plan, expected_columns = NULL) {
 read_graphplan_file <- function(path, dict) {
   plan <- getPlotSchedule(plotparam_fname = path, dict = dict)
   info <- NULL
+  title_row <- NULL
   sheets <- tryCatch(readxl::excel_sheets(path), error = function(e) character())
+  if ("library" %in% sheets) {
+    title_row <- read_graphplan_title_row(path, graphplan_columns)
+  }
   if ("info" %in% sheets) {
     info <- tryCatch(
       readxl::read_excel(path, sheet = "info"),
       error = function(e) NULL
     )
   }
-  list(plan = migrate_graphplan_if_needed(plan), info = info)
+  list(
+    plan = migrate_graphplan_if_needed(plan),
+    info = info,
+    title_row = title_row
+  )
 }
 
 empty_graphplan <- function() {
@@ -1585,6 +1666,124 @@ parse_graphplan_row_tsv <- function(text) {
 
 
 # ---------- editor helpers ----------------------------------------------------
+
+#' Short tooltips for non-obvious Editor fields (phase 18.2).
+editor_field_hints <- function() {
+  in_development <- "In development"
+  list(
+    ed_time_fix = paste(
+      "Examples: 2010, 2012m1, 2026q1, 20.10.2020.",
+      "Separate by commas for multiple. Leave empty for autofill"
+    ),
+    ed_x_min = "Numeric or time, depends on the graph type",
+    ed_x_max = "Numeric or time, depends on the graph type",
+    ed_trend_type = "Only use for scatter graphs",
+    ed_peers = paste(
+      "Preset peer basket, custom ISO2 list, or formula mode.",
+      "Custom peers are filled automatically for presets when data allows."
+    ),
+    ed_peers_formula = paste(
+      "similar: hci, 0.2, 2020 — within ±20% on hci in 2020.",
+      "top: gdp, 10, 2021 — top 10 on gdp in 2021.",
+      "low: exp_g_usd, 5, 2021 — bottom 5 on exp_g_usd in 2021."
+    ),
+    ed_peers_custom = "ISO2 codes for the peer set when Peer group is custom.",
+    ed_sec_y_axis_ind = "Optional indicators plotted on a secondary Y axis.",
+    ed_sec_y_axis_coeff = paste(
+      "10 means that 1000 on the left axis will correspond to 100 on the right axis"
+    ),
+    ed_swap_axis = in_development,
+    ed_recession = in_development,
+    ed_long_legend = in_development,
+    ed_short_names = in_development,
+    ed_vert_lab = in_development,
+    ed_index = "Rebase series to 100 at the index date where the graph type supports it.",
+    ed_graph_plan_tsv = paste(
+      "Paste one graphplan row (tab-separated) from Export row",
+      "to load fields into the editor."
+    ),
+    ed_graph_group = "Affects filename prefix and file sorting",
+    ed_graph_name_suffix = paste(
+      "Second part of the filename. Use clear and short words, no spaces.",
+      "Examples: size_global or bank_assets_wealth"
+    ),
+    ed_orientation = paste(
+      "Export canvas shape: horizontal (wide) or vertical (square).",
+      "Preview and PNG/JPEG downloads use the same dimensions."
+    ),
+    ed_active = paste(
+      "Inactive rows are skipped by batch build",
+      "but can still be edited and saved."
+    )
+  )
+}
+
+#' Label with optional `?` tooltip (bslib); `field_id` keys `editor_field_hints()`.
+editor_input_label <- function(label, field_id = NULL, hint = NULL) {
+  hint_text <- hint %||% editor_field_hints()[[field_id]]
+  if (is.null(hint_text) || !nzchar(hint_text)) {
+    return(label)
+  }
+  htmltools::tags$span(
+    class = "editor-input-label",
+    htmltools::tags$span(class = "editor-input-label-text", label),
+    bslib::tooltip(
+      htmltools::tags$button(
+        type = "button",
+        class = "btn btn-link btn-sm editor-hint-btn p-0",
+        `aria-label` = paste0("Help: ", label),
+        "?"
+      ),
+      hint_text,
+      placement = "top"
+    )
+  )
+}
+
+#' UI tags for current editor row validation (`rv$editor_row_validation`).
+editor_row_validation_ui_tags <- function(row_val) {
+  if (is.null(row_val) || nrow(row_val) == 0L) {
+    return(NULL)
+  }
+  status <- as.character(row_val$check_status[[1]] %||% "")
+  can_build <- isTRUE(row_val$can_build[[1]])
+  msg <- as.character(row_val$messages[[1]] %||% "")[1]
+  if (!is.na(msg) && identical(status, "inactive")) {
+    msg <- NA_character_
+  }
+  if (identical(status, "inactive")) {
+    return(
+      bslib::value_box(
+        title = "Row status",
+        value = "Inactive",
+        htmltools::tags$p(
+          class = "mb-0 small text-muted",
+          "Not included in batch build."
+        ),
+        theme = "gray"
+      )
+    )
+  }
+  if (can_build && identical(status, "valid")) {
+    return(
+      bslib::value_box(
+        title = "Row validation",
+        value = "OK",
+        htmltools::tags$p(class = "mb-0 small", "Ready to save and build."),
+        theme = "success"
+      )
+    )
+  }
+  detail <- if (!is.na(msg) && nzchar(msg)) msg else "Fix validation issues before batch build."
+  bslib::card(
+    class = "editor-validation-card border-danger mb-3",
+    bslib::card_header("Validation"),
+    bslib::card_body(
+      class = "text-danger",
+      htmltools::tags$p(class = "mb-0", detail)
+    )
+  )
+}
 
 graph_groups <- c(
   macro = "ec", budget = "budg", external = "ext", institutional = "inst",
@@ -1874,8 +2073,8 @@ editor_inputs_to_graphplan_row <- function(state, dict, groups_map = NULL) {
     y_log            = as.integer(isTRUE(state$y_log)),
     x_min            = state$x_min %||% NA_character_,
     x_max            = state$x_max %||% NA_character_,
-    y_min            = state$y_min %||% NA_real_,
-    y_max            = state$y_max %||% NA_real_,
+    y_min            = parse_editor_y_limit(state$y_min),
+    y_max            = parse_editor_y_limit(state$y_max),
     trend_type       = state$trend_type %||% NA_character_,
     index            = as.integer(isTRUE(state$index)),
     recession        = as.integer(isTRUE(state$recession)),
@@ -1891,6 +2090,35 @@ editor_inputs_to_graphplan_row <- function(state, dict, groups_map = NULL) {
   )
 
   graphplan_row_from_inputs(row, dict = dict, generate_sources = TRUE)
+}
+
+#' Display graphplan y limit in Editor text fields (empty when unset).
+editor_y_limit_to_text <- function(x) {
+  if (is.null(x) || length(x) == 0L) {
+    return("")
+  }
+  if (is.character(x)) {
+    x <- x[1]
+    return(if (is.na(x) || !nzchar(x)) "" else x)
+  }
+  num <- suppressWarnings(as.numeric(x)[1])
+  if (is.na(num)) "" else format(num, scientific = FALSE, trim = TRUE)
+}
+
+#' Parse Editor y limit text to graphplan numeric (NA when empty).
+parse_editor_y_limit <- function(x) {
+  if (is.null(x) || length(x) == 0L) {
+    return(NA_real_)
+  }
+  if (is.character(x)) {
+    x <- trimws(x[1])
+    if (!nzchar(x) || is.na(x)) {
+      return(NA_real_)
+    }
+    return(suppressWarnings(as.numeric(x)))
+  }
+  num <- suppressWarnings(as.numeric(x)[1])
+  if (length(num) == 0L || is.na(num)) NA_real_ else num
 }
 
 graphplan_row_to_editor_state <- function(row, groups_map = NULL) {
@@ -1918,8 +2146,8 @@ graphplan_row_to_editor_state <- function(row, groups_map = NULL) {
     y_log             = isTRUE(as.integer(row$y_log[[1]]) == 1L),
     x_min             = as.character(row$x_min[[1]] %||% ""),
     x_max             = as.character(row$x_max[[1]] %||% ""),
-    y_min             = suppressWarnings(as.numeric(row$y_min[[1]])),
-    y_max             = suppressWarnings(as.numeric(row$y_max[[1]])),
+    y_min             = editor_y_limit_to_text(row$y_min[[1]]),
+    y_max             = editor_y_limit_to_text(row$y_max[[1]]),
     trend_type        = as.character(row$trend_type[[1]] %||% ""),
     index             = isTRUE(as.integer(row$index[[1]]) == 1L),
     recession         = isTRUE(as.integer(row$recession[[1]]) == 1L),
@@ -2101,6 +2329,173 @@ filter_built_graphs <- function(built, scope = c("all_built", "valid_only", "gal
 
 # ---------- export -------------------------------------------------------------
 
+.graphlib_style_cache <- new.env(parent = emptyenv())
+
+graphlib_style_template_path <- function() {
+  here::here("graph_script", "new_graph_plotter_app", "2_graphlib_b.xlsx")
+}
+
+read_graphplan_title_row <- function(path, col_names = graphplan_columns) {
+  raw <- tryCatch(
+    readxl::read_excel(path, sheet = "library", col_names = FALSE, n_max = 1),
+    error = function(e) NULL
+  )
+  if (is.null(raw) || ncol(raw) == 0L) {
+    return(NULL)
+  }
+  vals <- stats::setNames(
+    rep(list(NA_character_), length(col_names)),
+    col_names
+  )
+  n_read <- min(ncol(raw), length(col_names))
+  for (i in seq_len(n_read)) {
+    cell <- raw[[i]][[1]]
+    vals[[i]] <- if (length(cell) == 0L || is.na(cell)) {
+      NA_character_
+    } else {
+      as.character(cell)
+    }
+  }
+  vals
+}
+
+#' Title row for `library` sheet export: column C (`graph_type` position) = country name.
+#'
+#' Row 1 uses the same column layout as `graphplan_columns`; only the country label
+#' cell is overwritten (legacy Excel convention — not a graph type value).
+graphplan_export_title_row <- function(country_iso3c = NULL,
+                                       country_label = NULL,
+                                       base = NULL,
+                                       col_names = graphplan_columns,
+                                       fd = NULL) {
+  if (is.null(base)) {
+    base <- default_graphplan_title_row(col_names)
+  } else if (!is.data.frame(base)) {
+    base <- .graphplan_xlsx_row(base, col_names)
+  }
+  country_name <- resolve_export_country_label(
+    country_iso3c = country_iso3c,
+    country_label = country_label,
+    fd = fd
+  )
+  if (length(country_name) == 1L && !is.na(country_name) && nzchar(country_name)) {
+    base$graph_type[[1]] <- country_name
+  }
+  base
+}
+
+default_graphplan_title_row <- function(col_names = graphplan_columns) {
+  cached <- .graphlib_style_cache$default_title_row
+  if (!is.null(cached) && identical(names(cached), col_names)) {
+    return(cached)
+  }
+  template <- graphlib_style_template_path()
+  row <- if (file.exists(template)) {
+    read_graphplan_title_row(template, col_names)
+  } else {
+    NULL
+  }
+  if (is.null(row)) {
+    row <- stats::setNames(
+      rep(list(NA_character_), length(col_names)),
+      col_names
+    )
+  }
+  .graphlib_style_cache$default_title_row <- row
+  row
+}
+
+.graphlib_parse_sheet_col_widths <- function(xlsx_path, sheet_index = 1L) {
+  if (!file.exists(xlsx_path)) {
+    return(numeric())
+  }
+  tmp <- tempfile("graphlib_cols_")
+  dir.create(tmp)
+  on.exit(unlink(tmp, recursive = TRUE), add = TRUE)
+  xml_rel <- sprintf("xl/worksheets/sheet%d.xml", sheet_index)
+  extracted <- tryCatch(
+    utils::unzip(xlsx_path, files = xml_rel, exdir = tmp),
+    error = function(e) character()
+  )
+  if (length(extracted) == 0L) {
+    return(numeric())
+  }
+  xml_lines <- readLines(file.path(tmp, xml_rel), warn = FALSE)
+  col_line <- grep("<col ", xml_lines, value = TRUE)
+  if (length(col_line) == 0L) {
+    return(numeric())
+  }
+  width_chr <- regmatches(col_line, gregexpr('width="[0-9.]+"', col_line))[[1]]
+  suppressWarnings(as.numeric(sub('width="([0-9.]+)"', "\\1", width_chr)))
+}
+
+read_graphlib_library_col_widths <- function(template_path = graphlib_style_template_path(),
+                                            n_cols = length(graphplan_columns)) {
+  cache_key <- paste0(template_path, ":", n_cols)
+  cached <- .graphlib_style_cache$library_col_widths[[cache_key]]
+  if (!is.null(cached)) {
+    return(cached)
+  }
+  widths <- .graphlib_parse_sheet_col_widths(template_path, sheet_index = 1L)
+  if (length(widths) == 0L) {
+    widths <- rep(12, n_cols)
+  }
+  if (length(widths) < n_cols) {
+    widths <- c(widths, rep(tail(widths, 1L), n_cols - length(widths)))
+  }
+  widths <- widths[seq_len(n_cols)]
+  .graphlib_style_cache$library_col_widths[[cache_key]] <- widths
+  widths
+}
+
+apply_graphlib_workbook_styles <- function(wb,
+                                           template_path = graphlib_style_template_path()) {
+  ncols <- length(graphplan_columns)
+  widths <- read_graphlib_library_col_widths(template_path, ncols)
+
+  title_style <- openxlsx::createStyle(
+    fontSize = 14,
+    textDecoration = "bold",
+    valign = "top"
+  )
+  header_style <- openxlsx::createStyle(
+    textDecoration = "bold",
+    wrapText = TRUE,
+    valign = "top"
+  )
+  info_header_style <- openxlsx::createStyle(
+    textDecoration = "bold",
+    wrapText = TRUE,
+    valign = "top"
+  )
+
+  openxlsx::addStyle(
+    wb, "library", title_style,
+    rows = 1, cols = seq_len(ncols), gridExpand = TRUE, stack = TRUE
+  )
+  openxlsx::addStyle(
+    wb, "library", header_style,
+    rows = 2, cols = seq_len(ncols), gridExpand = TRUE, stack = TRUE
+  )
+  openxlsx::setColWidths(
+    wb, "library",
+    cols = seq_len(ncols),
+    widths = widths
+  )
+  openxlsx::freezePane(wb, "library", firstActiveRow = 3, firstActiveCol = 7)
+
+  if ("info" %in% names(wb)) {
+    openxlsx::addStyle(
+      wb, "info", info_header_style,
+      rows = 1, cols = 1:2, gridExpand = TRUE, stack = TRUE
+    )
+    openxlsx::setColWidths(wb, "info", cols = 1:2, widths = c(28, 80))
+    openxlsx::freezePane(wb, "info", firstActiveRow = 2, firstActiveCol = 2)
+  }
+
+  invisible(wb)
+}
+
 .graphplan_xlsx_row <- function(values, col_names) {
   vals <- as.list(values)
   if (is.null(names(vals))) names(vals) <- col_names
@@ -2110,7 +2505,8 @@ filter_built_graphs <- function(built, scope = c("all_built", "valid_only", "gal
 export_graphplan_xlsx <- function(plan,
                                   path,
                                   info = NULL,
-                                  title_row = NULL) {
+                                  title_row = NULL,
+                                  style_template = graphlib_style_template_path()) {
   # Match on-disk graphlib schema: library sheet has graphplan_columns only.
   # source_name is derived on read by getPlotSchedule().
   plan_out <- plan |>
@@ -2118,7 +2514,7 @@ export_graphplan_xlsx <- function(plan,
 
   col_names <- names(plan_out)
   if (is.null(title_row)) {
-    title_row <- stats::setNames(rep(list(NA_character_), length(col_names)), col_names)
+    title_row <- default_graphplan_title_row(col_names)
   } else if (!is.data.frame(title_row)) {
     title_row <- .graphplan_xlsx_row(title_row, col_names)
   }
@@ -2130,11 +2526,13 @@ export_graphplan_xlsx <- function(plan,
   openxlsx::writeData(wb, "library", header_row, startRow = 2, colNames = FALSE)
   openxlsx::writeData(wb, "library", plan_out, startRow = 3, colNames = FALSE)
 
-  if (!is.null(info)) {
-    openxlsx::addWorksheet(wb, "info")
-    openxlsx::writeData(wb, "info", info)
+  if (is.null(info)) {
+    info <- default_graphplan_info()
   }
+  openxlsx::addWorksheet(wb, "info")
+  openxlsx::writeData(wb, "info", info)
 
+  apply_graphlib_workbook_styles(wb, template_path = style_template)
   openxlsx::saveWorkbook(wb, path, overwrite = TRUE)
   invisible(path)
 }
@@ -2185,12 +2583,772 @@ export_built_graphs_zip <- function(built,
   invisible(zip_path)
 }
 
-export_graph_data_xlsx <- function(built, path) {
+#' Columns never exported in graph data workbooks (plotting internals).
+data_export_drop_columns <- function() {
+  c(
+    ".is_main", "is_main", "ordering", "ord_value", "base_value",
+    "has_point", "pos_sum", "neg_sum", "coeff", "y_end", "y_lab",
+    ".row_id", "country_value"
+  )
+}
+
+#' Preferred column order for exported graph data (replot-friendly).
+#' All time-related column names that may appear in plot `data`.
+data_export_time_columns <- function() {
+  c("time", "time_label", "year", "quarter", "month", "date")
+}
+
+#' Time columns meaningful for a given data frequency (aligned with download app).
+data_export_time_columns_for_freq <- function(freq) {
+  freq <- tolower(stringr::str_trim(as.character(freq %||% "y")))
+  if (!nzchar(freq) || is.na(freq)) {
+    freq <- "y"
+  }
+  switch(freq,
+    y = c("year", "time", "time_label"),
+    q = c("year", "quarter", "time", "time_label"),
+    m = c("year", "quarter", "month", "time", "time_label"),
+    d = c("date", "time", "time_label"),
+    c("time", "time_label", "year")
+  )
+}
+
+data_export_preferred_columns <- function(freq = "y") {
+  c(
+    "country_id", "country",
+    data_export_time_columns_for_freq(freq),
+    "variable", "role", "time_role", "fill"
+  )
+}
+
+.export_workbook_header_style <- function() {
+  openxlsx::createStyle(textDecoration = "bold", valign = "top")
+}
+
+resolve_export_country_label <- function(country_iso3c = NA_character_,
+                                         country_iso2c = NULL,
+                                         country_label = NULL,
+                                         fd = NULL) {
+  if (!is.null(country_label) && length(country_label) == 1L &&
+      !is.na(country_label) && nzchar(country_label)) {
+    return(as.character(country_label))
+  }
+  if (!is.null(fd) && is.list(fd) && !is.null(fd$extdata_y)) {
+    ext <- fd$extdata_y
+    if (is.data.frame(ext) && all(c("country_id", "country") %in% names(ext))) {
+      if (!is.null(country_iso2c) && length(country_iso2c) == 1L &&
+          !is.na(country_iso2c) && nzchar(country_iso2c)) {
+        hit <- ext$country[match(country_iso2c, ext$country_id)]
+        if (length(hit) == 1L && !is.na(hit) && nzchar(hit)) {
+          return(as.character(hit))
+        }
+      }
+      if (!is.null(country_iso3c) && length(country_iso3c) == 1L &&
+          !is.na(country_iso3c) && nzchar(country_iso3c)) {
+        iso2 <- countrycode::countrycode(country_iso3c, "iso3c", "iso2c", warn = FALSE)
+        if (!is.na(iso2) && nzchar(iso2)) {
+          hit <- ext$country[match(iso2, ext$country_id)]
+          if (length(hit) == 1L && !is.na(hit) && nzchar(hit)) {
+            return(as.character(hit))
+          }
+        }
+      }
+    }
+  }
+  if (!is.null(country_iso3c) && length(country_iso3c) == 1L &&
+      !is.na(country_iso3c) && nzchar(country_iso3c)) {
+    nm <- countrycode::countrycode(country_iso3c, "iso3c", "country.name", warn = FALSE)
+    if (!is.na(nm) && nzchar(nm)) {
+      return(as.character(nm))
+    }
+  }
+  NA_character_
+}
+
+graph_export_time_context <- function(graphplan_row = NULL, graph_params = NULL) {
+  pick_chr <- function(...) {
+    for (x in list(...)) {
+      if (is.null(x) || length(x) == 0L) next
+      v <- as.character(x)[1]
+      if (!is.na(v) && nzchar(v)) {
+        return(v)
+      }
+    }
+    NA_character_
+  }
+  time_fix_raw <- NA_character_
+  x_min <- NA_character_
+  x_max <- NA_character_
+  freq <- "y"
+  time_fix_label <- NA_character_
+  if (!is.null(graphplan_row)) {
+    row <- tibble::as_tibble(graphplan_row[1, , drop = FALSE])
+    time_fix_raw <- pick_chr(row$time_fix[[1]])
+    x_min <- pick_chr(row$x_min[[1]])
+    x_max <- pick_chr(row$x_max[[1]])
+    freq <- pick_chr(row$data_frequency[[1]], "y")
+  }
+  if (!is.null(graph_params)) {
+    if (is.na(time_fix_raw)) {
+      time_fix_raw <- pick_chr(graph_params$time_fix)
+    }
+    if (is.na(x_min)) {
+      x_min <- pick_chr(graph_params$x_min)
+    }
+    if (is.na(x_max)) {
+      x_max <- pick_chr(graph_params$x_max)
+    }
+    if (freq == "y") {
+      freq <- pick_chr(graph_params$data_frequency, "y")
+    }
+    time_fix_label <- pick_chr(
+      graph_params$time_fix_label,
+      graph_params$time_fix_parts
+    )
+  }
+  time_fix_num <- suppressWarnings(as.numeric(time_fix_raw))
+  list(
+    data_frequency = freq,
+    time_fix_raw = time_fix_raw,
+    time_fix_num = if (length(time_fix_num) == 1L && is.finite(time_fix_num)) {
+      time_fix_num
+    } else {
+      NA_real_
+    },
+    time_fix_label = time_fix_label,
+    x_min = x_min,
+    x_max = x_max
+  )
+}
+
+graph_export_time_filter_note <- function(ctx) {
+  if (is.finite(ctx$time_fix_num)) {
+    note <- paste0("Cross-section at time_fix=", ctx$time_fix_num)
+    if (!is.na(ctx$time_fix_label) && nzchar(ctx$time_fix_label)) {
+      note <- paste0(note, " (", ctx$time_fix_label, ")")
+    }
+    return(note)
+  }
+  has_xmin <- !is.na(ctx$x_min) && nzchar(ctx$x_min)
+  has_xmax <- !is.na(ctx$x_max) && nzchar(ctx$x_max)
+  if (has_xmin || has_xmax) {
+    return(paste0(
+      "Time window from graphplan: ",
+      if (has_xmin) ctx$x_min else "…",
+      " .. ",
+      if (has_xmax) ctx$x_max else "…"
+    ))
+  }
+  "No explicit time filter in graphplan (full range used when building the graph)"
+}
+
+graph_export_indicator_codes <- function(graphplan_row = NULL, graph_params = NULL) {
+  codes <- graph_export_indicator_node_ids(graphplan_row, graph_params)
+  codes <- sub("@.*$", "", codes)
+  sec <- if (!is.null(graph_params) &&
+      length(graph_params$indicators_sec %||% character()) > 0L) {
+    as.character(graph_params$indicators_sec)
+  } else {
+    character()
+  }
+  unique(c(codes, sec))
+}
+
+column_has_non_na <- function(x) {
+  if (is.null(x) || length(x) == 0L) {
+    return(FALSE)
+  }
+  any(!is.na(x) & !(is.character(x) & !nzchar(x)))
+}
+
+apply_export_time_columns <- function(df,
+                                      freq,
+                                      graphplan_row = NULL,
+                                      graph_params = NULL) {
+  df <- tibble::as_tibble(df)
+  allowed <- data_export_time_columns_for_freq(freq)
+  ctx <- graph_export_time_context(graphplan_row, graph_params)
+
+  disallowed <- setdiff(data_export_time_columns(), allowed)
+  for (col in intersect(disallowed, names(df))) {
+    if (!column_has_non_na(df[[col]])) {
+      df[[col]] <- NULL
+    }
+  }
+
+  if (nrow(df) == 0L) {
+    return(df)
+  }
+
+  has_time_data <- any(vapply(
+    intersect(allowed, names(df)),
+    function(col) column_has_non_na(df[[col]]),
+    logical(1)
+  ))
+
+  if (!has_time_data) {
+    n <- nrow(df)
+    if (is.finite(ctx$time_fix_num)) {
+      if ("time" %in% allowed) {
+        df$time <- rep(ctx$time_fix_num, n)
+      }
+      if ("year" %in% allowed && identical(freq, "y")) {
+        df$year <- rep(as.integer(round(ctx$time_fix_num)), n)
+      }
+      if ("time_label" %in% allowed && !is.na(ctx$time_fix_label) &&
+          nzchar(ctx$time_fix_label)) {
+        df$time_label <- rep(ctx$time_fix_label, n)
+      }
+    } else if (
+      (!is.na(ctx$x_min) && nzchar(ctx$x_min)) ||
+        (!is.na(ctx$x_max) && nzchar(ctx$x_max))
+    ) {
+      if ("time_label" %in% allowed) {
+        df$time_label <- rep(
+          graph_export_time_filter_note(ctx),
+          n
+        )
+      }
+    }
+  }
+
+  keep <- setdiff(names(df), disallowed)
+  df <- df[, keep, drop = FALSE]
+  df
+}
+
+data_export_measure_columns <- function(df, graphplan_row = NULL, graph_params = NULL) {
+  nms <- names(df)
+  codes <- graph_export_indicator_codes(graphplan_row, graph_params)
+  measures <- c("value", "x", "y")
+  measures <- intersect(measures, nms)
+  for (code in codes) {
+    if (code %in% nms && !code %in% measures) {
+      measures <- c(measures, code)
+    }
+  }
+  measures
+}
+
+order_export_data_columns <- function(df,
+                                      freq = "y",
+                                      graphplan_row = NULL,
+                                      graph_params = NULL) {
+  nms <- names(df)
+  measures <- data_export_measure_columns(df, graphplan_row, graph_params)
+  meta_pref <- c(
+    "country_id", "country", "variable", "role", "time_role", "fill"
+  )
+  id_cols <- intersect(meta_pref, nms)
+  time_cols <- intersect(data_export_time_columns_for_freq(freq), nms)
+  rest <- setdiff(nms, c(id_cols, time_cols, measures))
+  ordered <- c(id_cols, time_cols, rest, measures)
+  ordered <- ordered[ordered %in% nms]
+  df[, ordered, drop = FALSE]
+}
+
+#' Encode recipe for country_data_download_app Custom tab (must match
+#' encode_recipe() in download_script/country_data_download_app/service.R).
+encode_country_download_cust1 <- function(recipe) {
+  payload <- list(
+    v  = 1L,
+    i  = recipe$indicators %||% character(0),
+    c  = recipe$countries  %||% character(0),
+    yf = recipe$year_from,
+    yt = recipe$year_to,
+    t  = if (identical(recipe$time_layout, "rows")) 2L else 1L
+  ) |>
+    purrr::discard(is.null)
+
+  json <- jsonlite::toJSON(payload, auto_unbox = TRUE, null = "null")
+  raw  <- charToRaw(json)
+  gz   <- memCompress(raw, type = "gzip")
+  b64  <- base64enc::base64encode(gz)
+  b64url <- b64 |>
+    gsub("\\+", "-", x = _, fixed = FALSE) |>
+    gsub("/", "_",  x = _, fixed = TRUE) |>
+    gsub("=+$", "", x = _, fixed = FALSE)
+
+  paste0("CUST1:", b64url)
+}
+
+split_graphplan_indicator_codes <- function(indicators_chr) {
+  if (is.null(indicators_chr) || length(indicators_chr) == 0L) {
+    return(character())
+  }
+  if (length(indicators_chr) > 1L) {
+    indicators_chr <- paste(indicators_chr, collapse = ",")
+  }
+  indicators_chr <- as.character(indicators_chr)[1]
+  if (!nzchar(indicators_chr) || is.na(indicators_chr)) {
+    return(character())
+  }
+  stringr::str_trim(unlist(strsplit(indicators_chr, ",\\s*")))
+}
+
+parse_sec_y_axis_indicator_codes <- function(sec_y_axis) {
+  if (is.null(sec_y_axis) || length(sec_y_axis) == 0L) {
+    return(character())
+  }
+  sec <- as.character(sec_y_axis)[1]
+  if (!nzchar(sec) || is.na(sec)) {
+    return(character())
+  }
+  parts <- stringr::str_trim(unlist(strsplit(sec, ",\\s*")))
+  nums <- grepl("^\\d+(\\.\\d+)?$", parts)
+  parts[!nums]
+}
+
+graph_export_indicator_node_ids <- function(graphplan_row, graph_params = NULL) {
+  row <- graphplan_row
+  gp <- graph_params
+  if (is.null(row) && !is.null(gp)) {
+    ind <- gp$indicators
+    if (is.null(ind)) {
+      ind_chr <- NA_character_
+    } else if (length(ind) > 1L) {
+      ind_chr <- paste(ind, collapse = ", ")
+    } else {
+      ind_chr <- as.character(ind[[1]])
+    }
+    freq <- as.character(gp$data_frequency %||% "y")
+    sec <- if (length(gp$indicators_sec %||% character()) > 0L) {
+      paste(gp$indicators_sec, collapse = ", ")
+    } else {
+      gp$sec_y_axis %||% NA_character_
+    }
+    codes <- unique(c(
+      split_graphplan_indicator_codes(ind_chr),
+      parse_sec_y_axis_indicator_codes(sec)
+    ))
+    codes <- codes[!is.na(codes) & nzchar(codes)]
+    if (length(codes) == 0L) {
+      return(character())
+    }
+    return(paste0(codes, "@", freq))
+  }
+  if (is.null(row)) {
+    return(character())
+  }
+  row <- tibble::as_tibble(row[1, , drop = FALSE])
+  freq <- as.character(row$data_frequency[[1]] %||% "y")
+  codes <- unique(c(
+    split_graphplan_indicator_codes(row$indicators[[1]]),
+    parse_sec_y_axis_indicator_codes(row$sec_y_axis[[1]])
+  ))
+  codes <- codes[!is.na(codes) & nzchar(codes)]
+  if (length(codes) == 0L) {
+    return(character())
+  }
+  paste0(codes, "@", freq)
+}
+
+graph_export_cust1_countries <- function(graphplan_row,
+                                         graph_params = NULL,
+                                         country_iso3c = NA_character_,
+                                         peers_iso2c = NULL,
+                                         country_iso2c = NA_character_) {
+  iso2 <- character()
+  if (!is.null(country_iso2c) && length(country_iso2c) == 1L &&
+      !is.na(country_iso2c) && nzchar(country_iso2c)) {
+    iso2 <- c(iso2, as.character(country_iso2c))
+  } else if (!is.null(country_iso3c) && length(country_iso3c) == 1L &&
+             !is.na(country_iso3c) && nzchar(country_iso3c)) {
+    mapped <- countrycode::countrycode(country_iso3c, "iso3c", "iso2c", warn = FALSE)
+    if (!is.na(mapped) && nzchar(mapped)) {
+      iso2 <- c(iso2, mapped)
+    }
+  }
+  if (!is.null(peers_iso2c) && length(peers_iso2c) > 0L) {
+    iso2 <- c(iso2, as.character(peers_iso2c))
+  }
+  all_flag <- 0L
+  if (!is.null(graphplan_row) && "all" %in% names(graphplan_row)) {
+    all_flag <- as.integer(graphplan_row$all[[1]] %||% 0L)
+  } else if (!is.null(graph_params)) {
+    all_flag <- as.integer(graph_params$all %||% 0L)
+  }
+  unique(iso2[!is.na(iso2) & nzchar(iso2)])
+}
+
+parse_graph_export_year_bounds <- function(graphplan_row = NULL, graph_params = NULL) {
+  x_min <- NA_character_
+  x_max <- NA_character_
+  if (!is.null(graphplan_row)) {
+    x_min <- as.character(graphplan_row$x_min[[1]] %||% NA_character_)
+    x_max <- as.character(graphplan_row$x_max[[1]] %||% NA_character_)
+  } else if (!is.null(graph_params)) {
+    x_min <- as.character(graph_params$x_min %||% NA_character_)
+    x_max <- as.character(graph_params$x_max %||% NA_character_)
+  }
+  yf <- suppressWarnings(as.integer(x_min))
+  yt <- suppressWarnings(as.integer(x_max))
+  list(
+    year_from = if (length(yf) == 1L && !is.na(yf)) yf else NULL,
+    year_to   = if (length(yt) == 1L && !is.na(yt)) yt else NULL
+  )
+}
+
+build_country_download_cust1_recipe <- function(graphplan_row = NULL,
+                                                  graph_params = NULL,
+                                                  country_iso3c = NA_character_,
+                                                  peers_iso2c = NULL,
+                                                  country_iso2c = NULL) {
+  indicators <- graph_export_indicator_node_ids(graphplan_row, graph_params)
+  countries <- graph_export_cust1_countries(
+    graphplan_row = graphplan_row,
+    graph_params = graph_params,
+    country_iso3c = country_iso3c,
+    peers_iso2c = peers_iso2c,
+    country_iso2c = country_iso2c
+  )
+  years <- parse_graph_export_year_bounds(graphplan_row, graph_params)
+  encode_country_download_cust1(list(
+    indicators  = indicators,
+    countries   = countries,
+    year_from   = years$year_from,
+    year_to     = years$year_to,
+    time_layout = "rows"
+  ))
+}
+
+graph_export_indicator_sources_table <- function(graphplan_row = NULL,
+                                                 graph_params = NULL,
+                                                 dict = NULL) {
+  if (is.null(dict) || !is.data.frame(dict) || nrow(dict) == 0L) {
+    return(tibble::tibble(
+      indicator_code = character(),
+      source_frequency = character(),
+      source_name = character()
+    ))
+  }
+  catalog <- build_indicator_catalog_from_dict(dict)
+  node_ids <- graph_export_indicator_node_ids(graphplan_row, graph_params)
+  if (length(node_ids) == 0L) {
+    return(tibble::tibble(
+      indicator_code = character(),
+      source_frequency = character(),
+      source_name = character()
+    ))
+  }
+  parts <- strsplit(node_ids, "@", fixed = TRUE)
+  req <- tibble::tibble(
+    indicator_code = vapply(parts, `[[`, character(1), 1),
+    source_frequency = vapply(parts, function(p) {
+      if (length(p) >= 2L) p[[2]] else "y"
+    }, character(1))
+  )
+  catalog |>
+    dplyr::inner_join(req, by = c("indicator_code", "source_frequency")) |>
+    dplyr::distinct(.data$indicator_code, .data$source_frequency, .keep_all = TRUE) |>
+    dplyr::transmute(
+      indicator_code = .data$indicator_code,
+      source_frequency = .data$source_frequency,
+      source_name = as.character(.data$source_name %||% NA_character_)
+    ) |>
+    dplyr::arrange(.data$indicator_code, .data$source_frequency)
+}
+
+graphplan_row_to_recipe_sheet_df <- function(graphplan_row) {
+  row <- strip_graphplan_check_artifacts(
+    migrate_graphplan_if_needed(tibble::as_tibble(graphplan_row[1, , drop = FALSE]))
+  )
+  for (col in graphplan_columns) {
+    if (!col %in% names(row)) {
+      row[[col]] <- NA
+    }
+  }
+  row <- row[, graphplan_columns, drop = FALSE]
+  vals <- vapply(graphplan_columns, function(col) {
+    x <- row[[col]][[1]]
+    if (is.null(x) || length(x) == 0L || (length(x) == 1L && is.na(x))) {
+      ""
+    } else {
+      as.character(x)
+    }
+  }, character(1))
+  out <- rbind(graphplan_columns, vals)
+  as.data.frame(out, stringsAsFactors = FALSE)
+}
+
+columns_semantically_equal <- function(a, b) {
+  if (is.factor(a)) a <- as.character(a)
+  if (is.factor(b)) b <- as.character(b)
+  if (identical(typeof(a), typeof(b)) && (is.numeric(a) || is.logical(a)) &&
+      (is.numeric(b) || is.logical(b))) {
+    a <- suppressWarnings(as.numeric(a))
+    b <- suppressWarnings(as.numeric(b))
+  } else {
+    a <- as.character(a)
+    b <- as.character(b)
+  }
+  if (length(a) != length(b)) {
+    return(FALSE)
+  }
+  if (length(a) == 0L) {
+    return(TRUE)
+  }
+  same_na <- is.na(a) & is.na(b)
+  if (all(same_na | (!is.na(a) & !is.na(b)))) {
+    a_cmp <- a[!same_na]
+    b_cmp <- b[!same_na]
+    if (length(a_cmp) == 0L) {
+      return(TRUE)
+    }
+    if (is.numeric(a_cmp)) {
+      return(isTRUE(all.equal(a_cmp, b_cmp, check.attributes = FALSE)))
+    }
+    return(identical(a_cmp, b_cmp))
+  }
+  FALSE
+}
+
+drop_semantic_duplicate_columns <- function(df) {
+  nms <- names(df)
+  if (length(nms) < 2L) {
+    return(df)
+  }
+  drop <- character()
+  for (i in seq_along(nms)) {
+    if (nms[[i]] %in% drop) next
+    if (i >= length(nms)) next
+    for (j in (i + 1L):length(nms)) {
+      if (nms[[j]] %in% drop) next
+      if (columns_semantically_equal(df[[nms[[i]]]], df[[nms[[j]]]])) {
+        drop <- c(drop, nms[[j]])
+      }
+    }
+  }
+  if (length(drop) == 0L) {
+    return(df)
+  }
+  dplyr::select(df, -dplyr::all_of(unique(drop)))
+}
+
+#' Prune plotting data to a minimal replot-friendly column set (phase 18.1).
+prune_export_data_columns <- function(df,
+                                      graph_type = NULL,
+                                      data_frequency = NULL,
+                                      graphplan_row = NULL,
+                                      graph_params = NULL) {
+  freq <- tolower(stringr::str_trim(as.character(data_frequency %||% "y")))
+  if (!nzchar(freq) || is.na(freq)) {
+    freq <- "y"
+  }
+  if (is.null(df) || !is.data.frame(df) || ncol(df) == 0L) {
+    return(apply_export_time_columns(
+      tibble::as_tibble(df),
+      freq = freq,
+      graphplan_row = graphplan_row,
+      graph_params = graph_params
+    ))
+  }
+  df <- tibble::as_tibble(df)
+  if ("value_plot" %in% names(df)) {
+    df$value <- df$value_plot
+  } else if ("value_raw" %in% names(df)) {
+    df$value <- df$value_raw
+  }
+  drop <- unique(c(
+    data_export_drop_columns(),
+    "value_raw",
+    "value_plot"
+  ))
+  drop <- intersect(drop, names(df))
+  if (length(drop) > 0L) {
+    df <- dplyr::select(df, -dplyr::all_of(drop))
+  }
+  df <- drop_semantic_duplicate_columns(df)
+  df <- apply_export_time_columns(
+    df,
+    freq = freq,
+    graphplan_row = graphplan_row,
+    graph_params = graph_params
+  )
+  order_export_data_columns(
+    df,
+    freq = freq,
+    graphplan_row = graphplan_row,
+    graph_params = graph_params
+  )
+}
+
+build_graph_data_meta_sheet <- function(item,
+                                        country_iso3c = NA_character_,
+                                        graphplan_row = NULL,
+                                        dict = NULL,
+                                        peers_iso2c = NULL,
+                                        country_iso2c = NULL,
+                                        country_label = NULL,
+                                        fd = NULL) {
+  gp <- item$graph_params %||% list()
+  g_row <- graphplan_row %||% item$graphplan_row
+  ctx <- graph_export_time_context(g_row, gp)
+  country_name <- resolve_export_country_label(
+    country_iso3c = country_iso3c,
+    country_iso2c = country_iso2c %||% item$country_iso2c,
+    country_label = country_label,
+    fd = fd
+  )
+  cust1 <- tryCatch(
+    build_country_download_cust1_recipe(
+      graphplan_row = g_row,
+      graph_params = gp,
+      country_iso3c = country_iso3c,
+      peers_iso2c = peers_iso2c,
+      country_iso2c = country_iso2c %||% item$country_iso2c
+    ),
+    error = function(e) NA_character_
+  )
+  all_flag <- if (!is.null(g_row) && "all" %in% names(g_row)) {
+    as.integer(g_row$all[[1]] %||% 0L)
+  } else {
+    as.integer(gp$all %||% 0L)
+  }
+  cust1_note <- paste(
+    "Paste into country_data_download_app → Custom → recipe field and click Apply.",
+    "Layout: time in rows (closest to exported data sheet).",
+    if (all_flag == 1L) {
+      "Graph uses all countries; CUST1 lists focal country and peers only — extend countries in the download app if needed."
+    } else {
+      NULL
+    },
+    sep = " "
+  )
+  meta_kv <- tibble::tibble(
+    field = c(
+      "exported_at",
+      "app",
+      "graph_name",
+      "country_iso3c",
+      "country_name",
+      "data_frequency",
+      "time_filter_note",
+      "cust1_recipe",
+      "cust1_note"
+    ),
+    value = c(
+      format(Sys.time(), "%Y-%m-%dT%H:%M:%S%z"),
+      "new_graph_plotter_app",
+      as.character(item$graph_name %||% gp$graph_name %||% ""),
+      as.character(country_iso3c %||% ""),
+      as.character(country_name %||% ""),
+      ctx$data_frequency,
+      graph_export_time_filter_note(ctx),
+      cust1,
+      cust1_note
+    )
+  )
+  sources <- graph_export_indicator_sources_table(
+    graphplan_row = g_row,
+    graph_params = gp,
+    dict = dict
+  )
+  list(meta_kv = meta_kv, sources = sources)
+}
+
+export_graph_data_workbook <- function(item,
+                                       path,
+                                       country_iso3c = NA_character_,
+                                       graphplan_row = NULL,
+                                       dict = NULL,
+                                       peers_iso2c = NULL,
+                                       country_iso2c = NULL,
+                                       country_label = NULL,
+                                       fd = NULL) {
+  if (is.null(item) || !isTRUE(item$ok) || is.null(item$data)) {
+    rlang::warn("export_graph_data_workbook: no data to export.")
+    return(invisible(path))
+  }
+  gp <- item$graph_params %||% list()
+  g_row <- graphplan_row %||% item$graphplan_row
+  if (is.null(g_row)) {
+    rlang::warn(
+      "export_graph_data_workbook: graphplan_row missing; recipe sheet may be incomplete."
+    )
+  }
+  freq <- if (!is.null(g_row) && "data_frequency" %in% names(g_row)) {
+    as.character(g_row$data_frequency[[1]] %||% "y")
+  } else {
+    as.character(gp$data_frequency %||% "y")
+  }
+  data_df <- prune_export_data_columns(
+    item$data,
+    graph_type = gp$graph_type %||% NULL,
+    data_frequency = freq,
+    graphplan_row = g_row,
+    graph_params = gp
+  )
+  recipe_df <- if (!is.null(g_row)) {
+    graphplan_row_to_recipe_sheet_df(g_row)
+  } else {
+    graphplan_row_to_recipe_sheet_df(
+      tibble::tibble(graph_name = gp$graph_name %||% NA_character_)
+    )
+  }
+  meta_parts <- build_graph_data_meta_sheet(
+    item = item,
+    country_iso3c = country_iso3c,
+    graphplan_row = g_row,
+    dict = dict,
+    peers_iso2c = peers_iso2c %||% item$peers_iso2c,
+    country_iso2c = country_iso2c %||% item$country_iso2c,
+    country_label = country_label,
+    fd = fd
+  )
+
+  hdr_style <- .export_workbook_header_style()
+  wb <- openxlsx::createWorkbook()
+  openxlsx::addWorksheet(wb, "data")
+  openxlsx::writeData(wb, "data", data_df, withFilter = TRUE)
+
+  openxlsx::addWorksheet(wb, "meta")
+  openxlsx::writeData(wb, "meta", meta_parts$meta_kv, colNames = TRUE)
+  openxlsx::addStyle(
+    wb, "meta", hdr_style,
+    rows = 1, cols = seq_len(ncol(meta_parts$meta_kv)),
+    gridExpand = TRUE, stack = TRUE
+  )
+  src_start <- nrow(meta_parts$meta_kv) + 3L
+  if (nrow(meta_parts$sources) > 0L) {
+    openxlsx::writeData(
+      wb, "meta", meta_parts$sources,
+      startRow = src_start, colNames = TRUE
+    )
+    openxlsx::addStyle(
+      wb, "meta", hdr_style,
+      rows = src_start,
+      cols = seq_len(ncol(meta_parts$sources)),
+      gridExpand = TRUE, stack = TRUE
+    )
+  }
+
+  openxlsx::addWorksheet(wb, "recipe")
+  openxlsx::writeData(wb, "recipe", recipe_df, colNames = FALSE)
+  openxlsx::addStyle(
+    wb, "recipe", hdr_style,
+    rows = 1, cols = seq_len(ncol(recipe_df)),
+    gridExpand = TRUE, stack = TRUE
+  )
+
+  openxlsx::saveWorkbook(wb, path, overwrite = TRUE)
+  invisible(path)
+}
+
+export_graph_data_xlsx <- function(built, path, country_iso3c = NA_character_) {
   sheets <- list()
   for (nm in names(built)) {
     item <- built[[nm]]
     if (isTRUE(item$ok) && !is.null(item$data)) {
-      sheets[[nm]] <- item$data
+      gp <- item$graph_params %||% list()
+      freq <- as.character(gp$data_frequency %||% "y")
+      sheets[[nm]] <- prune_export_data_columns(
+        item$data,
+        graph_type = gp$graph_type %||% NULL,
+        data_frequency = freq,
+        graphplan_row = item$graphplan_row,
+        graph_params = gp
+      )
     }
   }
   if (length(sheets) == 0) {
@@ -2201,17 +3359,109 @@ export_graph_data_xlsx <- function(built, path) {
   invisible(path)
 }
 
+#' Multiline `graph_type` reference for the graphplan `info` sheet.
+graphplan_info_graph_type_text <- function() {
+  paste(
+    c(
+      "scatter_dynamic: каждая точка задается значением двух индикаторов в фиксированный момент времени для одной страны, другая точка - та же страна, но другой момент времени",
+      "scatter_country_comparison: каждая точка задается значением двух индикаторов в фиксированный момент времени, другая точка - другая страна, но тот же момент времени",
+      "scatter_before_after: до/после по одному индикатору (используется первый код из indicators); сравнение двух моментов времени для одной страны",
+      "structure_dynamic: стэк столбцов и сумма их значений в виде точек, по иксу - время",
+      "structure_country_comparison: стэк столбцов, по иксу - страны",
+      "structure_country_comparison_norm: стэк столбцов, нормированный по сумме положительных значений, по иксу - страны",
+      "bar_dynamic: столбцы, стоящие рядом (можно несколько индикаторов), по иксу - время",
+      "bar_country_comparison: столбцы, стоящие рядом (можно несколько индикаторов), по иксу - страны",
+      "bar_country_comparison_norm:  столбцы, стоящие рядом (можно несколько индикаторов), нормированный по сумме положительных значений, по иксу - страны",
+      "bar_year_comparison: столбцы, сгруппированные по индикаторам, в каждой группе столбцы - отдельные моменты времени",
+      "lines_country_comparison: линии, показывающие динамику одного и того же индикатора для нескольких стран",
+      "lines_indicator_comparison: линии, показывающие динамику нескольких индикаторов для одной страны",
+      "density_fix: плотность/распределение показателя в фиксированный момент времени (time_fix)",
+      "distribution_dynamic: фэнплот, показывающие как во времени менялось распределение какого-то показателя по странам, закрашенная область - центральные 90%?, каждое деление области - 2,5%?",
+      "distribution_time_comparison: сравнение распределений показателя в разные моменты времени (вместо устаревшего distribution_year_comparison)",
+      "distribution_indicator_comparison: сравнение распределений нескольких индикаторов в одном time_fix",
+      "triangle: еще не реализован, паутинка"
+    ),
+    collapse = "\r\n"
+  )
+}
+
+#' Default `info` sheet for exported `2_graphlib.xlsx` (Russian column names).
 default_graphplan_info <- function() {
   tibble::tibble(
-    field = c(
-      "graphplan_version",
-      "exported_from",
-      "notes"
+    `поле` = c(
+      "graph_name",
+      "graph_title",
+      "graph_type",
+      "graph_group",
+      "data_frequency",
+      "indicators",
+      "time_fix",
+      "peers",
+      "all",
+      "x_log",
+      "y_log",
+      "x_min",
+      "x_max",
+      "y_min",
+      "y_max",
+      "trend_type",
+      "index",
+      "recession",
+      "sec_y_axis",
+      "swap_axis",
+      "long_legend",
+      "vert_lab",
+      "short_names",
+      "theme",
+      "orientation",
+      "show_title",
+      "active"
     ),
-    value = c(
-      "1",
-      "new_graph_plotter_app",
-      "info sheet is reference only; library sheet is the source of truth"
+    `возможные значения` = c(
+      "Имя файла графика (латиница, без пробелов). Префикс задаётся graph_group + страна; суффикс — из полей графика",
+      "Заголовок на графике, если show_title = 1.",
+      graphplan_info_graph_type_text(),
+      paste(
+        "Тема графика для сортировки. Задает префикс имени файла и группировку в отчётах:",
+        "macro (ec), budget (budg), external (ext), institutional (inst),",
+        "demography (demogr), covid, model, other (oth)"
+      ),
+      "y, q, m — лист базы; d — daily (не все типы графиков). Пусто/пробел — как в validation.",
+      "Коды индикаторов, которые построены на графике, через запятую, с пробелом после запятой",
+      paste(
+        "Срез или окно времени. Примеры: 2010, 2012m1, 2026q1, 20.10.2020.",
+        "Или несколько значений — через запятую (для year_comparison и др.)"
+      ),
+      paste(
+        "\"0\" : без пиров\r\n",
+        "\"default\" : возьмет из файла пиров строку для этой страны, все единицы\r\n",
+        "\"neighbours\" : возьмет из файла пиров все страны с таким же названием региона\r\n",
+        "\"similar: hci, 0.2, 2020\" : возьмет страны, которые по выбранному индикатору (hci) отличаются не более чем на заданный процент (0.2 = 20%) в заданном году (2020)\r\n",
+        "\"top: gdp, 10, 2021\" : возьмет заданное число стран (10), которые по выбранному индикатору (gdp) находятся в топе в заданном году (2021)\r\n",
+        "\"low: exp_g_usd, 5, 2021\" : возьмет заданное число стран (5), которые по выбранному индикатору (exp_g_usd) находятся в антитопе в заданном году (2021)\r\n",
+        "\"EU\", \"EZ\", \"EEU\", \"IT\", \"OPEC_plus\", \"BRICS\", \"BRICS_plus\", \"EM\", \"DM\", \"ACRA\": страны, входящие в перечисленные группы (состав - в файле пиров)\r\n",
+        "\"custom: KZ, NO, RO\" : возьмет страны, коды которых вручную перечислены (коды можно посмотреть в файле пиров)",
+        sep = ""
+      ),
+      "если 1, в будт построены все страны (а если при этом peers не 0, пиры будут выделены другим цветом)",
+      "если 1, ось x будет прологарифмирована (натуральный или десятичный?)",
+      "если 1, ось y будет прологарифмирована (натуральный или десятичный?)",
+      "если не пусто, ограничит значения на оси x слева, для графиков с временем на оси - задавать в том же формате как и time_fix",
+      "если не пусто, ограничит значения на оси x справа, для графиков с временем на оси - задавать в том же формате как и time_fix",
+      "если не пусто, ограничит значения на оси y снизу",
+      "если не пусто, ограничит значения на оси y сверху",
+      "для scatter графиков: lm (линейный тренд), loess (ядерное сглаживание)",
+      "если 1, на графиках типа lines_country_comparison все нормируется к первой временной точке",
+      "если 1, выделит даты падавшего реального ВВП (пока не реализовано)",
+      "\"pop, gdp, 10\": если не пусто, на графиках типов bar, structure и lines часть индикаторов (pop и gdp) будет построена по второй оси справа, максимум которой будет в заданное число раз меньше (10), чем максимум основной оси",
+      "если 1, повернет график на 90 градусов (пока не реализовано)",
+      "если 1, разделит легенду на несколько строк, если она не влезает в одну (пока не реализовано)",
+      "если 1, повернет подписи на оси X на 90 градусов, чтбы сталм вертикальными (пока не реализовано)",
+      "если 1, использует короткие названия индикаторов в легенде и подписях на графике (пока не реализовано)",
+      "acra_light, acra_dark; остальные в процессе разработки — black_white, ipsum, economist, minimal",
+      "horizontal (900x!!!!) или vertical (900x!!!!)",
+      "если 1, на графике сверху будет заголовок из graph_title",
+      "если 1, будет построен"
     )
   )
 }
@@ -2479,5 +3729,43 @@ compute_export_report <- function(graphplan,
     export_graphs_ok = as.integer(scoped_ok),
     dirty = isTRUE(dirty),
     changes = changes
+  )
+}
+
+#' Summary metrics for Export tab cards (phase 18.3).
+compute_export_summary_ui_data <- function(graphplan,
+                                           validation = NULL,
+                                           built = list(),
+                                           editor_touch_row_ids = integer(0),
+                                           graphplan_baseline = NULL,
+                                           country_label = NULL) {
+  n_planned <- if (is.null(validation)) {
+    0L
+  } else {
+    sum(validation$row_status$can_build, na.rm = TRUE)
+  }
+  n_edited <- if (is.null(graphplan) || nrow(graphplan) == 0L) {
+    0L
+  } else {
+    sum(vapply(
+      seq_len(nrow(graphplan)),
+      function(rid) {
+        graphplan_row_edited_hybrid(
+          rid,
+          graphplan,
+          graphplan_baseline,
+          editor_touch_row_ids
+        )
+      },
+      logical(1)
+    ))
+  }
+  built <- as.list(built %||% list())
+  n_built <- sum(vapply(built, function(x) isTRUE(x$ok), logical(1)))
+  list(
+    planned = as.integer(n_planned),
+    edited = as.integer(n_edited),
+    built = as.integer(n_built),
+    country = country_label %||% "—"
   )
 }

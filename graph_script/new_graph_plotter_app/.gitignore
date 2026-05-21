@@ -4,11 +4,13 @@ extdata_q.csv
 extdata_y.csv
 dict.csv
 rsconnect
+# Local / legacy copies next to app.R (prefer deploy_data/ for publish)
 Filled_DB.rds
 Filled_DB_d.rds
 1_peers_params.xlsx
 2_graphlib.xlsx
 2_graphlib_b.xlsx
+# deploy_data/*.rds and *.xlsx — see deploy_data/.gitignore
 UI_CHECKLIST.md
 profile_gallery_scale.R
 profile_artifacts

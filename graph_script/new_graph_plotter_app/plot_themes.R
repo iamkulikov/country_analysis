@@ -1,25 +1,38 @@
 
 ###### Define custom color palettes and modifying themes
 
-## ACRA palette
-ACRA <- newpal( col = c(rgb(147, 202, 116, maxColorValue = 255),rgb(153, 38, 115, maxColorValue = 255),
-                        rgb(238, 108, 64, maxColorValue = 255),rgb(155, 155, 155, maxColorValue = 255),
-                        rgb(238, 162, 53, maxColorValue = 255),rgb(55, 165, 188, maxColorValue = 255),
-                        rgb(69, 159, 122, maxColorValue = 255),rgb(115, 144, 159, maxColorValue = 255),
-                        rgb(115, 83, 116, maxColorValue = 255),rgb(60, 100, 162, maxColorValue = 255),
-                        rgb(63, 133, 165, maxColorValue = 255),rgb(220, 73, 66, maxColorValue = 255),
-                        rgb(225, 225, 25, maxColorValue = 255),rgb(145, 30, 180, maxColorValue = 255),
-                        rgb(230, 25, 75, maxColorValue = 255),rgb(70, 240, 240, maxColorValue = 255),
-                        rgb(240, 50, 230, maxColorValue = 255), rgb(0, 0, 0, maxColorValue = 255),
-                        rgb(139, 69, 19, maxColorValue = 255), rgb(255, 0, 0, maxColorValue = 255),
-                        rgb(240, 179, 35, maxColorValue = 255)),
-                names = c("green", "dark", "red", "grey", "sec1", "sec2", "sec3",
-                          "sec4", "sec5", "sec6", "sec7", "sec8", "add1", "add2", 
-                          "add3", "add4", "add5", "black", "brown", "reddest", "orange")
-)
+acra_palette_colors <- function() {
+  cols <- c(
+    rgb(147, 202, 116, maxColorValue = 255), rgb(153, 38, 115, maxColorValue = 255),
+    rgb(238, 108, 64, maxColorValue = 255), rgb(155, 155, 155, maxColorValue = 255),
+    rgb(238, 162, 53, maxColorValue = 255), rgb(55, 165, 188, maxColorValue = 255),
+    rgb(69, 159, 122, maxColorValue = 255), rgb(115, 144, 159, maxColorValue = 255),
+    rgb(115, 83, 116, maxColorValue = 255), rgb(60, 100, 162, maxColorValue = 255),
+    rgb(63, 133, 165, maxColorValue = 255), rgb(220, 73, 66, maxColorValue = 255),
+    rgb(225, 225, 25, maxColorValue = 255), rgb(145, 30, 180, maxColorValue = 255),
+    rgb(230, 25, 75, maxColorValue = 255), rgb(70, 240, 240, maxColorValue = 255),
+    rgb(240, 50, 230, maxColorValue = 255), rgb(0, 0, 0, maxColorValue = 255),
+    rgb(139, 69, 19, maxColorValue = 255), rgb(255, 0, 0, maxColorValue = 255),
+    rgb(240, 179, 35, maxColorValue = 255)
+  )
+  names(cols) <- c(
+    "green", "dark", "red", "grey", "sec1", "sec2", "sec3",
+    "sec4", "sec5", "sec6", "sec7", "sec8", "add1", "add2",
+    "add3", "add4", "add5", "black", "brown", "reddest", "orange"
+  )
+  cols
+}
+
+## ACRA palette (named colors — no unikn dependency; safe for Connect Cloud)
+ACRA <- acra_palette_colors()
 
 ipsum_theme <- function(base_size = 12, base_family = "Nunito Sans") {
-  theme_ipsum() + theme( axis.line.x = element_line(color = "black", size = 3) )
+  base <- if (requireNamespace("hrbrthemes", quietly = TRUE)) {
+    hrbrthemes::theme_ipsum(base_size = base_size, base_family = base_family)
+  } else {
+    ggplot2::theme_grey(base_size = base_size, base_family = base_family)
+  }
+  base + ggplot2::theme(ggplot2::element_line(color = "black", linewidth = 3))
 }
 
 # seecol(ACRA,

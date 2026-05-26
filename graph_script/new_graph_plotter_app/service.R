@@ -1124,11 +1124,11 @@ graphplan_limits_display_mode <- function(row) {
   if (any(filled)) "manual" else "auto"
 }
 
-#' Import table Peers column: `manual` for none/custom, else `auto`.
+#' Import table Peers column: `manual` for custom, else `auto`.
 graphplan_peers_display_mode <- function(row) {
   pv <- if ("peers" %in% names(row)) row$peers[[1]] else NULL
   mode <- parse_peers_for_editor(pv)$peers
-  if (mode %in% c("none", "custom")) "manual" else "auto"
+  if (mode %in% "custom") "manual" else "auto"
 }
 
 .graphplan_row_status_one <- function(plan, i, active_flags) {
@@ -1671,6 +1671,7 @@ parse_graphplan_row_tsv <- function(text) {
 editor_field_hints <- function() {
   in_development <- "In development"
   list(
+    ed_graph_type = "Check Graph examples",
     ed_time_fix = paste(
       "Examples: 2010, 2012m1, 2026q1, 20.10.2020.",
       "Separate by commas for multiple. Leave empty for autofill"
@@ -1946,10 +1947,11 @@ expand_editor_peer_selection_to_iso2c <- function(
     return(character(0))
   }
   iso3 <- country_iso3c[[1]] %||% country_iso3c
-  iso3 <- as.character(iso3)[1]
-  if (is.null(iso3) || !nzchar(iso3)) {
+  iso3 <- normalize_iso3_strict(as.character(iso3)[1] %||% "")
+  if (!is_valid_iso3c_scalar(iso3)) {
     return(NULL)
   }
+  iso3 <- iso3[[1]]
   ps <- if (identical(peers, "formula")) {
     f <- as.character(peers_formula %||% "")[1]
     if (!nzchar(f)) {

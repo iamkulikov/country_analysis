@@ -25,6 +25,35 @@ normalize_iso3_strict <- function(x, keep_unknown = TRUE) {
   dplyr::if_else(iso_ok, x0, NA_character_)
 }
 
+is_valid_iso3c_scalar <- function(x) {
+  assert_packages(c("stringr"))
+  
+  iso3 <- normalize_iso3_strict(x %||% "")
+  length(iso3) >= 1L &&
+    !is.na(iso3[[1]]) &&
+    stringr::str_detect(iso3[[1]], "^[A-Z]{3}$")
+}
+
+empty_peers_info <- function(country_iso3c = NA_character_) {
+  assert_packages(c("stringr", "tibble"))
+  
+  iso3 <- normalize_iso3_strict(country_iso3c %||% "")
+  iso3 <- if (is_valid_iso3c_scalar(iso3)) iso3[[1]] else NA_character_
+  
+  list(
+    country_iso2c = safe_iso3_to_iso2(iso3),
+    country_iso3c = iso3,
+    peers_default_iso2c = character(0),
+    peers_default_iso3c = character(0),
+    peers_neighbours_iso2c = character(0),
+    peers_neighbours_iso3c = character(0),
+    regions = tibble::tibble(
+      country_iso3c = character(0),
+      country_iso2c = character(0)
+    )
+  )
+}
+
 safe_iso3_to_iso2 <- function(iso3) {
   iso3 <- normalize_iso3_strict(iso3)
   iso3 <- iso3[!is.na(iso3) & iso3 != ""]
@@ -62,9 +91,10 @@ getPeersCodes <- function(country_iso3c, peers_fname) {
   assert_packages(c("readxl", "dplyr", "stringr", "countrycode", "tibble", "rlang"))
   
   country_iso3c <- normalize_iso3_strict(country_iso3c %||% "")
-  if (!stringr::str_detect(country_iso3c, "^[A-Z]{3}$")) {
-    rlang::abort("country_iso3c must be a 3-letter ISO3 code, e.g. 'RUS'.")
+  if (!is_valid_iso3c_scalar(country_iso3c)) {
+    return(empty_peers_info(country_iso3c))
   }
+  country_iso3c <- country_iso3c[[1]]
   
   raw <- readxl::read_excel(
     path = peers_fname,
@@ -247,6 +277,10 @@ getPeersCodes <- function(country_iso3c, peers_fname) {
 
 #' Cached wrapper around [getPeersCodes] (per country + peers file mtime).
 get_peers_cached <- function(country_iso3c, peers_fname) {
+  if (!is_valid_iso3c_scalar(country_iso3c)) {
+    return(empty_peers_info(country_iso3c))
+  }
+  
   key <- .peers_cache_key(country_iso3c, peers_fname)
   if (!exists(key, envir = .peers_codes_cache, inherits = FALSE)) {
     assign(

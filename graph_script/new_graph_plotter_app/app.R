@@ -64,6 +64,20 @@ country_iso3c_from_id <- function(country_id) {
   countrycode::countrycode(country_id, "iso2c", "iso3c", warn = FALSE)
 }
 
+country_iso3c_from_choice_if_valid <- function(country_choice) {
+  country_id <- as.character(country_choice)[1]
+  if (is.null(country_id) || is.na(country_id) || !nzchar(country_id)) {
+    return(NULL)
+  }
+  
+  iso3 <- normalize_iso3_strict(country_iso3c_from_id(country_id) %||% "")
+  if (!is_valid_iso3c_scalar(iso3)) {
+    return(NULL)
+  }
+  
+  iso3[[1]]
+}
+
 country_label_from_id <- function(country_id, choices = country_choices) {
   cid <- as.character(country_id)[1]
   if (is.null(cid) || is.na(cid) || !nzchar(cid)) {
@@ -611,7 +625,8 @@ ui <- bslib::page_navbar(
           bslib::accordion_panel(
             "Basic",
             selectizeInput(
-              "ed_graph_type", "Graph type",
+              "ed_graph_type",
+              label = editor_input_label("Graph type", "ed_graph_type"),
               choices = graph_types,
               selected = editor_default_graph_type,
               options = list(placeholder = "Select graph type")
@@ -947,7 +962,11 @@ server <- function(input, output, session) {
   }
 
   observeEvent(input$country_choice, {
-    rv$country_iso3c <- country_iso3c_from_id(input$country_choice)
+    next_iso3c <- country_iso3c_from_choice_if_valid(input$country_choice)
+    if (is.null(next_iso3c)) {
+      return(invisible(NULL))
+    }
+    rv$country_iso3c <- next_iso3c
     bump_plan_validation_revision()
   }, ignoreNULL = FALSE)
 
@@ -1020,11 +1039,12 @@ server <- function(input, output, session) {
   }, ignoreInit = TRUE)
 
   observeEvent(input$validate_btn, {
+    selected_iso3c <- country_iso3c_from_choice_if_valid(input$country_choice)
     shiny::validate(
       shiny::need(!is.null(rv$graphplan) && nrow(rv$graphplan) > 0, "Load or create a graphplan first."),
-      shiny::need(!is.null(input$country_choice) && nzchar(input$country_choice), "Select a country.")
+      shiny::need(!is.null(selected_iso3c), "Select a valid country.")
     )
-    iso3 <- country_iso3c_from_id(input$country_choice)
+    iso3 <- selected_iso3c
     rv$country_iso3c <- iso3
     withProgress(message = "Validating graphplan...", value = 0, {
       incProgress(0.12, detail = "Running row checks")
@@ -2144,8 +2164,11 @@ server <- function(input, output, session) {
     # `apply_editor_state` can run inside `session$onFlushed` (e.g. Edit from Gallery);
     # reactive reads must use isolate there — observers are fine too.
     country_iso3c <- shiny::isolate({
-      rv$country_iso3c %||% country_iso3c_from_id(input$country_choice %||% "")
+      country_iso3c_from_choice_if_valid(input$country_choice) %||% rv$country_iso3c
     })
+    if (!is_valid_iso3c_scalar(country_iso3c)) {
+      return(invisible(NULL))
+    }
     expanded <- expand_editor_peer_selection_to_iso2c(
       country_iso3c = country_iso3c,
       peers = peers,
@@ -2263,7 +2286,12 @@ server <- function(input, output, session) {
 
   observeEvent(input$ed_peers, sync_ed_peers_custom_from_peer_mode(), ignoreNULL = FALSE)
   observeEvent(input$ed_graph_type, sync_ed_peers_custom_from_peer_mode(), ignoreNULL = FALSE)
-  observeEvent(input$country_choice, sync_ed_peers_custom_from_peer_mode(), ignoreNULL = FALSE)
+  observeEvent(input$country_choice, {
+    if (is.null(country_iso3c_from_choice_if_valid(input$country_choice))) {
+      return(invisible(NULL))
+    }
+    sync_ed_peers_custom_from_peer_mode()
+  }, ignoreNULL = FALSE)
   observeEvent(input$ed_peers_formula, sync_ed_peers_custom_from_peer_mode(), ignoreNULL = FALSE)
 
   observeEvent(

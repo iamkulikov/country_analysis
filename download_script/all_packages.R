@@ -76,6 +76,8 @@ ts_pkgs <- c(
 viz_pkgs <- c(
   "ggplot2",
   "ggthemes",   # темы для ggplot
+  "viridisLite", # палитра viridis для темы viridis (colorblind-safe)
+  "ggpattern",  # штриховка для black_white (опционально: greyscale fallback без пакета)
   "ggiraph",    # интерактивные графики
   "ggraph",     # графы поверх igraph
   "GGally",     # матрицы рассеяния и др.

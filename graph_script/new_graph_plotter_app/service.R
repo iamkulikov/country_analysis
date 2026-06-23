@@ -1005,9 +1005,9 @@ editor_new_graph_seed_row <- function() {
   )
 }
 
-trend_types   <- c("lm", "loess")
+trend_types   <- c("lm", "loess", "rlm", "loess_sym")
 orient_types  <- c("horizontal", "vertical")
-theme_types   <- c("ipsum", "acra_light", "acra_dark", "black_white", "economist", "minimal")
+theme_types   <- c("acra_light", "acra_dark", "economist", "black_white", "viridis", "ipsum")
 horizontal_size <- c(1800, 900)
 vertical_size   <- c(850, 850)
 
@@ -1798,7 +1798,20 @@ peers_presets <- c(
 
 peers_choice <- c("none", "default", "custom", "neighbours", "formula", peers_presets)
 
-trend_types_ui <- c("", trend_types)
+trend_type_choice_labels <- function(types) {
+  labels <- c(
+    lm        = "OLS linear (lm)",
+    loess     = "LOESS (loess)",
+    rlm       = "Robust linear (rlm)",
+    loess_sym = "Robust LOESS (loess_sym)"
+  )
+  unname(labels[types])
+}
+
+trend_types_ui <- c(
+  "None" = "none",
+  stats::setNames(trend_types, trend_type_choice_labels(trend_types))
+)
 
 # Indicator group presets (legacy graph_plotter_app/app.R)
 indicator_groups <- c(
@@ -2077,7 +2090,7 @@ editor_inputs_to_graphplan_row <- function(state, dict, groups_map = NULL) {
     x_max            = state$x_max %||% NA_character_,
     y_min            = parse_editor_y_limit(state$y_min),
     y_max            = parse_editor_y_limit(state$y_max),
-    trend_type       = state$trend_type %||% NA_character_,
+    trend_type       = editor_trend_type_from_ui(state$trend_type),
     index            = as.integer(isTRUE(state$index)),
     recession        = as.integer(isTRUE(state$recession)),
     sec_y_axis       = sec_y_axis_string_from_editor(state$sec_y_ind, state$sec_y_coeff),
@@ -2085,7 +2098,7 @@ editor_inputs_to_graphplan_row <- function(state, dict, groups_map = NULL) {
     long_legend      = as.integer(isTRUE(state$long_legend)),
     vert_lab         = as.integer(isTRUE(state$vert_lab)),
     short_names      = as.integer(isTRUE(state$short_names)),
-    theme            = state$theme %||% "ipsum",
+    theme            = state$theme %||% "acra_light",
     orientation      = state$orientation %||% "horizontal",
     show_title       = as.integer(isTRUE(state$show_title)),
     active           = as.integer(isTRUE(state$active %||% TRUE))
@@ -2105,6 +2118,28 @@ editor_y_limit_to_text <- function(x) {
   }
   num <- suppressWarnings(as.numeric(x)[1])
   if (is.na(num)) "" else format(num, scientific = FALSE, trim = TRUE)
+}
+
+#' Display graphplan trend_type in Editor select (`none` when unset / NA).
+editor_trend_type_to_ui <- function(x) {
+  if (is.null(x) || length(x) == 0L) {
+    return("none")
+  }
+  x <- as.character(x)[1]
+  if (is.na(x) || !nzchar(x) || identical(x, "NA")) "none" else x
+}
+
+#' Parse Editor trend select to graphplan value (NA when none / empty).
+editor_trend_type_from_ui <- function(x) {
+  if (is.null(x) || length(x) == 0L) {
+    return(NA_character_)
+  }
+  x <- as.character(x)[1]
+  if (is.na(x) || !nzchar(x) || identical(x, "none") || identical(x, "NA")) {
+    NA_character_
+  } else {
+    x
+  }
 }
 
 #' Parse Editor y limit text to graphplan numeric (NA when empty).
@@ -2150,7 +2185,7 @@ graphplan_row_to_editor_state <- function(row, groups_map = NULL) {
     x_max             = as.character(row$x_max[[1]] %||% ""),
     y_min             = editor_y_limit_to_text(row$y_min[[1]]),
     y_max             = editor_y_limit_to_text(row$y_max[[1]]),
-    trend_type        = as.character(row$trend_type[[1]] %||% ""),
+    trend_type        = editor_trend_type_to_ui(row$trend_type[[1]]),
     index             = isTRUE(as.integer(row$index[[1]]) == 1L),
     recession         = isTRUE(as.integer(row$recession[[1]]) == 1L),
     sec_y_ind         = secy$sec_y_ind,
@@ -2159,7 +2194,7 @@ graphplan_row_to_editor_state <- function(row, groups_map = NULL) {
     long_legend       = isTRUE(as.integer(row$long_legend[[1]]) == 1L),
     vert_lab          = isTRUE(as.integer(row$vert_lab[[1]]) == 1L),
     short_names       = isTRUE(as.integer(row$short_names[[1]]) == 1L),
-    theme             = as.character(row$theme[[1]] %||% "ipsum"),
+    theme             = as.character(row$theme[[1]] %||% "acra_light"),
     orientation       = as.character(row$orientation[[1]] %||% "horizontal"),
     show_title        = isTRUE(as.integer(row$show_title[[1]]) == 1L),
     active            = isTRUE(as.integer(row$active[[1]] %||% 1L) == 1L)
@@ -3452,7 +3487,7 @@ default_graphplan_info <- function() {
       "если не пусто, ограничит значения на оси x справа, для графиков с временем на оси - задавать в том же формате как и time_fix",
       "если не пусто, ограничит значения на оси y снизу",
       "если не пусто, ограничит значения на оси y сверху",
-      "для scatter графиков: lm (линейный тренд), loess (ядерное сглаживание)",
+      "для scatter графиков: lm, loess, rlm (робастная линейная), loess_sym (loess family=symmetric); пусто — без тренда",
       "если 1, на графиках типа lines_country_comparison все нормируется к первой временной точке",
       "если 1, выделит даты падавшего реального ВВП (пока не реализовано)",
       "\"pop, gdp, 10\": если не пусто, на графиках типов bar, structure и lines часть индикаторов (pop и gdp) будет построена по второй оси справа, максимум которой будет в заданное число раз меньше (10), чем максимум основной оси",
@@ -3460,7 +3495,7 @@ default_graphplan_info <- function() {
       "если 1, разделит легенду на несколько строк, если она не влезает в одну (пока не реализовано)",
       "если 1, повернет подписи на оси X на 90 градусов, чтбы сталм вертикальными (пока не реализовано)",
       "если 1, использует короткие названия индикаторов в легенде и подписях на графике (пока не реализовано)",
-      "acra_light, acra_dark; остальные в процессе разработки — black_white, ipsum, economist, minimal",
+      "acra_light (по умолчанию), acra_dark, economist, black_white, viridis, ipsum",
       "horizontal (900x!!!!) или vertical (900x!!!!)",
       "если 1, на графике сверху будет заголовок из graph_title",
       "если 1, будет построен"

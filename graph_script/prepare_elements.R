@@ -500,7 +500,7 @@ parseGraphPlan <- function(graphrow, dict, horizontal_size, vertical_size) {
   graph_group     <- get_chr("graph_group", default = "other")
   data_frequency  <- get_chr("data_frequency", default = "y")
   peers           <- get_chr("peers", default = "default")
-  theme_name      <- get_chr("theme", default = "ipsum")
+  theme_name      <- get_chr("theme", default = "acra_light")
   orientation     <- get_chr("orientation", default = "horizontal")
   source_name     <- get_chr("source_name", default = NA_character_)
   trend_type      <- get_chr("trend_type", default = NA_character_)
@@ -598,7 +598,7 @@ parseGraphPlan <- function(graphrow, dict, horizontal_size, vertical_size) {
   caption <- if (is.na(source_name)) "Источники:" else paste("Источники:", source_name)
   
   # Prefer returning a theme function (no eval/parse later)
-  theme_name <- get_chr("theme", default = "ipsum")
+  theme_name <- get_chr("theme", default = "acra_light")
   
   if (identical(tolower(orientation), "vertical")) {
     width <- vertical_size[[1]]
@@ -656,13 +656,19 @@ resolve_theme <- function(theme_name) {
 }
 
 normalize_theme_name <- function(x) {
-  assert_packages(c("stringr"))
+  assert_packages(c("stringr", "rlang"))
   x <- stringr::str_trim(as.character(x))
   if (is.na(x) || !nzchar(x)) return(NA_character_)
   
   # Backward compat: "theme_ipsum()" -> "ipsum"
   x <- stringr::str_replace(x, "^theme_", "")
   x <- stringr::str_replace(x, "\\(\\)\\s*$", "")
+  x <- stringr::str_to_lower(x)
+  
+  if (identical(x, "minimal")) {
+    rlang::warn("theme 'minimal' is deprecated; using 'acra_light' instead.")
+    return("acra_light")
+  }
   x
 }
 

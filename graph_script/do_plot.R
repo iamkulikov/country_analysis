@@ -41,9 +41,9 @@ graph_types <- c("scatter_dynamic", "scatter_country_comparison", "scatter_befor
                  "lines_indicator_comparison", "lines_country_comparison", 
                  "density_fix", "distribution_dynamic", "distribution_time_comparison", "distribution_indicator_comparison",
                  "triangle")
-trend_types <- c("lm" ,"loess")
+trend_types <- c("lm", "loess", "rlm", "loess_sym")
 orient_types <- c("horizontal", "vertical")
-theme_types <- c("ipsum", "acra_light", "acra_dark", "black_white", "economist", "minimal")
+theme_types <- c("acra_light", "acra_dark", "economist", "black_white", "viridis", "ipsum")
 sheet_keys <- c(y = "y", q = "q", m = "m")
 verbose <- T
 

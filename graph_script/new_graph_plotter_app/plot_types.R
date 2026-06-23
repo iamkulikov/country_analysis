@@ -39,6 +39,118 @@ is_true01 <- function(x) {
   isTRUE(!is.na(x) && x == 1L)
 }
 
+# ------------------------------------------------------------------------------
+# Black & white style differentiation (linetype / shape / fill patterns)
+# ------------------------------------------------------------------------------
+
+style_uses_bw_differentiation <- function(style) {
+  identical(style$differentiate %||% "color", "bw")
+}
+
+ggpattern_available <- function() {
+  requireNamespace("ggpattern", quietly = TRUE)
+}
+
+bw_cycle_values <- function(pool, n) {
+  if (n <= 0) return(character(0))
+  rep(pool, length.out = n)
+}
+
+series_linetypes <- function(keys, style) {
+  keys <- as.character(keys)
+  if (!style_uses_bw_differentiation(style) || length(keys) == 0) return(NULL)
+  pool <- style$bw$linetype_cycle %||% c("solid", "dashed", "dotted", "dotdash", "longdash", "twodash")
+  stats::setNames(bw_cycle_values(pool, length(keys)), keys)
+}
+
+series_shapes <- function(keys, style) {
+  keys <- as.character(keys)
+  if (!style_uses_bw_differentiation(style) || length(keys) == 0) return(NULL)
+  pool <- style$bw$shape_cycle %||% c(16, 17, 15, 3, 4, 8, 1, 2, 0, 5, 6, 7)
+  stats::setNames(bw_cycle_values(pool, length(keys)), keys)
+}
+
+series_grey_fills <- function(keys, style = NULL) {
+  keys <- as.character(keys)
+  n <- length(keys)
+  if (n == 0) return(NULL)
+  fills <- if (n == 1) "grey85" else grDevices::gray.colors(n, start = 0.15, end = 0.85)
+  stats::setNames(fills, keys)
+}
+
+series_fill_patterns <- function(keys, style) {
+  keys <- as.character(keys)
+  if (!style_uses_bw_differentiation(style) || length(keys) == 0) return(NULL)
+  pool <- style$bw$pattern_cycle %||% c("none", "stripe", "crosshatch", "grid", "circle")
+  stats::setNames(bw_cycle_values(pool, length(keys)), keys)
+}
+
+role_linetype_values <- function(style) {
+  style$bw$role_linetype %||% c(country = "solid", peers = "dashed", others = "dotted")
+}
+
+role_shape_values <- function(style) {
+  style$bw$role_shape %||% c(country = 16, peers = 17, others = 1)
+}
+
+geom_col_style <- function(style, ...) {
+  args <- list(...)
+  if (style_uses_bw_differentiation(style) && ggpattern_available()) {
+    do.call(ggpattern::geom_col_pattern, c(args, list(pattern = "pattern")))
+  } else if (style_uses_bw_differentiation(style)) {
+    do.call(ggplot2::geom_col, c(args, list(color = "black", linewidth = 0.25)))
+  } else {
+    do.call(ggplot2::geom_col, args)
+  }
+}
+
+apply_series_fill_scales <- function(p,
+                                     keys,
+                                     style,
+                                     labels = NULL,
+                                     name = "",
+                                     drop = FALSE,
+                                     guide = NULL) {
+  keys <- as.character(keys)
+  if (length(keys) == 0 || !style_uses_bw_differentiation(style)) return(p)
+  
+  labels <- labels %||% keys
+  fills <- series_grey_fills(keys, style)
+  
+  if (ggpattern_available()) {
+    patterns <- series_fill_patterns(keys, style)
+    p <- p +
+      ggplot2::scale_fill_manual(values = fills, labels = labels, name = name, drop = drop, guide = guide) +
+      ggpattern::scale_pattern_manual(values = patterns, labels = labels, name = name, drop = drop, guide = guide)
+  } else {
+    p <- p +
+      ggplot2::scale_fill_manual(values = fills, labels = labels, name = name, drop = drop, guide = guide)
+  }
+  p
+}
+
+apply_role_fill_scales <- function(p, style, name = "", guide = NULL) {
+  if (!style_uses_bw_differentiation(style)) return(p)
+  
+  roles <- c("country", "peers", "others")
+  fills <- series_grey_fills(roles, style)
+  
+  if (ggpattern_available()) {
+    patterns <- series_fill_patterns(roles, style)
+    p <- p +
+      ggplot2::scale_fill_manual(values = fills, name = name, guide = guide) +
+      ggpattern::scale_pattern_manual(values = patterns, name = name, guide = guide)
+  } else {
+    p <- p +
+      ggplot2::scale_fill_manual(values = fills, name = name, guide = guide)
+  }
+  p
+}
+
+bw_line_color <- function(style, default = "black") {
+  if (style_uses_bw_differentiation(style)) "black" else default
+}
+
 finalize_plot_common <- function(p, params, style, legend = TRUE, plot_data = NULL) {
   assert_packages(c("ggplot2", "ggtext", "stringr", "rlang", "grid"))
   
@@ -559,6 +671,21 @@ make_placeholder_plot <- function(params, style, msg = "No data to plot") {
 # ------------------------------------------------------------------------------
 # Scatter: refactored (no eval/parse), log-space semantics respected
 # ------------------------------------------------------------------------------
+
+#' Map graphplan `trend_type` to `geom_smooth` method arguments.
+trend_geom_args <- function(trend_type) {
+  switch(trend_type,
+    "lm"        = list(method = "lm",    method.args = list()),
+    "loess"     = list(method = "loess", method.args = list()),
+    "rlm"       = {
+      assert_packages(c("MASS"))
+      list(method = MASS::rlm, method.args = list())
+    },
+    "loess_sym" = list(method = "loess", method.args = list(family = "symmetric")),
+    stop("Unknown trend_type: ", trend_type)
+  )
+}
+
 scatterCountryComparison <- function(data,
                                      graph_params,
                                      country_iso2c,
@@ -778,31 +905,39 @@ scatterCountryComparison <- function(data,
     ggplot2::coord_cartesian(xlim = c(x_min, x_max), ylim = c(y_min, y_max))
   
   # Others (only visible when all==1)
+  use_bw <- style_uses_bw_differentiation(style)
+  role_shapes <- role_shape_values(style)
+  
   p <- p +
     ggplot2::geom_point(
       data = dplyr::filter(df, .data$role == "others"),
-      color = st_others_pt$color,
+      color = if (use_bw) "black" else st_others_pt$color,
+      shape = if (use_bw) role_shapes[["others"]] else (st_others_pt$shape %||% 16),
       alpha = if (all_flag == 1L) st_others_pt$alpha else 0,
       size  = base_pt * (st_others_pt$size_mult %||% 1)
     ) +
     ggplot2::geom_point(
       data = dplyr::filter(df, .data$role == "peers"),
-      color = st_peers_pt$color,
+      color = if (use_bw) "black" else st_peers_pt$color,
+      shape = if (use_bw) role_shapes[["peers"]] else (st_peers_pt$shape %||% 16),
       alpha = st_peers_pt$alpha,
       size  = base_pt * (st_peers_pt$size_mult %||% 1)
     ) +
     ggplot2::geom_point(
       data = dplyr::filter(df, .data$role == "country"),
-      color = st_ctry_pt$color,
+      color = if (use_bw) "black" else st_ctry_pt$color,
+      shape = if (use_bw) role_shapes[["country"]] else (st_ctry_pt$shape %||% 16),
       alpha = st_ctry_pt$alpha,
       size  = base_pt * (st_ctry_pt$size_mult %||% 1)
     )
   
   # Trend: style-driven CI (default on when trend requested)
   if (isTRUE(add_trend)) {
+    targs <- trend_geom_args(trend_type)
     p <- p +
       ggplot2::geom_smooth(
-        method = trend_type,
+        method = targs$method,
+        method.args = targs$method.args,
         formula = y ~ x,
         se = isTRUE(trend_cfg$ci_show %||% TRUE),
         color = trend_cfg$line_color %||% axis_col,
@@ -1282,28 +1417,58 @@ scatterDynamic <- function(data,
     dplyr::ungroup()
   
   # ---- build plot -------------------------------------------------------
+  use_bw <- style_uses_bw_differentiation(style)
+  bin_keys <- unique(as.character(df$bin_color))
+  bin_shapes <- series_shapes(bin_keys, style)
+  
   p <- ggplot2::ggplot(df, ggplot2::aes(x = .data$x_plot, y = .data$y_plot)) +
     ggplot2::coord_cartesian(xlim = c(x_min, x_max), ylim = c(y_min, y_max))
   
-  p <- p +
-    ggplot2::geom_point(
-      ggplot2::aes(color = .data$bin_color),
-      size = base_pt,
-      alpha = 0.95,
-      show.legend = FALSE
-    )
+  if (use_bw) {
+    p <- p +
+      ggplot2::geom_point(
+        ggplot2::aes(shape = .data$bin_color),
+        color = "black",
+        size = base_pt,
+        alpha = 0.95,
+        show.legend = FALSE
+      )
+    if (!is.null(bin_shapes)) {
+      p <- p + ggplot2::scale_shape_manual(values = bin_shapes, guide = "none")
+    }
+  } else {
+    p <- p +
+      ggplot2::geom_point(
+        ggplot2::aes(color = .data$bin_color),
+        size = base_pt,
+        alpha = 0.95,
+        show.legend = FALSE
+      )
+  }
   
-  p <- p +
-    ggplot2::geom_text(
-      data = df_labels,
-      ggplot2::aes(label = .data$bin_label, color = .data$bin_color),
-      nudge_x = nudge_x,
-      nudge_y = nudge_y,
-      size = base_lab_mm / ggplot2::.pt,
-      show.legend = FALSE
-    )
-  
-  p <- p + ggplot2::scale_color_identity()
+  if (use_bw) {
+    p <- p +
+      ggplot2::geom_text(
+        data = df_labels,
+        ggplot2::aes(label = .data$bin_label),
+        color = "black",
+        nudge_x = nudge_x,
+        nudge_y = nudge_y,
+        size = base_lab_mm / ggplot2::.pt,
+        show.legend = FALSE
+      )
+  } else {
+    p <- p +
+      ggplot2::geom_text(
+        data = df_labels,
+        ggplot2::aes(label = .data$bin_label, color = .data$bin_color),
+        nudge_x = nudge_x,
+        nudge_y = nudge_y,
+        size = base_lab_mm / ggplot2::.pt,
+        show.legend = FALSE
+      ) +
+      ggplot2::scale_color_identity()
+  }
   
   # ---- finalize (no legend; no time tag in corner) ----------------------
   params2 <- params
@@ -1592,6 +1757,9 @@ barDynamic <- function(data,
   # 1) try style$palette$categorical (named or vector)
   # 2) fallback to ACRA order (legacy palette you already have)
   colors <- NULL
+  if (style_uses_bw_differentiation(style)) {
+    colors <- series_grey_fills(indicators, style)
+  } else {
   cat_pal <- style$palette$categorical %||% NULL
   
   if (!is.null(cat_pal)) {
@@ -1616,6 +1784,7 @@ barDynamic <- function(data,
       as.vector(ACRA[acra_keys])[seq_len(length(indicators))],
       error = function(e) NULL
     )
+  }
   }
   
   # ---- Data range for y limits (y_rng) ---------------------------------
@@ -1675,9 +1844,13 @@ barDynamic <- function(data,
   
   # ---- Build plot ------------------------------------------------------
   p <- ggplot2::ggplot(df, ggplot2::aes(x = .data$time, y = .data$value_plot, fill = .data$variable))
+  if (style_uses_bw_differentiation(style) && ggpattern_available()) {
+    p <- p + ggplot2::aes(pattern = .data$variable)
+  }
   
   p <- p +
-    ggplot2::geom_col(
+    geom_col_style(
+      style = style,
       alpha = st_bar$alpha %||% 0.85,
       width = 0.65,
       position = pos
@@ -1724,7 +1897,17 @@ barDynamic <- function(data,
   }
   
   # Fill scale with labels/colors
-  if (!is.null(colors)) {
+  if (style_uses_bw_differentiation(style)) {
+    p <- apply_series_fill_scales(
+      p,
+      keys = indicators,
+      style = style,
+      labels = legend_labels_wrapped,
+      name = "",
+      drop = FALSE,
+      guide = ggplot2::guide_legend(nrow = legend_nrow, byrow = TRUE)
+    )
+  } else if (!is.null(colors)) {
     p <- p + ggplot2::scale_fill_manual(
       values = colors,
       labels = legend_labels_wrapped,
@@ -1868,6 +2051,9 @@ barCountryComparison <- function(data,
   }
   
   pick_fill_colors <- function(style, keys) {
+    if (style_uses_bw_differentiation(style)) {
+      return(series_grey_fills(keys, style))
+    }
     # Preference: style$palette$categorical (named or long enough vector)
     cat_pal <- style$palette$categorical %||% NULL
     
@@ -2124,39 +2310,88 @@ barCountryComparison <- function(data,
     
     main_outline_lw <- 0.75
     do_outline_on_bars <- identical(graph_type, "bar_country_comparison")
+    use_bw <- style_uses_bw_differentiation(style)
     
-    p <- p +
-      ggplot2::geom_col(
-        ggplot2::aes(
-          fill = .data$role,
-          color = dplyr::if_else(isTRUE(do_outline_on_bars) & .data$.is_main, "black", NA_character_)
-        ),
-        width = 0.70,
-        alpha = 0.85,
-        position = "identity",
-        linewidth = main_outline_lw
-      ) +
-      ggplot2::scale_fill_manual(values = role_cols, name = "") +
-      ggplot2::scale_color_identity(guide = "none")
+    if (use_bw && ggpattern_available()) {
+      p <- p +
+        geom_col_style(
+          style = style,
+          mapping = ggplot2::aes(
+            fill = .data$role,
+            pattern = .data$role,
+            color = dplyr::if_else(isTRUE(do_outline_on_bars) & .data$.is_main, "black", NA_character_)
+          ),
+          width = 0.70,
+          alpha = 0.85,
+          position = "identity",
+          linewidth = main_outline_lw
+        )
+    } else {
+      p <- p +
+        geom_col_style(
+          style = style,
+          mapping = ggplot2::aes(
+            fill = .data$role,
+            color = dplyr::if_else(isTRUE(do_outline_on_bars) & .data$.is_main, "black", NA_character_)
+          ),
+          width = 0.70,
+          alpha = 0.85,
+          position = "identity",
+          linewidth = main_outline_lw
+        )
+    }
+    
+    if (use_bw) {
+      p <- apply_role_fill_scales(p, style, name = "", guide = "none")
+    } else {
+      p <- p + ggplot2::scale_fill_manual(values = role_cols, name = "")
+    }
+    p <- p + ggplot2::scale_color_identity(guide = "none")
   } else {
     # Multiple indicators: fill by indicator variable
       main_outline_lw <- 0.75
       do_outline_on_bars <- identical(graph_type, "bar_country_comparison")
+      use_bw <- style_uses_bw_differentiation(style)
       
-      p <- p +
-        ggplot2::geom_col(
-          ggplot2::aes(
-            fill = .data$variable,
-            color = dplyr::if_else(isTRUE(do_outline_on_bars) & .data$.is_main, "black", NA_character_)
-          ),
-          width = 0.70,
-          alpha = (style_for(style, "country", "bar")$alpha %||% 0.85),
-          position = pos,
-          linewidth = main_outline_lw
-        ) +
-        ggplot2::scale_color_identity(guide = "none")
+      if (use_bw && ggpattern_available()) {
+        p <- p +
+          geom_col_style(
+            style = style,
+            mapping = ggplot2::aes(
+              fill = .data$variable,
+              pattern = .data$variable,
+              color = dplyr::if_else(isTRUE(do_outline_on_bars) & .data$.is_main, "black", NA_character_)
+            ),
+            width = 0.70,
+            alpha = (style_for(style, "country", "bar")$alpha %||% 0.85),
+            position = pos,
+            linewidth = main_outline_lw
+          )
+      } else {
+        p <- p +
+          geom_col_style(
+            style = style,
+            mapping = ggplot2::aes(
+              fill = .data$variable,
+              color = dplyr::if_else(isTRUE(do_outline_on_bars) & .data$.is_main, "black", NA_character_)
+            ),
+            width = 0.70,
+            alpha = (style_for(style, "country", "bar")$alpha %||% 0.85),
+            position = pos,
+            linewidth = main_outline_lw
+          )
+      }
+      p <- p + ggplot2::scale_color_identity(guide = "none")
     
-    if (!is.null(fill_colors)) {
+    if (use_bw) {
+      p <- apply_series_fill_scales(
+        p,
+        keys = indicators,
+        style = style,
+        labels = legend_labels_wrapped,
+        name = ""
+      )
+    } else if (!is.null(fill_colors)) {
       p <- p +
         ggplot2::scale_fill_manual(
           values = fill_colors,
@@ -2361,6 +2596,9 @@ barYearComparison <- function(data,
   }
   
   pick_fill_colors_years <- function(year_levels, style) {
+    if (style_uses_bw_differentiation(style)) {
+      return(series_grey_fills(year_levels, style))
+    }
     cat_pal <- style$palette$categorical %||% NULL
     if (is.character(cat_pal) && length(cat_pal) >= length(year_levels)) {
       return(unname(cat_pal[seq_along(year_levels)]))
@@ -2497,18 +2735,31 @@ barYearComparison <- function(data,
   p <- ggplot2::ggplot(
     df_long,
     ggplot2::aes(x = .data$variable, y = .data$value_raw, fill = .data$year)
-  ) +
-    ggplot2::geom_col(
+  )
+  if (style_uses_bw_differentiation(style) && ggpattern_available()) {
+    p <- p + ggplot2::aes(pattern = .data$year)
+  }
+  p <- p +
+    geom_col_style(
+      style = style,
       alpha = st_bar$alpha %||% 0.85,
       width = 0.70,
       position = ggplot2::position_dodge(width = 0.75),
-      color = NA,
+      color = if (style_uses_bw_differentiation(style) && !ggpattern_available()) "black" else NA,
       na.rm = TRUE
     ) +
     ggplot2::scale_x_discrete(labels = x_labels_wrapped, drop = FALSE) +
     ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 90, hjust = 1, vjust = 0.5))
   
-  if (!is.null(fill_cols)) {
+  if (style_uses_bw_differentiation(style)) {
+    p <- apply_series_fill_scales(
+      p,
+      keys = levels(df_long$year),
+      style = style,
+      name = "Год",
+      drop = FALSE
+    )
+  } else if (!is.null(fill_cols)) {
     p <- p + ggplot2::scale_fill_manual(values = fill_cols, name = "Год", drop = FALSE)
   } else {
     p <- p + ggplot2::scale_fill_discrete(name = "Год", drop = FALSE)
@@ -2664,6 +2915,9 @@ linesIndicatorComparison <- function(data,
   }
   
   pick_colors <- function(indicators, style) {
+    if (style_uses_bw_differentiation(style)) {
+      return(rep("black", length(indicators)))
+    }
     cat_pal <- style$palette$categorical %||% NULL
     if (is.character(cat_pal) && length(cat_pal) >= length(indicators)) {
       return(unname(cat_pal[seq_along(indicators)]))
@@ -2914,19 +3168,34 @@ linesIndicatorComparison <- function(data,
   # ---- plot ------------------------------------------------------------
   st_line <- style_for(style, role = "country", object = "line")
   cols <- pick_colors(indicators, style)
+  use_bw <- style_uses_bw_differentiation(style)
+  lt_vals <- series_linetypes(indicators, style)
   
-  p <- ggplot2::ggplot(df, ggplot2::aes(x = .data$time, y = .data$value_plot, color = .data$variable)) +
-    ggplot2::geom_line(
-      linewidth = st_line$linewidth %||% 1.1,
-      alpha     = st_line$alpha %||% 0.95
-    )
+  if (use_bw) {
+    p <- ggplot2::ggplot(df, ggplot2::aes(x = .data$time, y = .data$value_plot, linetype = .data$variable)) +
+      ggplot2::geom_line(
+        color = "black",
+        linewidth = st_line$linewidth %||% 1.1,
+        alpha     = st_line$alpha %||% 0.95
+      )
+  } else {
+    p <- ggplot2::ggplot(df, ggplot2::aes(x = .data$time, y = .data$value_plot, color = .data$variable)) +
+      ggplot2::geom_line(
+        linewidth = st_line$linewidth %||% 1.1,
+        alpha     = st_line$alpha %||% 0.95
+      )
+  }
   
   if (!is.null(xt$breaks)) {
     p <- p + ggplot2::scale_x_continuous(breaks = xt$breaks, labels = xt$labels)
   }
   
-  if (!is.null(cols)) {
+  if (use_bw && !is.null(lt_vals)) {
+    p <- p + ggplot2::scale_linetype_manual(values = lt_vals, labels = legend_labels_wrapped, drop = FALSE)
+  } else if (!use_bw && !is.null(cols)) {
     p <- p + ggplot2::scale_color_manual(values = cols, labels = legend_labels_wrapped, drop = FALSE)
+  } else if (use_bw) {
+    p <- p + ggplot2::scale_linetype_discrete(labels = legend_labels_wrapped, drop = FALSE)
   } else {
     p <- p + ggplot2::scale_color_discrete(labels = legend_labels_wrapped, drop = FALSE)
   }
@@ -3354,21 +3623,37 @@ linesCountryComparison <- function(data,
   # deterministic linetypes for non-main
   lt_pool <- c("dashed", "dotted", "dotdash", "longdash", "twodash")
   others <- country_set[country_set != main_id]
+  use_bw <- style_uses_bw_differentiation(style)
   
   lt_map <- stats::setNames(
     c("solid", rep(lt_pool, length.out = length(others))),
     c(main_id, others)
   )
+  if (use_bw) {
+    lt_series <- series_linetypes(country_set, style)
+    if (!is.null(lt_series)) {
+      lt_map <- lt_series
+      lt_map[[main_id]] <- role_linetype_values(style)[["country"]]
+    }
+  }
   
   # colors/widths from style where possible
   st_line <- style_for(style, role = "country", object = "line")
   palette <- style$palette %||% list()
   
   # main line color: prefer role-based style if provided
-  main_col <- st_line$color %||% palette$country %||% palette$accent %||% palette$text %||% "grey10"
+  main_col <- if (use_bw) {
+    palette$country %||% "black"
+  } else {
+    st_line$color %||% palette$country %||% palette$accent %||% palette$text %||% "grey10"
+  }
   
   # peers are always grey
-  peer_col <- palette$muted_text %||% "grey65"
+  peer_col <- if (use_bw) {
+    palette$peers %||% "grey20"
+  } else {
+    palette$muted_text %||% "grey65"
+  }
   
   main_lwd   <- st_line$linewidth_main %||% (st_line$linewidth %||% 1.2)
   peer_lwd   <- st_line$linewidth_peer %||% max(0.45, (st_line$linewidth %||% 1.2) * 0.55)
@@ -3376,8 +3661,8 @@ linesCountryComparison <- function(data,
   peer_alpha <- st_line$alpha_peer %||% 0.85
   
   # text colors (theme-driven defaults)
-  text_col_main <- palette$text %||% "grey10"
-  text_col_peer <- palette$muted_text %||% "grey55"
+  text_col_main <- if (use_bw) palette$text %||% "black" else palette$text %||% "grey10"
+  text_col_peer <- if (use_bw) palette$peers %||% "grey20" else palette$muted_text %||% "grey55"
   
   # ---- labels at start/end (ISO2) -------------------------------------
   dx <- (time_end - time_start) * 0.01
@@ -3420,6 +3705,7 @@ linesCountryComparison <- function(data,
       data = df |> dplyr::filter(.data$is_main),
       ggplot2::aes(group = interaction(.data$country_id, .data$variable, drop = TRUE)),
       color = main_col,
+      linetype = if (use_bw) role_linetype_values(style)[["country"]] else "solid",
       linewidth = main_lwd,
       alpha = main_alpha,
       show.legend = FALSE
@@ -3750,8 +4036,9 @@ densityFix <- function(data, graph_params,
   
   # background distribution styling
   st_area <- style_for(style, role = "others", object = "area")
-  fill_dist <- st_area$fill %||% palette$panel_bg %||% "grey90"
-  col_dist  <- st_area$color %||% palette$grid_major %||% "grey80"
+  use_bw <- style_uses_bw_differentiation(style)
+  fill_dist <- if (use_bw) "grey85" else st_area$fill %||% palette$panel_bg %||% "grey90"
+  col_dist  <- if (use_bw) "black" else st_area$color %||% palette$grid_major %||% "grey80"
   
   show_hist    <- is_true01(params$show_hist %||% 1L)
   show_density <- is_true01(params$show_density %||% 1L)
@@ -4272,14 +4559,27 @@ distributionDynamic <- function(data,
   
   st_peers  <- style_for(style, role = "peers",  object = "area")
   st_others <- style_for(style, role = "others", object = "area")
+  use_bw <- style_uses_bw_differentiation(style)
   
-  fill_center <- st_peers$fill  %||% st_peers$color  %||% palette$peers  %||% palette$accent %||% "grey70"
-  fill_tail   <- st_others$fill %||% st_others$color %||% palette$others %||% palette$muted_text %||% "grey90"
+  fill_center <- if (use_bw) {
+    "grey35"
+  } else {
+    st_peers$fill  %||% st_peers$color  %||% palette$peers  %||% palette$accent %||% "grey70"
+  }
+  fill_tail   <- if (use_bw) {
+    "grey80"
+  } else {
+    st_others$fill %||% st_others$color %||% palette$others %||% palette$muted_text %||% "grey90"
+  }
   
-  fill_low  <- palette$dark %||% palette$text %||% "grey20"
-  fill_high <- palette$green %||% palette$accent %||% "grey80"
+  fill_low  <- if (use_bw) "grey20" else palette$dark %||% palette$text %||% "grey20"
+  fill_high <- if (use_bw) "grey70" else palette$green %||% palette$accent %||% "grey80"
   
-  main_col <- st_line$color %||% palette$country %||% palette$accent %||% palette$text %||% "grey10"
+  main_col <- if (use_bw) {
+    palette$country %||% "black"
+  } else {
+    st_line$color %||% palette$country %||% palette$accent %||% palette$text %||% "grey10"
+  }
   main_lwd <- st_line$linewidth_main %||% (st_line$linewidth %||% 1.5)
   main_al  <- st_line$alpha_main %||% (st_line$alpha %||% 0.95)
   
@@ -4731,22 +5031,28 @@ scatterBeforeAfter <- function(data,
     )
   
   # points (others shown only when all==1)
+  use_bw <- style_uses_bw_differentiation(style)
+  role_shapes <- role_shape_values(style)
+  
   p <- p +
     ggplot2::geom_point(
       data = dplyr::filter(df, .data$role == "others"),
-      color = st_others_pt$color,
+      color = if (use_bw) "black" else st_others_pt$color,
+      shape = if (use_bw) role_shapes[["others"]] else (st_others_pt$shape %||% 16),
       alpha = if (all_flag == 1L) st_others_pt$alpha else 0,
       size  = base_pt * (st_others_pt$size_mult %||% 1)
     ) +
     ggplot2::geom_point(
       data = dplyr::filter(df, .data$role == "peers"),
-      color = st_peers_pt$color,
+      color = if (use_bw) "black" else st_peers_pt$color,
+      shape = if (use_bw) role_shapes[["peers"]] else (st_peers_pt$shape %||% 16),
       alpha = st_peers_pt$alpha,
       size  = base_pt * (st_peers_pt$size_mult %||% 1)
     ) +
     ggplot2::geom_point(
       data = dplyr::filter(df, .data$role == "country"),
-      color = st_ctry_pt$color,
+      color = if (use_bw) "black" else st_ctry_pt$color,
+      shape = if (use_bw) role_shapes[["country"]] else (st_ctry_pt$shape %||% 16),
       alpha = st_ctry_pt$alpha,
       size  = base_pt * (st_ctry_pt$size_mult %||% 1)
     )

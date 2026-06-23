@@ -466,53 +466,471 @@ make_style_acra_dark <- function() {
   )
 }
 
-make_style_bw <- function() {
-  assert_packages(c("ggplot2"))
+make_style_economist <- function() {
+  assert_packages(c("ggplot2", "rlang"))
   
-  palette <- list(
-    bg   = "white",
-    text = "black",
-    axis = "black",
-    grid = "grey85",
-    
-    country = "black",
-    peers   = "grey20",
-    others  = "grey70",
-    accent  = "black"
+  econ_series <- c(
+    "#014d64", "#6794a7", "#01a2d9", "#76c0c1",
+    "#c10534", "#ee8f71", "#adadad"
   )
   
-  gg_theme <- ggplot2::theme_bw(base_size = 11) +
+  palette <- list(
+    bg         = "#D5E4EB",
+    panel_bg   = "#D5E4EB",
+    text       = "#1A1A1A",
+    muted_text = "#4D4D4D",
+    axis       = "#1A1A1A",
+    grid_major = "white",
+    grid_minor = "white",
+    
+    categorical = econ_series,
+    
+    country = "#014d64",
+    peers   = "#6794a7",
+    others  = "#adadad",
+    accent  = "#c10534",
+    
+    zero_line   = "#4D4D4D",
+    target_line = "#01a2d9",
+    warn        = "#c10534"
+  )
+  
+  palettes <- list(
+    time_bins = econ_series
+  )
+  
+  typography <- list(
+    base_family = "ITC Officina Sans",
+    base_size   = 11,
+    title = list(size = 14, face = "bold", lineheight = 1.05, color = palette$text, margin_b = 8),
+    subtitle = list(size = 11, face = "plain", lineheight = 1.05, color = palette$muted_text, margin_b = 6),
+    axis_title = list(size = 10, face = "plain", color = palette$text, margin_t = 8, margin_r = 8),
+    axis_text = list(size = 9, face = "plain", color = palette$muted_text),
+    caption = list(size = 9, face = "plain", lineheight = 1.10, color = palette$muted_text, margin_t = 8),
+    point_label = list(face = "plain", color_country = palette$country, color_peers = palette$peers, alpha = 1.0),
+    legend_text = list(size = 9, color = palette$text)
+  )
+  
+  grid <- list(
+    major = list(show = TRUE, color = palette$grid_major, linewidth = 0.45),
+    minor = list(show = FALSE, color = palette$grid_minor, linewidth = 0.20),
+    axis_line  = list(show = TRUE, color = palette$axis, linewidth = 0.35),
+    axis_ticks = list(show = TRUE, color = palette$axis, linewidth = 0.25)
+  )
+  
+  layout <- list(
+    plot_margin = ggplot2::margin(t = 10, r = 10, b = 10, l = 10),
+    legend = list(
+      position = "bottom", direction = "horizontal", justification = "left",
+      box = "horizontal", title_blank = TRUE, max_items_per_row = 4, wrap_labels_width = 30
+    )
+  )
+  
+  annotations <- list(
+    time_tag = list(show = TRUE, position = "tr", text_color = palette$axis, size = 3.2, hjust = 1.05, vjust = 1.25),
+    trend = list(ci_show = TRUE, ci_alpha = 0.25, ci_fill = palette$grid_major, line_color = palette$axis, linewidth = 0.60),
+    zero_line = list(show = TRUE, color = palette$zero_line, linewidth = 0.30, alpha = 0.60)
+  )
+  
+  roles <- list(
+    country = list(weight = 1.30, alpha = 1.00, label_show = TRUE, z = 3),
+    peers   = list(weight = 1.10, alpha = 0.92, label_show = TRUE, z = 2),
+    others  = list(weight = 0.80, alpha = 0.25, label_show = FALSE, z = 1)
+  )
+  
+  objects <- list(
+    point  = list(size = 1.00, alpha = 1.00, linewidth = 1.00, linetype = "solid", shape = 16, stroke = 0),
+    line   = list(size = 1.00, alpha = 1.00, linewidth = 1.00, linetype = "solid"),
+    ribbon = list(size = 1.00, alpha = 0.30, linewidth = 1.00, linetype = "solid"),
+    bar    = list(size = 1.00, alpha = 0.85, linewidth = 1.00, linetype = "solid"),
+    text   = list(size = 1.00, alpha = 1.00, linewidth = 1.00, linetype = "solid"),
+    point_label = list(size = 1.25, alpha = 1.00, linewidth = 1.00, linetype = "solid")
+  )
+  
+  units <- list(base_pt_size = 2.0, base_lab_mm = 3.2, base_linewidth = 0.6)
+  
+  gg_theme <- ggplot2::theme_minimal(
+    base_size = typography$base_size,
+    base_family = typography$base_family
+  ) +
     ggplot2::theme(
-      panel.grid.minor = ggplot2::element_blank(),
-      panel.grid.major = ggplot2::element_line(color = palette$grid, linewidth = 0.3),
+      plot.title.position = "plot",
+      plot.caption.position = "plot",
+      plot.background = ggplot2::element_rect(fill = palette$bg, color = NA),
+      panel.background = ggplot2::element_rect(fill = palette$panel_bg, color = NA),
       text = ggplot2::element_text(color = palette$text),
-      plot.title.position = "plot"
+      panel.grid.major.x = ggplot2::element_blank(),
+      panel.grid.major.y = ggplot2::element_line(color = palette$grid_major, linewidth = grid$major$linewidth),
+      panel.grid.minor = ggplot2::element_blank(),
+      axis.line.x = ggplot2::element_line(color = palette$axis, linewidth = grid$axis_line$linewidth),
+      axis.line.y = ggplot2::element_blank(),
+      axis.ticks.x = ggplot2::element_line(color = palette$axis, linewidth = grid$axis_ticks$linewidth),
+      axis.ticks.y = ggplot2::element_blank(),
+      legend.position = layout$legend$position
     )
   
   list(
-    name = "bw",
+    name = "economist",
+    differentiate = "color",
     gg_theme = gg_theme,
     palette = palette,
-    roles = list(
-      country = list(weight = 1.25, alpha = 1.00),
-      peers   = list(weight = 1.05, alpha = 0.90),
-      others  = list(weight = 0.80, alpha = 0.25)
-    ),
-    objects = list(
-      point  = list(size = 1.00, alpha = 1.00, linewidth = 1.00, linetype = "solid"),
-      line   = list(size = 1.00, alpha = 1.00, linewidth = 1.00, linetype = "solid"),
-      ribbon = list(size = 1.00, alpha = 0.25, linewidth = 1.00, linetype = "solid"),
-      bar    = list(size = 1.00, alpha = 0.85, linewidth = 1.00, linetype = "solid"),
-      text   = list(size = 1.00, alpha = 1.00, linewidth = 1.00, linetype = "solid")
-    ),
-    scale = list(
-      base_pt_size   = 2.0,
-      base_lab_size  = 3.2,
-      base_linewidth = 0.6
-    ),
-    layout = list(
-      legend_position = "bottom"
+    palettes = palettes,
+    typography = typography,
+    grid = grid,
+    layout = layout,
+    annotations = annotations,
+    roles = roles,
+    objects = objects,
+    units = units
+  )
+}
+
+make_style_viridis <- function() {
+  assert_packages(c("ggplot2", "rlang"))
+  
+  viridis_anchor <- c("#440154", "#3b528b", "#21918c", "#5ec962", "#fde725")
+  if (requireNamespace("viridisLite", quietly = TRUE)) {
+    viridis_series <- viridisLite::viridis(7)
+  } else {
+    viridis_series <- viridis_anchor
+  }
+  
+  palette <- list(
+    bg         = "white",
+    panel_bg   = "white",
+    text       = "grey15",
+    muted_text = "grey40",
+    axis       = "grey20",
+    grid_major = "grey90",
+    grid_minor = "grey94",
+    
+    categorical = viridis_series,
+    
+    country = "#440154",
+    peers   = "#21918c",
+    others  = "#5ec962",
+    accent  = "#fde725",
+    
+    zero_line   = "grey35",
+    target_line = "#21918c",
+    warn        = "#fde725"
+  )
+  
+  palettes <- list(time_bins = viridis_series)
+  
+  typography <- list(
+    base_family = "Nunito Sans",
+    base_size   = 11,
+    title = list(size = 14, face = "bold", lineheight = 1.05, color = palette$text, margin_b = 8),
+    subtitle = list(size = 11, face = "plain", lineheight = 1.05, color = palette$muted_text, margin_b = 6),
+    axis_title = list(size = 10, face = "plain", color = palette$text, margin_t = 8, margin_r = 8),
+    axis_text = list(size = 9, face = "plain", color = palette$muted_text),
+    caption = list(size = 9, face = "plain", lineheight = 1.10, color = palette$muted_text, margin_t = 8),
+    point_label = list(face = "plain", color_country = palette$country, color_peers = palette$peers, alpha = 1.0),
+    legend_text = list(size = 9, color = palette$text)
+  )
+  
+  grid <- list(
+    major = list(show = TRUE, color = palette$grid_major, linewidth = 0.30),
+    minor = list(show = FALSE, color = palette$grid_minor, linewidth = 0.20),
+    axis_line  = list(show = TRUE, color = palette$axis, linewidth = 0.35),
+    axis_ticks = list(show = TRUE, color = palette$axis, linewidth = 0.25)
+  )
+  
+  layout <- list(
+    plot_margin = ggplot2::margin(t = 10, r = 10, b = 10, l = 10),
+    legend = list(
+      position = "bottom", direction = "horizontal", justification = "left",
+      box = "horizontal", title_blank = TRUE, max_items_per_row = 4, wrap_labels_width = 30
     )
+  )
+  
+  annotations <- list(
+    time_tag = list(show = TRUE, position = "tr", text_color = palette$axis, size = 3.2, hjust = 1.05, vjust = 1.25),
+    trend = list(ci_show = TRUE, ci_alpha = 0.25, ci_fill = palette$grid_major, line_color = palette$axis, linewidth = 0.60),
+    zero_line = list(show = TRUE, color = palette$zero_line, linewidth = 0.30, alpha = 0.60)
+  )
+  
+  roles <- list(
+    country = list(weight = 1.30, alpha = 1.00, label_show = TRUE, z = 3),
+    peers   = list(weight = 1.10, alpha = 0.92, label_show = TRUE, z = 2),
+    others  = list(weight = 0.80, alpha = 0.25, label_show = FALSE, z = 1)
+  )
+  
+  objects <- list(
+    point  = list(size = 1.00, alpha = 1.00, linewidth = 1.00, linetype = "solid", shape = 16, stroke = 0),
+    line   = list(size = 1.00, alpha = 1.00, linewidth = 1.00, linetype = "solid"),
+    ribbon = list(size = 1.00, alpha = 0.30, linewidth = 1.00, linetype = "solid"),
+    bar    = list(size = 1.00, alpha = 0.85, linewidth = 1.00, linetype = "solid"),
+    text   = list(size = 1.00, alpha = 1.00, linewidth = 1.00, linetype = "solid"),
+    point_label = list(size = 1.25, alpha = 1.00, linewidth = 1.00, linetype = "solid")
+  )
+  
+  units <- list(base_pt_size = 2.0, base_lab_mm = 3.2, base_linewidth = 0.6)
+  
+  gg_theme <- ggplot2::theme_minimal(
+    base_size = typography$base_size,
+    base_family = typography$base_family
+  ) +
+    ggplot2::theme(
+      plot.title.position = "plot",
+      plot.caption.position = "plot",
+      plot.background = ggplot2::element_rect(fill = palette$bg, color = NA),
+      panel.background = ggplot2::element_rect(fill = palette$panel_bg, color = NA),
+      text = ggplot2::element_text(color = palette$text),
+      panel.grid.major = ggplot2::element_line(color = grid$major$color, linewidth = grid$major$linewidth),
+      panel.grid.minor = ggplot2::element_blank(),
+      axis.line = ggplot2::element_line(color = grid$axis_line$color, linewidth = grid$axis_line$linewidth),
+      axis.ticks = ggplot2::element_line(color = grid$axis_ticks$color, linewidth = grid$axis_ticks$linewidth),
+      legend.position = layout$legend$position
+    )
+  
+  list(
+    name = "viridis",
+    differentiate = "color",
+    gg_theme = gg_theme,
+    palette = palette,
+    palettes = palettes,
+    typography = typography,
+    grid = grid,
+    layout = layout,
+    annotations = annotations,
+    roles = roles,
+    objects = objects,
+    units = units
+  )
+}
+
+make_style_ipsum <- function() {
+  assert_packages(c("ggplot2", "rlang"))
+  
+  palette <- list(
+    bg         = "white",
+    panel_bg   = "white",
+    text       = "grey15",
+    muted_text = "grey40",
+    axis       = "grey25",
+    grid_major = "grey75",
+    grid_minor = "grey88",
+    
+    categorical = c("#2b2b2b", "#1f77b4", "#6baed6", "#9ecae1", "#bdbdbd", "#525252", "#08519c"),
+    
+    country = "#2b2b2b",
+    peers   = "#1f77b4",
+    others  = "#bdbdbd",
+    accent  = "#08519c",
+    
+    zero_line   = "grey35",
+    target_line = "#1f77b4",
+    warn        = "#d62728"
+  )
+  
+  palettes <- list(time_bins = palette$categorical)
+  
+  ipsum_family <- "Arial Narrow"
+  
+  typography <- list(
+    base_family = ipsum_family,
+    base_size   = 11,
+    title = list(size = 14, face = "bold", lineheight = 1.05, color = palette$text, margin_b = 8),
+    subtitle = list(size = 11, face = "plain", lineheight = 1.05, color = palette$muted_text, margin_b = 6),
+    axis_title = list(size = 10, face = "plain", color = palette$text, margin_t = 8, margin_r = 8),
+    axis_text = list(size = 9, face = "plain", color = palette$muted_text),
+    caption = list(size = 9, face = "plain", lineheight = 1.10, color = palette$muted_text, margin_t = 8),
+    point_label = list(face = "plain", color_country = palette$country, color_peers = palette$peers, alpha = 1.0),
+    legend_text = list(size = 9, color = palette$text)
+  )
+  
+  grid <- list(
+    major = list(show = TRUE, color = palette$grid_major, linewidth = 0.40),
+    minor = list(show = TRUE, color = palette$grid_minor, linewidth = 0.25),
+    axis_line  = list(show = TRUE, color = palette$axis, linewidth = 0.40),
+    axis_ticks = list(show = TRUE, color = palette$axis, linewidth = 0.30)
+  )
+  
+  layout <- list(
+    plot_margin = ggplot2::margin(t = 10, r = 10, b = 10, l = 10),
+    legend = list(
+      position = "bottom", direction = "horizontal", justification = "left",
+      box = "horizontal", title_blank = TRUE, max_items_per_row = 4, wrap_labels_width = 30
+    )
+  )
+  
+  annotations <- list(
+    time_tag = list(show = TRUE, position = "tr", text_color = palette$axis, size = 3.2, hjust = 1.05, vjust = 1.25),
+    trend = list(ci_show = TRUE, ci_alpha = 0.25, ci_fill = palette$grid_major, line_color = palette$axis, linewidth = 0.60),
+    zero_line = list(show = TRUE, color = palette$zero_line, linewidth = 0.30, alpha = 0.60)
+  )
+  
+  roles <- list(
+    country = list(weight = 1.30, alpha = 1.00, label_show = TRUE, z = 3),
+    peers   = list(weight = 1.10, alpha = 0.92, label_show = TRUE, z = 2),
+    others  = list(weight = 0.80, alpha = 0.25, label_show = FALSE, z = 1)
+  )
+  
+  objects <- list(
+    point  = list(size = 1.00, alpha = 1.00, linewidth = 1.00, linetype = "solid", shape = 16, stroke = 0),
+    line   = list(size = 1.00, alpha = 1.00, linewidth = 1.00, linetype = "solid"),
+    ribbon = list(size = 1.00, alpha = 0.30, linewidth = 1.00, linetype = "solid"),
+    bar    = list(size = 1.00, alpha = 0.85, linewidth = 1.00, linetype = "solid"),
+    text   = list(size = 1.00, alpha = 1.00, linewidth = 1.00, linetype = "solid"),
+    point_label = list(size = 1.25, alpha = 1.00, linewidth = 1.00, linetype = "solid")
+  )
+  
+  units <- list(base_pt_size = 2.0, base_lab_mm = 3.2, base_linewidth = 0.6)
+  
+  gg_theme <- if (requireNamespace("hrbrthemes", quietly = TRUE)) {
+    hrbrthemes::theme_ipsum(
+      base_size = typography$base_size,
+      base_family = typography$base_family
+    )
+  } else {
+    ggplot2::theme_minimal(
+      base_size = typography$base_size,
+      base_family = typography$base_family
+    ) +
+      ggplot2::theme(
+        panel.grid.major = ggplot2::element_line(color = grid$major$color, linewidth = grid$major$linewidth),
+        panel.grid.minor = ggplot2::element_line(color = grid$minor$color, linewidth = grid$minor$linewidth),
+        axis.ticks = ggplot2::element_line(linewidth = grid$axis_ticks$linewidth, color = grid$axis_ticks$color)
+      )
+  }
+  
+  gg_theme <- gg_theme +
+    ggplot2::theme(
+      plot.title.position = "plot",
+      plot.caption.position = "plot",
+      plot.background = ggplot2::element_rect(fill = palette$bg, color = NA),
+      panel.background = ggplot2::element_rect(fill = palette$panel_bg, color = NA),
+      text = ggplot2::element_text(color = palette$text),
+      legend.position = layout$legend$position
+    )
+  
+  list(
+    name = "ipsum",
+    differentiate = "color",
+    gg_theme = gg_theme,
+    palette = palette,
+    palettes = palettes,
+    typography = typography,
+    grid = grid,
+    layout = layout,
+    annotations = annotations,
+    roles = roles,
+    objects = objects,
+    units = units
+  )
+}
+
+make_style_bw <- function() {
+  assert_packages(c("ggplot2", "rlang"))
+  
+  palette <- list(
+    bg         = "white",
+    panel_bg   = "white",
+    text       = "black",
+    muted_text = "grey40",
+    axis       = "black",
+    grid_major = "grey85",
+    grid_minor = "grey92",
+    
+    country = "black",
+    peers   = "grey20",
+    others  = "grey55",
+    accent  = "black",
+    
+    zero_line   = "grey35",
+    target_line = "grey20",
+    warn        = "black"
+  )
+  
+  palettes <- list(time_bins = grDevices::gray.colors(8, start = 0.15, end = 0.85))
+  
+  typography <- list(
+    base_family = "sans",
+    base_size   = 11,
+    title = list(size = 14, face = "bold", lineheight = 1.05, color = palette$text, margin_b = 8),
+    subtitle = list(size = 11, face = "plain", lineheight = 1.05, color = palette$muted_text, margin_b = 6),
+    axis_title = list(size = 10, face = "plain", color = palette$text, margin_t = 8, margin_r = 8),
+    axis_text = list(size = 9, face = "plain", color = palette$muted_text),
+    caption = list(size = 9, face = "plain", lineheight = 1.10, color = palette$muted_text, margin_t = 8),
+    point_label = list(face = "plain", color_country = palette$country, color_peers = palette$peers, alpha = 1.0),
+    legend_text = list(size = 9, color = palette$text)
+  )
+  
+  grid <- list(
+    major = list(show = TRUE, color = palette$grid_major, linewidth = 0.30),
+    minor = list(show = FALSE, color = palette$grid_minor, linewidth = 0.20),
+    axis_line  = list(show = TRUE, color = palette$axis, linewidth = 0.35),
+    axis_ticks = list(show = TRUE, color = palette$axis, linewidth = 0.25)
+  )
+  
+  layout <- list(
+    plot_margin = ggplot2::margin(t = 10, r = 10, b = 10, l = 10),
+    legend = list(
+      position = "bottom", direction = "horizontal", justification = "left",
+      box = "horizontal", title_blank = TRUE, max_items_per_row = 4, wrap_labels_width = 30
+    )
+  )
+  
+  annotations <- list(
+    time_tag = list(show = TRUE, position = "tr", text_color = palette$axis, size = 3.2, hjust = 1.05, vjust = 1.25),
+    trend = list(ci_show = TRUE, ci_alpha = 0.20, ci_fill = palette$grid_major, line_color = palette$axis, linewidth = 0.60),
+    zero_line = list(show = TRUE, color = palette$zero_line, linewidth = 0.30, alpha = 0.60)
+  )
+  
+  roles <- list(
+    country = list(weight = 1.30, alpha = 1.00, label_show = TRUE, z = 3, linetype = "solid"),
+    peers   = list(weight = 1.10, alpha = 0.92, label_show = TRUE, z = 2, linetype = "dashed"),
+    others  = list(weight = 0.80, alpha = 0.25, label_show = FALSE, z = 1, linetype = "dotted")
+  )
+  
+  objects <- list(
+    point  = list(size = 1.00, alpha = 1.00, linewidth = 1.00, linetype = "solid", shape = 16, stroke = 0),
+    line   = list(size = 1.00, alpha = 1.00, linewidth = 1.00, linetype = "solid"),
+    ribbon = list(size = 1.00, alpha = 0.30, linewidth = 1.00, linetype = "solid"),
+    bar    = list(size = 1.00, alpha = 0.85, linewidth = 1.00, linetype = "solid"),
+    text   = list(size = 1.00, alpha = 1.00, linewidth = 1.00, linetype = "solid"),
+    point_label = list(size = 1.25, alpha = 1.00, linewidth = 1.00, linetype = "solid")
+  )
+  
+  units <- list(base_pt_size = 2.0, base_lab_mm = 3.2, base_linewidth = 0.6)
+  
+  bw <- list(
+    linetype_cycle = c("solid", "dashed", "dotted", "dotdash", "longdash", "twodash"),
+    shape_cycle    = c(16, 17, 15, 3, 4, 8, 1, 2, 0, 5, 6, 7),
+    pattern_cycle  = c("none", "stripe", "crosshatch", "grid", "circle"),
+    role_linetype  = c(country = "solid", peers = "dashed", others = "dotted"),
+    role_shape     = c(country = 16, peers = 17, others = 1)
+  )
+  
+  gg_theme <- ggplot2::theme_bw(base_size = typography$base_size, base_family = typography$base_family) +
+    ggplot2::theme(
+      plot.title.position = "plot",
+      plot.caption.position = "plot",
+      plot.background = ggplot2::element_rect(fill = palette$bg, color = NA),
+      panel.background = ggplot2::element_rect(fill = palette$panel_bg, color = NA),
+      panel.grid.minor = ggplot2::element_blank(),
+      panel.grid.major = ggplot2::element_line(color = palette$grid_major, linewidth = grid$major$linewidth),
+      text = ggplot2::element_text(color = palette$text),
+      axis.line = ggplot2::element_line(color = palette$axis, linewidth = grid$axis_line$linewidth),
+      legend.position = layout$legend$position
+    )
+  
+  list(
+    name = "black_white",
+    differentiate = "bw",
+    gg_theme = gg_theme,
+    palette = palette,
+    palettes = palettes,
+    typography = typography,
+    grid = grid,
+    layout = layout,
+    annotations = annotations,
+    roles = roles,
+    objects = objects,
+    units = units,
+    bw = bw
   )
 }
 
@@ -529,9 +947,12 @@ resolve_plot_style <- function(theme_name) {
   
   switch(
     nm,
-    "acra_light" = make_style_acra_light(),
-    "acra_dark"  = make_style_acra_dark(),
-    "black_white"         = make_style_bw(),
+    "acra_light"  = make_style_acra_light(),
+    "acra_dark"   = make_style_acra_dark(),
+    "economist"   = make_style_economist(),
+    "black_white" = make_style_bw(),
+    "viridis"     = make_style_viridis(),
+    "ipsum"       = make_style_ipsum(),
     make_style_acra_light()
   )
 }
@@ -543,7 +964,7 @@ style_for <- function(style, role, object) {
   palette <- style$palette %||% list()
   roles   <- style$roles %||% list()
   objects <- style$objects %||% list()
-  scale   <- style$scale %||% list(base_pt_size = 2.0, base_lab_size = 3.2, base_linewidth = 0.6)
+  scale   <- style$units %||% style$scale %||% list(base_pt_size = 2.0, base_lab_size = 3.2, base_linewidth = 0.6)
   
   role <- as.character(role %||% "others")
   object <- as.character(object %||% "point")
@@ -567,7 +988,8 @@ style_for <- function(style, role, object) {
     size_mult      = weight * (obj_def$size %||% 1.0),
     linewidth_mult = weight * (obj_def$linewidth %||% 1.0),
     
-    linetype = obj_def$linetype %||% "solid",
+    linetype = role_def$linetype %||% obj_def$linetype %||% "solid",
+    shape    = obj_def$shape %||% 16,
     
     # base units (optional use)
     base_pt_size   = scale$base_pt_size %||% 2.0,

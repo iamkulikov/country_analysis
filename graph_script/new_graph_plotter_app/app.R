@@ -707,12 +707,12 @@ ui <- bslib::page_navbar(
               textInput("ed_y_max", "Y max", "")
             ),
             bslib::layout_columns(
-              col_widths = c(4, 8),
+              col_widths = c(6, 6),
               selectInput(
                 "ed_trend_type",
                 label = editor_input_label("Trend", "ed_trend_type"),
                 choices = trend_types_ui,
-                selected = ""
+                selected = "none"
               ),
               selectInput(
                 "ed_theme",
@@ -2180,6 +2180,19 @@ server <- function(input, output, session) {
     if (is.null(expanded)) {
       return(invisible(NULL))
     }
+    if (identical(peers, "formula")) {
+      formula_txt <- as.character(peers_formula %||% "")[1]
+      if (nzchar(formula_txt) && length(expanded) == 0L) {
+        showNotification(
+          paste(
+            "Формула не дала ни одной страны-пира;",
+            "график будет без выделения пиров."
+          ),
+          type = "warning",
+          duration = 5
+        )
+      }
+    }
     valid <- intersect(expanded, unname(country_choices))
     updateSelectizeInput(
       session,
@@ -2216,8 +2229,8 @@ server <- function(input, output, session) {
     updateTextInput(session, "ed_x_max", value = state$x_max %||% "")
     updateTextInput(session, "ed_y_min", value = state$y_min %||% "")
     updateTextInput(session, "ed_y_max", value = state$y_max %||% "")
-    updateSelectInput(session, "ed_trend_type", selected = state$trend_type %||% "")
-    updateSelectInput(session, "ed_theme", selected = state$theme %||% "ipsum")
+    updateSelectInput(session, "ed_trend_type", selected = state$trend_type %||% "none")
+    updateSelectInput(session, "ed_theme", selected = state$theme %||% "acra_light")
     sec_choices <- sec_y_choices_from_indicators(indicator_catalog, sel_inds)
     sec_choices <- ensure_indicator_choices(sec_choices, state$sec_y_ind %||% character(), indicator_catalog)
     updateSelectizeInput(

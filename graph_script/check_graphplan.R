@@ -1412,8 +1412,12 @@ checkTheme <- function(graphplan, theme_types, warn_invalid = TRUE) {
   
   out <- gp |>
     dplyr::mutate(
-      theme_norm = stringr::str_to_lower(stringr::str_trim(as.character(.data$theme))),
-      theme_norm = dplyr::na_if(.data$theme_norm, ""),
+      theme_trim = stringr::str_trim(as.character(.data$theme)),
+      theme_norm = ifelse(
+        is.na(.data$theme_trim) | .data$theme_trim == "",
+        NA_character_,
+        vapply(.data$theme_trim, normalize_theme_name, character(1))
+      ),
       ok_theme = dplyr::case_when(
         is.na(.data$theme_norm) ~ TRUE,     # NA/empty allowed
         length(allowed) == 0 ~ FALSE,
@@ -1458,8 +1462,8 @@ checkTheme <- function(graphplan, theme_types, warn_invalid = TRUE) {
   
   out |>
     dplyr::select(
-      -dplyr::any_of(c(".row_id", "active_flag", "theme_norm")),
-      -dplyr::any_of("ok_theme")
+      -dplyr::any_of(c(".row_id", "active_flag", "theme_trim")),
+      -dplyr::any_of(c("theme_norm", "ok_theme"))
     )
 }
 

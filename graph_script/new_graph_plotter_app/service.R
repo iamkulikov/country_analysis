@@ -1630,6 +1630,94 @@ append_graphplan_row <- function(plan, new_row) {
   dplyr::bind_rows(plan, new_row[, all_cols, drop = FALSE])
 }
 
+#' Insert a graphplan row immediately after `after_row_id` (1-based).
+#'
+#' Used by gallery "Use for new" so the copy sits next to its source in the plan
+#' and gallery. Falls back to [append_graphplan_row] when the plan is empty or
+#' `after_row_id` is out of range.
+insert_graphplan_row_after <- function(plan, after_row_id, new_row) {
+  after_row_id <- as.integer(after_row_id)[1]
+  if (is.null(plan) || nrow(plan) == 0L ||
+      is.na(after_row_id) || after_row_id < 1L || after_row_id > nrow(plan)) {
+    return(append_graphplan_row(plan, new_row))
+  }
+  plan <- align_graphplan_types(plan)
+  new_row <- graphplan_row_from_inputs(new_row, dict = NULL, generate_sources = FALSE)
+  new_row <- coerce_graphplan_row(new_row)
+  all_cols <- union(names(plan), names(new_row))
+  for (col in setdiff(all_cols, names(plan))) plan[[col]] <- NA
+  for (col in setdiff(all_cols, names(new_row))) new_row[[col]] <- NA
+  new_row <- new_row[, all_cols, drop = FALSE]
+  head_df <- plan[seq_len(after_row_id), , drop = FALSE]
+  tail_df <- if (after_row_id < nrow(plan)) {
+    plan[seq.int(after_row_id + 1L, nrow(plan)), , drop = FALSE]
+  } else {
+    plan[integer(0), , drop = FALSE]
+  }
+  dplyr::bind_rows(head_df, new_row, tail_df)
+}
+
+#' After mid-plan insert: bump cached gallery `row_id` values that shift down.
+shift_built_list_row_ids_after <- function(built_list, after_row_id) {
+  built_list <- as.list(built_list %||% list())
+  after_row_id <- as.integer(after_row_id)[1]
+  if (length(built_list) == 0L || is.na(after_row_id)) {
+    return(built_list)
+  }
+  for (nm in names(built_list)) {
+    item <- built_list[[nm]]
+    rid <- suppressWarnings(as.integer(item$row_id %||% NA_integer_)[1])
+    if (!is.na(rid) && rid > after_row_id) {
+      item$row_id <- rid + 1L
+      built_list[[nm]] <- item
+    }
+  }
+  built_list
+}
+
+#' After mid-plan insert: bump editor-touch row ids that shift down.
+shift_row_ids_after <- function(row_ids, after_row_id) {
+  ids <- as.integer(row_ids %||% integer(0))
+  after_row_id <- as.integer(after_row_id)[1]
+  if (length(ids) == 0L || is.na(after_row_id)) {
+    return(ids[!is.na(ids)])
+  }
+  ids <- ids[!is.na(ids)]
+  ids[ids > after_row_id] <- ids[ids > after_row_id] + 1L
+  sort(unique(ids))
+}
+
+#' Keep import baseline row indices aligned when inserting into the live plan.
+#'
+#' Only mutates baseline when `after_row_id` is within the baseline (rows that
+#' still compare 1:1). Inserts a coerced copy of `new_row` so later rows keep
+#' matching their original baseline partners.
+insert_graphplan_baseline_row_after <- function(baseline, after_row_id, new_row) {
+  if (is.null(baseline) || nrow(baseline) == 0L) {
+    return(baseline)
+  }
+  after_row_id <- as.integer(after_row_id)[1]
+  if (is.na(after_row_id) || after_row_id < 1L || after_row_id > nrow(baseline)) {
+    return(baseline)
+  }
+  baseline <- align_graphplan_types(
+    strip_graphplan_check_artifacts(tibble::as_tibble(baseline))
+  )
+  new_row <- graphplan_row_from_inputs(new_row, dict = NULL, generate_sources = FALSE)
+  new_row <- coerce_graphplan_row(new_row)
+  all_cols <- union(names(baseline), names(new_row))
+  for (col in setdiff(all_cols, names(baseline))) baseline[[col]] <- NA
+  for (col in setdiff(all_cols, names(new_row))) new_row[[col]] <- NA
+  new_row <- new_row[1, all_cols, drop = FALSE]
+  head_df <- baseline[seq_len(after_row_id), , drop = FALSE]
+  tail_df <- if (after_row_id < nrow(baseline)) {
+    baseline[seq.int(after_row_id + 1L, nrow(baseline)), , drop = FALSE]
+  } else {
+    baseline[integer(0), , drop = FALSE]
+  }
+  dplyr::bind_rows(head_df, new_row, tail_df)
+}
+
 soft_delete_row <- function(plan, row_id) {
   plan <- tibble::as_tibble(plan)
   if (row_id < 1L || row_id > nrow(plan)) {
@@ -1922,6 +2010,54 @@ strip_graph_name_suffix <- function(graph_name, groups_map = NULL) {
   if (!length(shorts)) return(gname)
   pattern <- paste0("^(", paste(shorts, collapse = "|"), ")_")
   sub(pattern, "", gname)
+}
+
+#' Build a unique graph_name suffix for "Use for new" / copy-from-gallery.
+#'
+#' Appends `marker` (`_copy` by default). If `{group_short}_{suffix}{marker}`
+#' (or numbered variants) already exists in `graphplan`, tries `_copy2`,
+#' `_copy3`, ... until free. Considers all rows (active and inactive).
+#'
+#' @param suffix Current editor graph_name_suffix (without group prefix).
+#' @param group_short Short group code used in `graph_name` (`ec`, `budg`, ...).
+#' @param graphplan Current plan (may be NULL / empty).
+#' @param marker Copy marker; default `"_copy"`.
+#' @return Character scalar: new suffix for `ed_graph_name_suffix`.
+editor_copy_graph_name_suffix <- function(suffix,
+                                          group_short,
+                                          graphplan = NULL,
+                                          marker = "_copy") {
+  suffix <- as.character(suffix %||% "graph")[1]
+  if (is.na(suffix) || !nzchar(suffix)) {
+    suffix <- "graph"
+  }
+  group_short <- as.character(group_short %||% "ec")[1]
+  if (is.na(group_short) || !nzchar(group_short)) {
+    group_short <- "ec"
+  }
+  marker <- as.character(marker %||% "_copy")[1]
+  if (is.na(marker) || !nzchar(marker)) {
+    marker <- "_copy"
+  }
+
+  existing <- character(0)
+  if (!is.null(graphplan) && nrow(graphplan) > 0L && "graph_name" %in% names(graphplan)) {
+    existing <- unique(
+      stringr::str_trim(as.character(graphplan$graph_name))
+    )
+    existing <- existing[!is.na(existing) & nzchar(existing)]
+  }
+
+  candidate_suffix <- paste0(suffix, marker)
+  n <- 1L
+  repeat {
+    candidate_name <- paste0(group_short, "_", candidate_suffix)
+    if (!(candidate_name %in% existing)) {
+      return(candidate_suffix)
+    }
+    n <- n + 1L
+    candidate_suffix <- paste0(suffix, marker, n)
+  }
 }
 
 graph_group_long_to_short <- function(graph_group_long, groups_map = NULL) {

@@ -1382,9 +1382,9 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d, imppa
         
         print(glue("Conference Board - {i}"))
         cby_fname <- here("assets", "_DB", "_extsources", cby_impplan$file_name[1])
-        codes_row <- read_excel(cby_fname, sheet = "Annual", skip  = 5, n_max = 1, col_names = FALSE) |> unlist(use.names = FALSE)
+        codes_row <- read_excel(cby_fname, sheet = "Data", skip  = 5, n_max = 1, col_names = FALSE) |> unlist(use.names = FALSE)
         codes_row[is.na(codes_row)] <- "year"
-        cb_raw <- read_excel(cby_fname, sheet = "Annual", skip = 7, col_names  = FALSE,  .name_repair = "minimal")
+        cb_raw <- read_excel(cby_fname, sheet = "Data", skip = 7, col_names  = FALSE,  .name_repair = "minimal")
         colnames(cb_raw) <- codes_row
         
         cb_long <- cb_raw |> pivot_longer(-year, names_to = "tbl_code", values_to = "value") |> filter(!is.na(value)) |>

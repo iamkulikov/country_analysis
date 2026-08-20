@@ -371,7 +371,76 @@ ui <- bslib::page_navbar(
       "  max-height: var(--editor-preview-max-h);",
       "}}",
       .sep = "\n"
-    )))
+    ))),
+    # Preserve Graph gallery window scroll across tab switches (Edit / Save / navbar).
+    # Restores synchronously and with scroll-behavior forced to 'auto', so the
+    # Bootstrap smooth-scroll default never animates the jump back.
+    tags$script(HTML("
+(function () {
+  var savedY = null;
+  var armed = false;
+
+  function tabValue(el) {
+    if (!el) return '';
+    return el.getAttribute('data-value') ||
+      (el.dataset && el.dataset.value) ||
+      '';
+  }
+
+  function isGalleryTab(el) {
+    return tabValue(el) === 'tab_gallery';
+  }
+
+  function currentY() {
+    return window.scrollY || window.pageYOffset || 0;
+  }
+
+  function restore() {
+    if (!armed || savedY === null) return;
+    if (Math.abs(currentY() - savedY) < 1) return;
+    var root = document.documentElement;
+    var prev = root.style.scrollBehavior;
+    root.style.scrollBehavior = 'auto';
+    window.scrollTo(0, savedY);
+    root.style.scrollBehavior = prev;
+  }
+
+  $(document).on('hide.bs.tab', function (e) {
+    if (!isGalleryTab(e.target)) return;
+    savedY = currentY();
+    armed = false;
+  });
+
+  $(document).on('shown.bs.tab', function (e) {
+    if (!isGalleryTab(e.target)) return;
+    armed = savedY !== null;
+    restore();
+  });
+
+  // Once the user scrolls or clicks, stop repositioning the gallery.
+  ['wheel', 'touchmove', 'keydown', 'mousedown'].forEach(function (name) {
+    window.addEventListener(name, function () { armed = false; }, {
+      passive: true,
+      capture: true
+    });
+  });
+
+  $(function () {
+    var host = document.getElementById('gallery_ui');
+    if (host && window.MutationObserver) {
+      // Save / build replace the gallery DOM; re-apply before the browser paints.
+      new MutationObserver(restore).observe(host, {
+        childList: true,
+        subtree: true
+      });
+    }
+    // Thumbnails finishing late can change document height after a restore.
+    document.addEventListener('load', function (e) {
+      if (e.target && e.target.tagName === 'IMG') restore();
+    }, true);
+  });
+})();
+"))
   ),
 
   bslib::nav_panel(
@@ -930,6 +999,8 @@ server <- function(input, output, session) {
     built           = list(),
     selected_row_id = NULL,
     editor_mode     = "new",
+    editor_copy_source_name = NULL,
+    editor_copy_source_row_id = NULL,
     editor_preview  = NULL,
     editor_row_validation = NULL,
     editor_bootstrapped = FALSE,
@@ -1630,7 +1701,11 @@ server <- function(input, output, session) {
     )
   }
 
-  open_graph_in_editor <- function(row_id, graph_name = NULL, built_item = NULL) {
+  open_graph_in_editor <- function(row_id,
+                                   graph_name = NULL,
+                                   built_item = NULL,
+                                   mode = c("edit", "copy")) {
+    mode <- match.arg(mode)
     if (is.null(rv$graphplan) || nrow(rv$graphplan) < row_id) {
       showNotification("Graphplan row not found.", type = "error")
       return(invisible(FALSE))
@@ -1645,12 +1720,38 @@ server <- function(input, output, session) {
     edit_row <- edit_graphplan[edit_row_id, , drop = FALSE]
     edit_country_iso3c <- rv$country_iso3c
     edit_plan_validation_revision <- rv$plan_validation_revision
+    edit_mode <- mode
 
     run_after_tab_switch({
       row <- edit_row
-      rv$selected_row_id <- edit_row_id
-      rv$editor_mode <- "edit"
       st <- graphplan_row_to_editor_state(row)
+      source_name <- as.character(
+        edit_graph_name %||% row$graph_name[[1]] %||% st$graph_name_suffix
+      )[1]
+
+      if (identical(edit_mode, "copy")) {
+        rv$selected_row_id <- NULL
+        rv$editor_mode <- "new"
+        rv$editor_copy_source_name <- source_name
+        rv$editor_copy_source_row_id <- as.integer(edit_row_id)[1]
+        st$graph_name_suffix <- editor_copy_graph_name_suffix(
+          suffix = st$graph_name_suffix,
+          group_short = st$graph_group_short,
+          graphplan = edit_graphplan
+        )
+        copy_graph_name <- paste0(st$graph_group_short, "_", st$graph_name_suffix)
+        row$graph_name[[1]] <- copy_graph_name
+        validate_row_id <- NULL
+        validate_editor_mode <- "new"
+      } else {
+        rv$selected_row_id <- edit_row_id
+        rv$editor_mode <- "edit"
+        rv$editor_copy_source_name <- NULL
+        rv$editor_copy_source_row_id <- NULL
+        validate_row_id <- edit_row_id
+        validate_editor_mode <- "edit"
+      }
+
       apply_editor_state(session, st, indicator_choices, country_choices)
       updateSelectInput(session, "ed_ind_group", selected = "")
 
@@ -1661,15 +1762,15 @@ server <- function(input, output, session) {
           edit_country_iso3c,
           peers_fname,
           graphplan = edit_graphplan,
-          row_id = edit_row_id,
-          editor_mode = "edit"
+          row_id = validate_row_id,
+          editor_mode = validate_editor_mode
         )
         rv$editor_validation_cache_key <- editor_validation_cache_key(
           row,
           edit_country_iso3c,
           edit_graphplan,
-          row_id = edit_row_id,
-          editor_mode = "edit",
+          row_id = validate_row_id,
+          editor_mode = validate_editor_mode,
           plan_validation_revision = edit_plan_validation_revision
         )
       }
@@ -1709,10 +1810,21 @@ server <- function(input, output, session) {
         }
       }
 
-      showNotification(
-        glue("Editing '{edit_graph_name %||% st$graph_name_suffix}' (row {edit_row_id})."),
-        type = "message"
-      )
+      if (identical(edit_mode, "copy")) {
+        showNotification(
+          glue(
+            "Copy of '{source_name}' opened as a new graph ",
+            "'{st$graph_group_short}_{st$graph_name_suffix}'. ",
+            "Save will append a new row."
+          ),
+          type = "message"
+        )
+      } else {
+        showNotification(
+          glue("Editing '{source_name}' (row {edit_row_id})."),
+          type = "message"
+        )
+      }
     })
 
     invisible(TRUE)
@@ -1738,6 +1850,11 @@ server <- function(input, output, session) {
         class = "btn btn-default btn-sm", href = "#",
         onclick = gallery_action_js("edit", nm),
         "Edit"
+      ),
+      tags$a(
+        class = "btn btn-default btn-sm", href = "#",
+        onclick = gallery_action_js("use_for_new", nm),
+        "Use for new"
       ),
       if (identical(card$display_status, "inactive")) {
         tags$a(
@@ -2025,6 +2142,16 @@ server <- function(input, output, session) {
       return()
     }
 
+    if (identical(action, "use_for_new")) {
+      open_graph_in_editor(
+        card$row_id,
+        graph_name = nm,
+        built_item = if (identical(card$display_status, "built_ok")) item else NULL,
+        mode = "copy"
+      )
+      return()
+    }
+
     if (identical(action, "activate")) {
       if (is.null(rv$graphplan)) {
         showNotification("Cannot activate (no graphplan).", type = "error")
@@ -2267,6 +2394,8 @@ server <- function(input, output, session) {
   output$editor_mode_ui <- renderUI({
     label <- if (rv$editor_mode == "edit" && !is.null(rv$selected_row_id)) {
       glue("Job: edit row {rv$selected_row_id}")
+    } else if (!is.null(rv$editor_copy_source_name) && nzchar(rv$editor_copy_source_name)) {
+      glue("Job: new graph (copy of {rv$editor_copy_source_name})")
     } else {
       "Job: new graph"
     }
@@ -2344,6 +2473,8 @@ server <- function(input, output, session) {
     clear_editor_validation_cache()
     rv$selected_row_id <- NULL
     rv$editor_mode <- "new"
+    rv$editor_copy_source_name <- NULL
+    rv$editor_copy_source_row_id <- NULL
     st <- graphplan_row_to_editor_state(editor_new_graph_seed_row())
     apply_editor_state(session, st, indicator_choices, country_choices)
     updateTextInput(session, "ed_graph_plan_tsv", value = "")
@@ -2586,10 +2717,12 @@ server <- function(input, output, session) {
 
     save_editor_mode <- rv$editor_mode
     save_selected_row_id <- rv$selected_row_id
+    save_copy_source_row_id <- rv$editor_copy_source_row_id
     save_country_iso3c <- rv$country_iso3c
     save_row <- row
     save_graphplan <- rv$graphplan
     save_built <- rv$built
+    save_baseline <- rv$graphplan_baseline
     save_plan_revision <- rv$plan_validation_revision %||% 0L
     save_next_revision <- save_plan_revision + 1L
 
@@ -2602,11 +2735,30 @@ server <- function(input, output, session) {
         save_result <- profile_step("save.end_to_end", {
           incProgress(0.15, detail = "Updating graphplan row")
           graphplan <- save_graphplan
+          built_list <- save_built
+          baseline <- save_baseline
+          inserted_after <- NULL
 
           if (save_editor_mode == "edit" && !is.null(save_selected_row_id)) {
             graphplan <- update_graphplan_row(graphplan, save_selected_row_id, save_row)
             saved_row_id <- save_selected_row_id
             save_msg <- "Graphplan row updated."
+          } else if (
+            identical(save_editor_mode, "new") &&
+              !is.null(save_copy_source_row_id) &&
+              !is.na(as.integer(save_copy_source_row_id)[1]) &&
+              as.integer(save_copy_source_row_id)[1] >= 1L &&
+              as.integer(save_copy_source_row_id)[1] <= nrow(graphplan)
+          ) {
+            after_id <- as.integer(save_copy_source_row_id)[1]
+            graphplan <- insert_graphplan_row_after(graphplan, after_id, save_row)
+            saved_row_id <- after_id + 1L
+            built_list <- shift_built_list_row_ids_after(built_list, after_id)
+            baseline <- insert_graphplan_baseline_row_after(baseline, after_id, save_row)
+            inserted_after <- after_id
+            save_msg <- glue(
+              "New row inserted after row {after_id} (copy source)."
+            )
           } else {
             graphplan <- append_graphplan_row(graphplan, save_row)
             saved_row_id <- nrow(graphplan)
@@ -2626,7 +2778,7 @@ server <- function(input, output, session) {
           gallery_refresh <- profile_step(
             "save.refresh_gallery_built_for_row",
             refresh_gallery_built_for_row(
-              built_list    = save_built,
+              built_list    = built_list,
               row_id        = saved_row_id,
               graphplan     = graphplan,
               FD            = FD,
@@ -2641,7 +2793,9 @@ server <- function(input, output, session) {
             saved_row_id = saved_row_id,
             validation = validation,
             gallery_refresh = gallery_refresh,
-            save_msg = save_msg
+            save_msg = save_msg,
+            baseline = baseline,
+            inserted_after = inserted_after
           )
         })
 
@@ -2649,8 +2803,13 @@ server <- function(input, output, session) {
         rv$graphplan <- save_result$graphplan
         rv$selected_row_id <- save_result$saved_row_id
         rv$editor_mode <- "edit"
+        rv$editor_copy_source_name <- NULL
+        rv$editor_copy_source_row_id <- NULL
         rv$dirty <- TRUE
         rv$validation <- save_result$validation
+        if (!is.null(save_result$baseline)) {
+          rv$graphplan_baseline <- save_result$baseline
+        }
         gallery_refresh <- save_result$gallery_refresh
         rv$built <- prune_built_list_for_validation(
           gallery_refresh$built_list,
@@ -2671,6 +2830,9 @@ server <- function(input, output, session) {
       })
       sid <- as.integer(save_result$saved_row_id)
       prev_touch <- shiny::isolate(rv$editor_touch_row_ids %||% integer(0))
+      if (!is.null(save_result$inserted_after)) {
+        prev_touch <- shift_row_ids_after(prev_touch, save_result$inserted_after)
+      }
       if (identical(save_editor_mode, "edit") && !is.null(save_selected_row_id)) {
         br <- save_graphplan[save_selected_row_id, , drop = FALSE]
         if (isTRUE(meaningful_editor_save_for_edited_flag(br, save_row))) {

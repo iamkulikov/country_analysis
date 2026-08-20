@@ -142,6 +142,133 @@ stopifnot(graphplan_peers_display_mode(custom_peers_row) == "manual")
 message("Import table Limits/Peers display modes: OK")
 message("Baseline capture + hybrid Edited (17.4) helpers: OK")
 
+# ---------- Use for new / copy suffix helper ----------------------------------
+
+stopifnot(
+  identical(
+    editor_copy_graph_name_suffix("gdp_growth", "ec", NULL),
+    "gdp_growth_copy"
+  ),
+  identical(
+    editor_copy_graph_name_suffix("gdp_growth", "ec", tibble::tibble()),
+    "gdp_growth_copy"
+  )
+)
+plan_with_copy <- tibble::tibble(
+  graph_name = c("ec_gdp_growth", "ec_gdp_growth_copy", "budg_other")
+)
+stopifnot(
+  identical(
+    editor_copy_graph_name_suffix("gdp_growth", "ec", plan_with_copy),
+    "gdp_growth_copy2"
+  )
+)
+plan_with_copy2 <- tibble::tibble(
+  graph_name = c(
+    "ec_gdp_growth",
+    "ec_gdp_growth_copy",
+    "ec_gdp_growth_copy2",
+    "budg_other"
+  )
+)
+stopifnot(
+  identical(
+    editor_copy_graph_name_suffix("gdp_growth", "ec", plan_with_copy2),
+    "gdp_growth_copy3"
+  )
+)
+# Same suffix in another group does not collide.
+stopifnot(
+  identical(
+    editor_copy_graph_name_suffix("gdp_growth", "budg", plan_with_copy),
+    "gdp_growth_copy"
+  )
+)
+# Inactive / any row name is considered (collision avoidance).
+plan_inactive_copy <- tibble::tibble(
+  graph_name = "ec_gdp_growth_copy",
+  active = 0L
+)
+stopifnot(
+  identical(
+    editor_copy_graph_name_suffix("gdp_growth", "ec", plan_inactive_copy),
+    "gdp_growth_copy2"
+  )
+)
+# Suffix that already ends with _copy gets another marker.
+stopifnot(
+  identical(
+    editor_copy_graph_name_suffix("gdp_growth_copy", "ec", plan_with_copy),
+    "gdp_growth_copy_copy"
+  )
+)
+message("editor_copy_graph_name_suffix (Use for new): OK")
+
+# ---------- Insert-after helpers (Use for new placement) ----------------------
+
+seed_row <- plan[1, , drop = FALSE]
+seed_row$graph_name[[1]] <- "ec_a_copy"
+seed_row$graph_title[[1]] <- "A copy"
+inserted <- insert_graphplan_row_after(plan, 1L, seed_row)
+stopifnot(
+  nrow(inserted) == nrow(plan) + 1L,
+  identical(as.character(inserted$graph_name[[1]]), as.character(plan$graph_name[[1]])),
+  identical(as.character(inserted$graph_name[[2]]), "ec_a_copy"),
+  identical(
+    as.character(inserted$graph_name[[3]]),
+    as.character(plan$graph_name[[2]])
+  )
+)
+# Insert after last == append position
+inserted_last <- insert_graphplan_row_after(plan, nrow(plan), seed_row)
+stopifnot(
+  nrow(inserted_last) == nrow(plan) + 1L,
+  identical(
+    as.character(inserted_last$graph_name[[nrow(inserted_last)]]),
+    "ec_a_copy"
+  )
+)
+# Out-of-range falls back to append
+inserted_oob <- insert_graphplan_row_after(plan, 0L, seed_row)
+stopifnot(
+  identical(
+    as.character(inserted_oob$graph_name[[nrow(inserted_oob)]]),
+    "ec_a_copy"
+  )
+)
+built_shift <- list(
+  ec_a = list(row_id = 1L, graph_name = "ec_a", ok = TRUE),
+  ec_b = list(row_id = 2L, graph_name = "ec_b", ok = TRUE),
+  ec_c = list(row_id = 3L, graph_name = "ec_c", ok = TRUE)
+)
+built_shifted <- shift_built_list_row_ids_after(built_shift, 1L)
+stopifnot(
+  identical(as.integer(built_shifted$ec_a$row_id), 1L),
+  identical(as.integer(built_shifted$ec_b$row_id), 3L),
+  identical(as.integer(built_shifted$ec_c$row_id), 4L)
+)
+stopifnot(
+  identical(shift_row_ids_after(c(1L, 2L, 5L), 1L), c(1L, 3L, 6L))
+)
+base_cap <- graphplan_baseline_capture(plan[1:3, , drop = FALSE])
+base_ins <- insert_graphplan_baseline_row_after(base_cap, 1L, seed_row)
+stopifnot(
+  nrow(base_ins) == 4L,
+  identical(as.character(base_ins$graph_name[[2]]), "ec_a_copy"),
+  identical(
+    as.character(base_ins$graph_name[[3]]),
+    as.character(base_cap$graph_name[[2]])
+  )
+)
+# after_row_id beyond baseline: unchanged
+stopifnot(
+  identical(
+    nrow(insert_graphplan_baseline_row_after(base_cap, 99L, seed_row)),
+    nrow(base_cap)
+  )
+)
+message("insert_graphplan_row_after + row_id shift helpers: OK")
+
 broken <- val$row_status |>
   dplyr::filter(.data$graph_name == fixture_broken_graph_name)
 stopifnot(
@@ -656,6 +783,16 @@ import_in_server <- any(
 )
 stopifnot(!import_in_server)
 message("app.R: importData only at startup (not in server): OK")
+
+stopifnot(
+  any(grepl("Use for new", app_r_lines, fixed = TRUE)),
+  any(grepl('gallery_action_js\\("use_for_new"', app_r_lines)),
+  any(grepl('mode = "copy"', app_r_lines, fixed = TRUE)),
+  any(grepl("editor_copy_source_name", app_r_lines, fixed = TRUE)),
+  any(grepl("editor_copy_source_row_id", app_r_lines, fixed = TRUE)),
+  any(grepl("insert_graphplan_row_after", app_r_lines, fixed = TRUE))
+)
+message("app.R: Use for new gallery action wired: OK")
 
 if (plotter_profile_enabled()) {
   profile_all <- plotter_profile_all_buildable_enabled()

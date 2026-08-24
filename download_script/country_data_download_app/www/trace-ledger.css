@@ -1,0 +1,580 @@
+/* Trace Ledger — audit journal for Calculation Trace */
+
+.tl-root {
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 13px;
+  color: #1f2937;
+  margin-top: 8px;
+}
+
+.tl-root,
+.tl-root * {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- Selected value card ---- */
+
+.tl-selected-card {
+  border: 1px solid #d0d5dd;
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+  background: #fff;
+  min-height: 72px;
+}
+
+.tl-selected-top {
+  margin-bottom: 4px;
+}
+
+.tl-selected-country {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: #475467;
+  text-transform: uppercase;
+}
+
+.tl-selected-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.tl-selected-left {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.tl-selected-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.tl-selected-label {
+  font-size: 12.5px;
+  color: #667085;
+}
+
+.tl-selected-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+/* ---- Legend ---- */
+
+.tl-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  align-items: center;
+  margin: 8px 0 12px;
+  font-size: 12px;
+  color: #667085;
+}
+
+.tl-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.tl-legend-freq {
+  margin-left: 8px;
+}
+
+/* ---- Tree ---- */
+
+.tl-tree {
+  border-top: 1px solid #eaecf0;
+  padding-top: 4px;
+}
+
+.tl-node {
+  position: relative;
+  border-left: 4px solid transparent;
+  margin: 2px 0;
+  border-radius: 4px;
+}
+
+.tl-node.tl-type-computed  { border-left-color: #2F6FED; }
+.tl-node.tl-type-imported  { border-left-color: #2E7D55; }
+.tl-node.tl-type-opaque    { border-left-color: #A66B00; }
+.tl-node.tl-type-no_value  { border-left-color: #C2415C; }
+.tl-node.tl-type-missing   { border-left-color: #B42318; }
+.tl-node.tl-type-truncated { border-left-color: #667085; }
+
+.tl-node.is-winner {
+  background: linear-gradient(90deg, #f3f7fe 0%, transparent 40%);
+}
+
+.tl-node-body {
+  cursor: pointer;
+  padding: 4px 8px 4px 4px;
+  border-radius: 4px;
+}
+
+.tl-node-body:hover {
+  background: #f9fafb;
+}
+
+.tl-node-body:focus {
+  outline: 2px solid #2F6FED;
+  outline-offset: 1px;
+}
+
+.tl-line1 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-height: 22px;
+}
+
+.tl-line2 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding-left: 28px;
+  margin-top: 1px;
+  font-size: 11.5px;
+  color: #667085;
+}
+
+.tl-line2-extra {
+  padding-left: 28px;
+  font-size: 12px;
+  color: #2E7D55;
+  margin-top: 2px;
+}
+
+.tl-chevron,
+.tl-chevron-spacer {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  padding: 0;
+  font-size: 12px;
+  color: #475467;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.tl-chevron:hover {
+  color: #2F6FED;
+}
+
+.tl-chevron-spacer {
+  cursor: default;
+}
+
+.tl-status-icon {
+  width: 14px;
+  text-align: center;
+  flex-shrink: 0;
+  font-size: 11px;
+}
+
+.tl-type-computed .tl-status-icon,
+.tl-status-icon.tl-type-computed { color: #2F6FED; }
+
+.tl-type-imported .tl-status-icon,
+.tl-status-icon.tl-type-imported { color: #2E7D55; }
+
+.tl-type-opaque .tl-status-icon,
+.tl-status-icon.tl-type-opaque { color: #A66B00; }
+
+.tl-type-no_value .tl-status-icon,
+.tl-status-icon.tl-type-no_value { color: #C2415C; }
+
+.tl-type-missing .tl-status-icon,
+.tl-status-icon.tl-type-missing { color: #B42318; }
+
+.tl-type-truncated .tl-status-icon,
+.tl-status-icon.tl-type-truncated { color: #667085; }
+
+.tl-indicator {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 14px;
+  font-weight: 600;
+  flex: 1 1 auto;
+  min-width: 80px;
+}
+
+.tl-freq-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  padding: 0 5px;
+  height: 18px;
+  border: 1px solid #d0d5dd;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #344054;
+  background: #fff;
+  flex-shrink: 0;
+}
+
+.tl-freq-chip-violet {
+  border-color: #6E56CF;
+  color: #6E56CF;
+  background: #f5f3ff;
+}
+
+.tl-period {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #344054;
+  min-width: 64px;
+}
+
+.tl-value {
+  font-size: 15px;
+  font-weight: 650;
+  margin-left: auto;
+  text-align: right;
+  min-width: 56px;
+}
+
+.tl-winner {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #2E7D55;
+  background: #f2faf5;
+  border: 1px solid #abefc6;
+  border-radius: 3px;
+  padding: 0 5px;
+  line-height: 16px;
+}
+
+.tl-badge {
+  display: inline-block;
+  font-size: 10.5px;
+  font-weight: 650;
+  letter-spacing: 0.03em;
+  padding: 1px 6px;
+  border-radius: 3px;
+}
+
+.tl-badge-computed  { color: #2F6FED; background: #F3F7FE; }
+.tl-badge-imported  { color: #2E7D55; background: #F2FAF5; }
+.tl-badge-opaque    { color: #A66B00; background: #FFF8E7; }
+.tl-badge-no_value  { color: #C2415C; background: #FFF4F6; }
+.tl-badge-missing   { color: #B42318; background: #FFF2F0; }
+.tl-badge-truncated { color: #667085; background: #F5F6F7; }
+
+.tl-operation,
+.tl-source-inline {
+  font-size: 11.5px;
+}
+
+.tl-compact-transition {
+  color: #6E56CF;
+  font-weight: 600;
+  font-size: 11px;
+  margin-left: 4px;
+}
+
+.tl-child-hint {
+  color: #98a2b3;
+  font-size: 11px;
+  margin-left: 4px;
+}
+
+/* ---- Details ---- */
+
+.tl-node-details {
+  display: none;
+  padding: 6px 8px 8px 28px;
+  margin-bottom: 4px;
+}
+
+.tl-node.is-details-open > .tl-node-details {
+  display: block;
+}
+
+.tl-detail-row {
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  gap: 8px;
+  margin: 3px 0;
+  font-size: 12.5px;
+}
+
+.tl-detail-key {
+  color: #667085;
+  font-weight: 500;
+}
+
+.tl-detail-val {
+  color: #1f2937;
+  word-break: break-word;
+}
+
+.tl-detail-meta {
+  opacity: 0.7;
+  font-size: 11.5px;
+}
+
+.tl-mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12.5px;
+  white-space: pre-wrap;
+}
+
+.tl-warning {
+  color: #A66B00;
+  background: #FFF8E7;
+  border-radius: 4px;
+  padding: 4px 8px;
+  margin: 4px 0 8px;
+  font-size: 12px;
+}
+
+/* ---- Frequency transition panel ---- */
+
+.tl-freq-panel {
+  border: 1px solid #6E56CF;
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin: 6px 0 10px;
+  background: #faf8ff;
+}
+
+.tl-freq-panel-header {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: #6E56CF;
+  margin-bottom: 6px;
+}
+
+.tl-freq-panel-arrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  flex-wrap: wrap;
+}
+
+.tl-freq-arrow {
+  color: #6E56CF;
+  font-weight: 700;
+}
+
+.tl-freq-op {
+  margin-left: 8px;
+  font-weight: 650;
+  color: #6E56CF;
+  font-size: 12px;
+}
+
+.tl-ft-periods {
+  font-size: 12px;
+  margin: 4px 0;
+  color: #344054;
+}
+
+.tl-ft-coverage {
+  font-size: 12px;
+  color: #475467;
+  margin: 2px 0 6px;
+}
+
+.tl-ft-note {
+  font-size: 12px;
+  color: #667085;
+  margin-top: 4px;
+}
+
+.tl-ft-distribution .tl-ft-dist-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 2px 0;
+}
+
+.tl-ft-dist-label {
+  color: #667085;
+  font-size: 11px;
+}
+
+/* ---- Period strip ---- */
+
+.tl-period-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.tl-period-strip-summary {
+  gap: 12px;
+  color: #475467;
+  font-size: 12px;
+}
+
+.tl-strip-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 36px;
+  padding: 2px 3px;
+  border-radius: 3px;
+  background: #fff;
+  border: 1px solid #e4e7ec;
+}
+
+.tl-strip-cell.missing-value {
+  opacity: 0.55;
+}
+
+.tl-strip-label {
+  font-size: 9.5px;
+  color: #98a2b3;
+  text-transform: uppercase;
+}
+
+.tl-strip-value {
+  font-size: 11px;
+  font-weight: 600;
+  color: #344054;
+}
+
+.tl-strip-cell-drilldown {
+  cursor: pointer;
+}
+
+.tl-strip-cell-drilldown:hover {
+  border-color: #6E56CF;
+  background: #f4f0ff;
+}
+
+.tl-strip-cell-drilldown.is-drilldown-active {
+  border-color: #6E56CF;
+  box-shadow: inset 0 0 0 1px #6E56CF;
+  background: #ede9fe;
+}
+
+.tl-ft-operand-note {
+  font-style: italic;
+}
+
+.tl-operand-drilldown {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border: 1px dashed #c4b5fd;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.tl-operand-drilldown-header {
+  margin-bottom: 6px;
+}
+
+.tl-operand-drilldown-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #5b21b6;
+}
+
+.tl-operand-drilldown-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+  font-size: 12px;
+  border-top: 1px solid #f2f4f7;
+}
+
+.tl-operand-drilldown-row:first-of-type {
+  border-top: none;
+}
+
+.tl-operand-drilldown-step {
+  color: #98a2b3;
+  min-width: 2.5em;
+}
+
+.tl-operand-drilldown-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-weight: 600;
+}
+
+.tl-operand-drilldown-empty {
+  font-size: 12px;
+  color: #667085;
+  font-style: italic;
+}
+
+/* ---- Children collapse ---- */
+
+.tl-children {
+  /* visible by default */
+}
+
+.tl-node.is-collapsed > .tl-children {
+  display: none;
+}
+
+/* ---- Bridge surrogate ---- */
+
+.tl-bridge {
+  border-left-color: #98a2b3;
+  border-left-style: dashed;
+  opacity: 0.9;
+}
+
+.tl-bridge .tl-node-body {
+  cursor: default;
+}
+
+.tl-bridge-text {
+  font-size: 12px;
+  color: #667085;
+  font-style: italic;
+}
+
+.tl-bridge-show {
+  padding: 0 4px !important;
+  font-size: 12px !important;
+}
+
+.tl-empty {
+  color: #667085;
+  margin: 12px 0;
+}
+
+/* ---- Controls row helpers (ledger panel) ---- */
+
+.tl-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 8px 0;
+  flex-wrap: wrap;
+}
+
+.tl-controls .form-group {
+  margin-bottom: 0;
+}

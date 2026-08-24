@@ -12,6 +12,9 @@ library(shinyjs)
 here::i_am("app.R")
 source(here("service.R"))
 source(here("dep_graph.R"))
+source(here("trace.R"))
+source(here("trace_ledger.R"))
+source(here("mod_value_trace.R"))
 
 # ------------------------- LOAD DB -----------------------------------------
 
@@ -27,6 +30,20 @@ FD <- importData(
   add_time   = TRUE
 )
 
+trace_db_fname   <- here("Trace_DB.rds")
+trace_db_d_fname <- here("Trace_DB_d.rds")
+TRACE_DB <- if (file.exists(trace_db_fname)) {
+  importData(
+    yqm_file   = trace_db_fname,
+    d_file     = trace_db_d_fname,
+    sheet_keys = sheet_keys,
+    format     = "auto",
+    add_time   = TRUE
+  )
+} else {
+  NULL
+}
+
 param_fname <- here("0_database_params.xlsx")
 # param_fname <- file.path(app_dir, "0_database_params.xlsx")
 update_mode <- 0L
@@ -34,6 +51,7 @@ update_mode <- 0L
 import_params <- readImportParams(param_fname = param_fname, update_mode = update_mode)
 impplan       <- import_params$impplan
 fillplan      <- readFillParams(param_fname, sheet = "fill")
+saveplan_full <- build_trace_saveplan(impplan = impplan, fillplan = fillplan)
 
 formula_words <- c(
   "lag", "lead", "rollsum", "rollavg", "rollvol", "mean", "last", "first",
@@ -53,6 +71,7 @@ indicator_catalog <- build_indicator_catalog_from_dict(FD$dict)
 # --------------------------- UI --------------------------------------------
 
 ui <- navbarPage(
+  id = "main_nav",
   title = "Country data downloader",
   theme = bslib::bs_theme(bootswatch = "flatly"),
   shinyjs::useShinyjs(),
@@ -143,14 +162,15 @@ ui <- navbarPage(
                   inline   = TRUE
                 ),
                 
-                downloadButton("download_custom", "Download")
+                downloadButton("download_custom", "Download"),
+                mod_value_trace_button_ui("value_trace")
               )
             )
           )
         )
       )
     ),
-    
+
     fluidRow(
       column(
         width = 12,
@@ -206,6 +226,13 @@ ui <- navbarPage(
         )
       )
     )
+  ),
+
+  # -------- Tab 3: Preview data ----------
+  tabPanel(
+    title = "Preview data",
+    value = "preview_data",
+    mod_value_trace_panel_ui("value_trace")
   )
 )
 
@@ -352,6 +379,23 @@ server <- function(input, output, session) {
       year_to           = custom_year_to()
     )
   })
+
+  mod_value_trace_server(
+    id              = "value_trace",
+    fd              = FD,
+    trace_db        = TRACE_DB,
+    fillplan        = fillplan,
+    impplan         = impplan,
+    saveplan_full   = saveplan_full,
+    selected_node_ids = reactive(input$custom_indicators),
+    country_ids     = reactive(input$custom_countries),
+    year_from       = custom_year_from,
+    year_to         = custom_year_to
+  )
+
+  observeEvent(input[["value_trace-preview_data"]], {
+    updateNavbarPage(session, "main_nav", selected = "preview_data")
+  }, ignoreInit = TRUE)
   
   output$custom_table <- DT::renderDT(
     {

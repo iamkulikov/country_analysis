@@ -59,6 +59,7 @@ if (is.null(dim(error_report)[1]) | is.na(dim(error_report)[1]) | (dim(error_rep
         message(glue::glue("do_fill: partial recalculation from indicator '{fill_from}' using Filled_DB_* as input"))
         D <- importData(yqm_file = here("assets", "_DB", filled_fname), d_file = here("assets", "_DB", filled_d_fname), sheet_keys = sheet_keys, format = "auto")
       }
+      assertUniqueFreqKeys(extdata_y = D$extdata_y, extdata_q = D$extdata_q, extdata_m = D$extdata_m, extdata_d = D$extdata_d, context = "input to do_fill")
       
       data_dim <- captureDimensions(extdata_y = D$extdata_y, extdata_q = D$extdata_q, extdata_m = D$extdata_m, extdata_d = D$extdata_d)
       print("Filling started")
@@ -66,7 +67,20 @@ if (is.null(dim(error_report)[1]) | is.na(dim(error_report)[1]) | (dim(error_rep
       FD <- fill(fillplan = fillplan, extdata_y = D$extdata_y, extdata_q = D$extdata_q, extdata_m = D$extdata_m, extdata_d = D$extdata_d, fill_from = fill_from)
       remove(D)  
       FD <- dropDateColumns(extdata_y = FD$extdata_y, extdata_q = FD$extdata_q, extdata_m = FD$extdata_m, extdata_d = FD$extdata_d)
-      # FD$extdata_y |> select (year, country_id, e2_0_reserve_cur) |> filter(year>2019, country_id=="US")
+
+      saveplan_full <- generateSaveplan(impplan = impplan, fillplan = fillplan, keep_only = FALSE)
+      trace_paths <- writeDatafiles(
+        y = FD$extdata_y, q = FD$extdata_q, m = FD$extdata_m, d = FD$extdata_d,
+        dict   = saveplan_full |> dplyr::filter(.data$source_frequency != "d"),
+        dict_d = saveplan_full |> dplyr::filter(.data$source_frequency == "d"),
+        dir = here("assets", "_DB"), stem = "Trace_DB", formats = "rds"
+      )
+      replicateSavedFiles(
+        src_paths   = unname(trace_paths[c("rds_yqm", "rds_d")]),
+        target_dirs = here::here("download_script", "country_data_download_app"),
+        method = "copy"
+      )
+
       ##### Check whether data container was broken in the process
       if (all(captureDimensions(extdata_y = FD$extdata_y, extdata_q = FD$extdata_q, extdata_m = FD$extdata_m, extdata_d = FD$extdata_d) == data_dim)) {
         print("Dimensions were preserved")} else {

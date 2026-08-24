@@ -756,6 +756,51 @@ build_custom_download_time_in_columns <- function(fd,
   sheets
 }
 
+PREVIEW_MAX_ROWS <- 5000L
+PREVIEW_MAX_COLS <- 150L
+PREVIEW_META_COLS <- c("country", "country_id", "indicator_code")
+
+truncate_preview_table <- function(df,
+                                   max_rows = PREVIEW_MAX_ROWS,
+                                   max_cols = PREVIEW_MAX_COLS,
+                                   meta_cols = PREVIEW_META_COLS) {
+  if (is.null(df) || nrow(df) == 0) {
+    return(list(
+      data          = df,
+      row_truncated = FALSE,
+      col_truncated = FALSE,
+      total_rows    = 0L,
+      total_cols    = 0L
+    ))
+  }
+
+  meta_cols <- intersect(meta_cols, names(df))
+  period_cols <- setdiff(names(df), meta_cols)
+  total_rows <- nrow(df)
+  total_cols <- length(names(df))
+
+  row_truncated <- total_rows > max_rows
+  col_truncated <- total_cols > max_cols
+
+  out <- df
+  if (row_truncated) {
+    out <- out[seq_len(max_rows), , drop = FALSE]
+  }
+  if (col_truncated) {
+    n_period_keep <- max(0L, max_cols - length(meta_cols))
+    keep_periods <- period_cols[seq_len(min(length(period_cols), n_period_keep))]
+    out <- out[, c(meta_cols, keep_periods), drop = FALSE]
+  }
+
+  list(
+    data          = out,
+    row_truncated = row_truncated,
+    col_truncated = col_truncated,
+    total_rows    = total_rows,
+    total_cols    = total_cols
+  )
+}
+
 build_custom_download_vertical <- function(fd,
                                            selected_node_ids,
                                            country_ids = NULL,

@@ -113,11 +113,6 @@ parse_num_safe <- function(x) {
     str_squish() |> na_if("") |> readr::parse_number(locale = readr::locale(decimal_mark = ".", grouping_mark = ","))
 }
 
-first_non_na <- function(x) {
-  x <- x[!is.na(x)]
-  if (length(x) == 0) NA_real_ else x[[1]]
-}
-
 ##### Function to import previously downloaded data
 
 #' @param yqm_file Путь к файлу с Y/Q/M (RDS или XLSX)
@@ -404,6 +399,54 @@ dropDataToUpdate <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d
   
 }
 
+#' Fail if extdata_* containers violate one-row-per-frequency-key invariant.
+#'
+#' Duplicate keys usually mean a broken import join (many-to-many). Call after
+#' import (or when loading a saved DB) instead of silently collapsing rows.
+#'
+#' @return Invisibly returns the input list unchanged.
+assertUniqueFreqKeys <- function(extdata_y, extdata_q, extdata_m, extdata_d, context = "container") {
+  
+  key_cols <- list(
+    y = c("country_id", "year"),
+    q = c("country_id", "year", "quarter"),
+    m = c("country_id", "year", "month"),
+    d = c("country_id", "date")
+  )
+  tables <- list(y = extdata_y, q = extdata_q, m = extdata_m, d = extdata_d)
+  msgs <- character()
+  
+  for (freq in names(tables)) {
+    df <- tables[[freq]]
+    if (is.null(df) || !nrow(df)) next
+    keys <- key_cols[[freq]]
+    if (!all(keys %in% names(df))) next
+    
+    dup <- df |>
+      dplyr::summarise(n = dplyr::n(), .by = dplyr::all_of(keys)) |>
+      dplyr::filter(n > 1L)
+    if (nrow(dup) == 0L) next
+    
+    ex <- dup |> dplyr::slice_head(n = 5)
+    key_labels <- apply(ex[, keys, drop = FALSE], 1, paste, collapse = "|")
+    ex_txt <- paste(paste0(key_labels, " x ", ex$n), collapse = "; ")
+    msgs <- c(
+      msgs,
+      sprintf(
+        "extdata_%s: %d duplicate key(s), max multiplicity %d (context: %s). Examples: %s",
+        freq, nrow(dup), max(dup$n), context, ex_txt
+      )
+    )
+  }
+  
+  if (length(msgs)) {
+    stop(paste(msgs, collapse = "\n"), call. = FALSE)
+  }
+  
+  invisible(list(extdata_y = extdata_y, extdata_q = extdata_q, extdata_m = extdata_m, extdata_d = extdata_d))
+}
+
+
 ##### Function to check if all the necessary files for import exist
 
 checkFileExistence <- function(impplan, extdata_folder) {
@@ -415,6 +458,80 @@ checkFileExistence <- function(impplan, extdata_folder) {
   impplan <- impplan |> left_join(impplan_temp, by = c("indicator_code" = "indicator_code", "source_frequency" = "source_frequency"))
   return(impplan)
   
+}
+
+#' Read Conference Board TED workbook (Data Central format: Metadata + TED n).
+#'
+#' Mnemonics look like `TED1_USA_GDP_eks` (prefix_ISO3_indicator). Returns long
+#' tibble: year, iso3, indicator, value — filtered to `indicators` if provided.
+readConferenceBoardTed <- function(path, indicators = NULL) {
+  sheets <- readxl::excel_sheets(path)
+  data_sheet <- sheets[stringr::str_detect(sheets, "^TED")][1]
+  if (is.na(data_sheet) || !nzchar(data_sheet)) {
+    # Legacy layout fallback
+    if ("Data" %in% sheets) {
+      codes_row <- readxl::read_excel(path, sheet = "Data", skip = 5, n_max = 1, col_names = FALSE) |>
+        unlist(use.names = FALSE)
+      codes_row[is.na(codes_row)] <- "year"
+      cb_raw <- readxl::read_excel(path, sheet = "Data", skip = 7, col_names = FALSE, .name_repair = "minimal")
+      colnames(cb_raw) <- codes_row
+      out <- cb_raw |>
+        tidyr::pivot_longer(-year, names_to = "tbl_code", values_to = "value") |>
+        dplyr::filter(!is.na(value)) |>
+        dplyr::mutate(
+          iso3 = stringr::str_match(tbl_code, "^[^_]+_([A-Z]{3})_")[, 2],
+          indicator = stringr::str_match(tbl_code, "^[^_]+_[A-Z]{3}_(.+)")[, 2],
+          year = as.numeric(year)
+        ) |>
+        dplyr::select(year, iso3, indicator, value)
+      if (!is.null(indicators)) out <- out |> dplyr::filter(indicator %in% indicators)
+      return(out)
+    }
+    stop("No TED* or Data sheet in ", basename(path), call. = FALSE)
+  }
+
+  raw <- readxl::read_excel(path, sheet = data_sheet, col_names = FALSE, .name_repair = "minimal")
+  label_col <- as.character(raw[[1]])
+  mn_row <- which(label_col == "mnemonic")[1]
+  date_row <- which(label_col == "Date")[1]
+  if (is.na(mn_row) || is.na(date_row)) {
+    stop("TED sheet missing mnemonic/Date rows in ", basename(path), call. = FALSE)
+  }
+
+  mnemonics <- as.character(unlist(raw[mn_row, ], use.names = FALSE))
+  data_rows <- seq.int(date_row + 1L, nrow(raw))
+  years <- as.numeric(substr(as.character(raw[[1]][data_rows]), 1, 4))
+
+  # Drop the label column (col 1); keep series columns with a real mnemonic
+  keep <- which(!is.na(mnemonics) & nzchar(mnemonics) & mnemonics != "mnemonic")
+  if (!length(keep)) stop("No mnemonics in ", basename(path), call. = FALSE)
+
+  parsed <- stringr::str_match(mnemonics[keep], "^[^_]+_([A-Za-z0-9]+)_(.+)$")
+  iso3 <- parsed[, 2]
+  indicator <- parsed[, 3]
+  ok_meta <- !is.na(iso3) & !is.na(indicator)
+  keep <- keep[ok_meta]
+  iso3 <- iso3[ok_meta]
+  indicator <- indicator[ok_meta]
+  if (!is.null(indicators)) {
+    take <- indicator %in% indicators
+    keep <- keep[take]
+    iso3 <- iso3[take]
+    indicator <- indicator[take]
+  }
+  if (!length(keep)) {
+    return(tibble::tibble(year = numeric(), iso3 = character(), indicator = character(), value = numeric()))
+  }
+
+  mat <- as.matrix(raw[data_rows, keep])
+  storage.mode(mat) <- "numeric"
+  tibble::tibble(
+    year = rep(years, times = length(keep)),
+    iso3 = rep(iso3, each = length(years)),
+    indicator = rep(indicator, each = length(years)),
+    value = as.numeric(mat)
+  ) |>
+    dplyr::filter(!is.na(value), !is.na(year))
 }
 
 ##### Main import function for APIs and local files 
@@ -459,12 +576,35 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d, imppa
         #### !!!!  не забывать двигать год !!!!
         for (i in seq_along(wdiq_names)) {
           
-          wdiq_data <- WDI(indicator = wdiq_codes[i], start = max(year_first, 2007), end = min(year_final, 2025), extra=F) |> select(-c(country, iso3c)) |>
-            mutate(quarter = as.numeric(substr(year, 6, 6)), year = as.numeric(substr(year, 1, 4))) |>
-            mutate(iso2c = countrycode(iso2c, origin = 'iso3c', destination = 'iso2c', 
-                                       custom_match = c('ROM' = 'RO','ADO' = 'AD','ANT' = 'AN',
-                                                        'KSV' = 'XK','TMP' = 'TL','WBG' = 'PS','ZAR' = 'CD'), warn = F)) |>
-            rename_at(vars(any_of(wdiq_codes[i])), ~wdiq_names[i])
+          wdiq_raw <- WDI(
+            indicator = wdiq_codes[i],
+            start = max(year_first, 2007),
+            end = min(year_final, 2025),
+            extra = FALSE
+          )
+          # Current WDI quarterly responses expose iso3c; older ones put iso3 codes in iso2c.
+          iso_src <- if ("iso3c" %in% names(wdiq_raw)) {
+            wdiq_raw$iso3c
+          } else {
+            wdiq_raw$iso2c
+          }
+          wdiq_data <- wdiq_raw |>
+            mutate(
+              quarter = as.numeric(substr(year, 6, 6)),
+              year = as.numeric(substr(year, 1, 4)),
+              iso2c = countrycode(
+                iso_src,
+                origin = "iso3c",
+                destination = "iso2c",
+                custom_match = c(
+                  "ROM" = "RO", "ADO" = "AD", "ANT" = "AN",
+                  "KSV" = "XK", "TMP" = "TL", "WBG" = "PS", "ZAR" = "CD"
+                ),
+                warn = FALSE
+              )
+            ) |>
+            select(-any_of(c("country", "iso3c"))) |>
+            rename_at(vars(any_of(wdiq_codes[i])), ~ wdiq_names[i])
           
           extdata_q <- extdata_q |> left_join(wdiq_data, by = c("country_id"="iso2c", "year"="year", "quarter"="quarter"), suffix=c("","_old"))
           print(wdiq_names[i])
@@ -878,16 +1018,16 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d, imppa
       
       fm_impplan <- impplan |> filter(active==1, database_name=="FM", retrieve_type=="file", source_frequency=="y")
       fm_names <- fm_impplan$indicator_code
-      fm_fname <- here("assets", "_DB", "_extsources", fm_impplan$file_name[1])
       fm_sheets <- fm_impplan$sheet_name
       
       if (length(fm_names)>0 & all(!is.na(fm_names))) {
         
         print("IMF-FM")
+        fm_fname <- here("assets", "_DB", "_extsources", fm_impplan$file_name[[1]])
         for (i in seq_along(fm_names)) {
         
           #i=3
-          fm_data <- read_excel(fm_fname[i], sheet = fm_sheets[i], col_names = T, na = "#N/A", col_types='text')
+          fm_data <- read_excel(fm_fname, sheet = fm_sheets[i], col_names = T, na = "#N/A", col_types='text')
           
           fm_data <- fm_data |> pivot_longer(cols = !contains('country'), names_to = 'year', values_to = 'value') |>
             mutate(country_id = countrycode(country_code, origin = 'iso3c', destination = 'iso2c',  warn = F,
@@ -930,19 +1070,62 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d, imppa
           if (all(str_detect(ilo_codes[i], c("SEX", "AGE")) == c("TRUE", "FALSE"))) {ilo_data <- ilo_data |> filter(sex == "SEX_T")}
           if (all(str_detect(ilo_codes[i], c("SEX", "AGE")) == c("FALSE", "TRUE"))) {ilo_data <- ilo_data |> filter(classif1 == "AGE_YTHADULT_YGE15")}
           
-          ilo_data <- ilo_data |> 
-                mutate(ref_area = countrycode(ref_area, origin = 'iso3c', destination = 'iso2c', warn = F,
-                  custom_match = c('ROM' = 'RO','ADO' = 'AD','ANT' = 'AN','KSV' = 'XK','TMP' = 'TL','WBG' = 'PS','ZAR' = 'CD')))
+          if ("best_source" %in% names(ilo_data)) {
+            ilo_data <- ilo_data |> filter(best_source == 1)
+          } else {
+            warning(
+              "ILO: column best_source missing for '", ilo_names[i], "' (", ilo_codes[i], "). ",
+              "Cannot select ILO preferred source; join may fail if duplicates remain.",
+              call. = FALSE
+            )
+          }
+          
+          # Map ISO3 -> ISO2; drop regional aggregates / non-countries (X01.., CHA, …)
+          # that countrycode leaves as NA — otherwise they collapse into one NA key.
+          ilo_data <- ilo_data |>
+            mutate(ref_area = countrycode(ref_area, origin = 'iso3c', destination = 'iso2c', warn = F,
+              custom_match = c('ROM' = 'RO','ADO' = 'AD','ANT' = 'AN','KSV' = 'XK','TMP' = 'TL','WBG' = 'PS','ZAR' = 'CD'))) |>
+            filter(!is.na(ref_area))
           
           if (ilo_freq[i] == "y") {ilo_data <- ilo_data |> mutate(year = as.numeric(time)) |> select(ref_area, year, obs_value)}
           if (ilo_freq[i] == "q") {ilo_data <- ilo_data |> mutate(year = as.numeric(substr(time, 1, 4)), quarter = as.numeric(substr(time, 6, 6))) |> select(ref_area, year, quarter, obs_value)}
           if (ilo_freq[i] == "m") {ilo_data <- ilo_data |> mutate(year = as.numeric(substr(time, 1, 4)), month = as.numeric(substr(time, 6, 7))) |> select(ref_area, year, month, obs_value)}
           
-          ilo_data <- eval(parse(text = glue("rename(ilo_data,'{ilo_names[i]}'='obs_value')") ))
+          ilo_data <- ilo_data |> dplyr::rename(!!ilo_names[i] := obs_value)
           
-          if (ilo_freq[i] == "y") {extdata_y <- extdata_y |> left_join(ilo_data, by = c("country_id" = "ref_area", "year"="year"), suffix=c("","_old"))}
-          if (ilo_freq[i] == "q") {extdata_q <- extdata_q |> left_join(ilo_data, by = c("country_id" = "ref_area", "year"="year", "quarter" = "quarter"), suffix=c("","_old"))}
-          if (ilo_freq[i] == "m") {extdata_m <- extdata_m |> left_join(ilo_data, by = c("country_id" = "ref_area", "year"="year", "month" = "month"), suffix=c("","_old"))}
+          key_cols <- switch(
+            ilo_freq[i],
+            y = c("ref_area", "year"),
+            q = c("ref_area", "year", "quarter"),
+            m = c("ref_area", "year", "month"),
+            c("ref_area", "year")
+          )
+          dup_keys <- ilo_data |> dplyr::summarise(n = dplyr::n(), .by = dplyr::all_of(key_cols)) |> dplyr::filter(n > 1L)
+          if (nrow(dup_keys) > 0L) {
+            stop(
+              "ILO: duplicate keys remain for '", ilo_names[i], "' (", ilo_codes[i], ") ",
+              "after SEX/AGE/best_source filters and dropping unmapped ref_area. ",
+              "Dup key count: ", nrow(dup_keys), ", max multiplicity: ", max(dup_keys$n), ". ",
+              "Fix ILO slice filters or impplan retrieve_code.",
+              call. = FALSE
+            )
+          }
+          
+          if (ilo_freq[i] == "y") {
+            extdata_y <- extdata_y |>
+              dplyr::left_join(ilo_data, by = c("country_id" = "ref_area", "year" = "year"),
+                               suffix = c("", "_old"), relationship = "many-to-one")
+          }
+          if (ilo_freq[i] == "q") {
+            extdata_q <- extdata_q |>
+              dplyr::left_join(ilo_data, by = c("country_id" = "ref_area", "year" = "year", "quarter" = "quarter"),
+                               suffix = c("", "_old"), relationship = "many-to-one")
+          }
+          if (ilo_freq[i] == "m") {
+            extdata_m <- extdata_m |>
+              dplyr::left_join(ilo_data, by = c("country_id" = "ref_area", "year" = "year", "month" = "month"),
+                               suffix = c("", "_old"), relationship = "many-to-one")
+          }
           print("+")
           
           }
@@ -1019,16 +1202,16 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d, imppa
       ci_impplan <- impplan |> filter(active==1, database_name=="Chinn-Ito", retrieve_type=="file", source_frequency=="y")
       ci_names <- ci_impplan$indicator_code
       ci_codes <- ci_impplan$retrieve_code
-      ci_fname <- here("assets", "_DB", "_extsources", ci_impplan$file_name[1])
       ci_sheets <- ci_impplan$sheet_name
       
       if (length(ci_names)>0 & all(!is.na(ci_names))) {
         
         print("Chinn-Ito")
+        ci_fname <- here("assets", "_DB", "_extsources", ci_impplan$file_name[[1]])
         for (i in seq_along(ci_names)) {
           
           #i=1
-          ci_data <- read_excel(ci_fname[i], sheet = ci_sheets[i], col_names = T, na = "#N/A", col_types='text')
+          ci_data <- read_excel(ci_fname, sheet = ci_sheets[i], col_names = T, na = "#N/A", col_types='text')
           
           ci_data <- eval(parse(text = glue("ci_data |> select('IMF-World Bank Country Code', year,'{ci_codes[i]}')") ))
           ci_data <- eval(parse(text = glue("rename(ci_data,'country_id'='IMF-World Bank Country Code', 'value'='{ci_codes[i]}')") ))
@@ -1319,13 +1502,16 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d, imppa
           dup_examples <- dup_keys |> left_join(fsb_data_raw, by = join_by(country_id, year, code)) |>
             summarise(values = paste0(value, collapse = ", "), .by = c(country_id, year, code)) |> slice_head(n = 12)
           
-          warning("FSB: найдены дубликаты по (country_id, year, code) для Topic = '", i, "'. ",
-            "Будет взято первое ненулевое (first_non_na). ", "Кол-во ключей с дублями: ", nrow(dup_keys), ".\n",
-            paste(capture.output(print(dup_examples)), collapse = "\n"), call. = FALSE)
+          stop(
+            "FSB: duplicate keys in source file for Topic = '", i, "' by (country_id, year, code). ",
+            "Count: ", nrow(dup_keys), ". Examples:\n",
+            paste(capture.output(print(dup_examples)), collapse = "\n"),
+            call. = FALSE
+          )
         }
         
-        fsb_data <- fsb_data_raw |> pivot_wider(id_cols = c(country_id, year), names_from = code, values_from = value,
-            values_fn = first_non_na) |> rename_with(~ new_codes[match(.x, old_codes)], .cols = all_of(old_codes)) |>
+        fsb_data <- fsb_data_raw |> pivot_wider(id_cols = c(country_id, year), names_from = code, values_from = value) |>
+            rename_with(~ new_codes[match(.x, old_codes)], .cols = all_of(old_codes)) |>
           mutate(year = as.numeric(year))
           
           extdata_y <- extdata_y |> left_join(fsb_data, by = c("country_id" = "country_id", "year"="year"), 
@@ -1382,22 +1568,32 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d, imppa
         
         print(glue("Conference Board - {i}"))
         cby_fname <- here("assets", "_DB", "_extsources", cby_impplan$file_name[1])
-        codes_row <- read_excel(cby_fname, sheet = "Data", skip  = 5, n_max = 1, col_names = FALSE) |> unlist(use.names = FALSE)
-        codes_row[is.na(codes_row)] <- "year"
-        cb_raw <- read_excel(cby_fname, sheet = "Data", skip = 7, col_names  = FALSE,  .name_repair = "minimal")
-        colnames(cb_raw) <- codes_row
+        cb_long <- readConferenceBoardTed(cby_fname, indicators = cby_codes) |>
+          mutate(
+            country_id = countrycode(
+              iso3,
+              origin = "iso3c",
+              destination = "iso2c",
+              custom_match = c(
+                "ROM" = "RO", "ADO" = "AD", "ANT" = "AN", "KSV" = "XK",
+                "TMP" = "TL", "WBG" = "PS", "ZAR" = "CD"
+              ),
+              warn = FALSE
+            )
+          ) |>
+          filter(
+            !is.na(country_id),
+            !country_id %in% c("S4", "S2", "V4", "V1", "S1", "8S", "T5", "ZG", "ZF", "T6", "XT")
+          ) |>
+          select(year, country_id, indicator, value)
         
-        cb_long <- cb_raw |> pivot_longer(-year, names_to = "tbl_code", values_to = "value") |> filter(!is.na(value)) |>
-          mutate(iso3 = str_match(tbl_code, "^[^_]+_([A-Z]{3})_")[, 2], indicator  = str_match(tbl_code, "^[^_]+_[A-Z]{3}_(.+)")[, 2]) |>
-          select(year, iso3, indicator, value) |> filter(indicator %in% cby_codes) |> 
-          mutate(year = as.numeric(year), country_id = countrycode(iso3, origin = 'iso3c', destination = 'iso2c', 
-                        custom_match = c('ROM' = 'RO','ADO' = 'AD','ANT' = 'AN', 'KSV' = 'XK','TMP' = 'TL','WBG' = 'PS',
-                                        'ZAR' = 'CD'), warn = F)) |>
-          filter(!country_id %in% c("S4", "S2", "V4", "V1", "S1", "8S", "T5", "ZG", "ZF", "T6", "XT"))
-        
-        cb_wide <- cb_long |> pivot_wider(names_from = indicator, values_from = value)
-        ren_vec <- setNames(cby_names, str_replace(cby_codes, "^[^_]+_[A-Z]{3}_", ""))
-        cb_wide <- cb_wide |> rename_with(~ ren_vec[.x], .cols = names(ren_vec))
+        cb_wide <- cb_long |>
+          tidyr::pivot_wider(names_from = indicator, values_from = value)
+        ren_vec <- setNames(cby_names, cby_codes)
+        present <- intersect(names(ren_vec), names(cb_wide))
+        if (length(present)) {
+          cb_wide <- cb_wide |> rename(!!!setNames(present, ren_vec[present]))
+        }
         
         extdata_y <- extdata_y |>
           left_join(cb_wide, by = c("country_id", "year"), suffix = c("", "_old"))
@@ -2120,7 +2316,9 @@ writeDatafiles  <- function(y = NULL, q = NULL, m = NULL, d = NULL, dict = NULL,
       rlang::abort(glue::glue("File exists: {path}. Set `overwrite = TRUE`."))
     
     writer(path)                           # now it’s definitely callable
-    if (verbose) cli::cli_alert_success("Wrote {.file {path}}")
+    # Use {.path} not {.file}: {.file} may require the path to already exist
+    # depending on cli version; after a fresh write that can confuse diagnostics.
+    if (verbose) cli::cli_alert_success("Wrote {.path {path}}")
     path
   }
   

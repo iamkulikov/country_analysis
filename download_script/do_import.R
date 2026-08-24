@@ -21,6 +21,12 @@ data_d_fname <- "Imported_DB_d.rds"; filled_fname <- "Filled_DB.xlsx"; filled_d_
 ##### Import function definitions
 source(here("download_script","import.R"))
 source(here("download_script","fill.R"))
+source(here("download_script","check_import_functions.R"))
+
+##### Check functionality of import functions
+# checkImportFunctions(online = FALSE, deep = FALSE)  # Обычно достаточно (файлы на диске, без сети)
+# checkImportFunctions(online = TRUE, deep = FALSE)   # Перед обновлением API-источников
+# checkImportFunctions(online = FALSE, deep = TRUE)   # Если есть подозрение, что коды в файле «съехали»
 
 ##### Import parameters and schedules
 imp_params <- readImportParams(param_fname = here("assets", "_DB", param_fname), update_mode = update_mode)
@@ -61,6 +67,8 @@ if (is.null(dim(error_report)[1]) | is.na(dim(error_report)[1]) | (dim(error_rep
       
     }
   
+    D <- assertUniqueFreqKeys(extdata_y = D$extdata_y, extdata_q = D$extdata_q, extdata_m = D$extdata_m, extdata_d = D$extdata_d, context = "after tryImport")
+    
     ##### Check whether data container was broken in the process
     if (all(captureDimensions(extdata_y = D$extdata_y, extdata_q = D$extdata_q, extdata_m = D$extdata_m, extdata_d = D$extdata_d) == data_dim)) {
       print("Dimensions were preserved")} else {

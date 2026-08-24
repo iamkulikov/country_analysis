@@ -2015,7 +2015,7 @@ dropDateColumns <- function(extdata_y, extdata_q, extdata_m, extdata_d) {
 
 ##### Function to create an export schedule
 
-generateSaveplan <- function(impplan, fillplan) {
+generateSaveplan <- function(impplan, fillplan, keep_only = TRUE) {
   
   print("Generating a saving plan")
   
@@ -2080,7 +2080,10 @@ generateSaveplan <- function(impplan, fillplan) {
     saveplan$source_name[idx_save] <- toString(final_sources)
   }
   
-  saveplan |> dplyr::filter(.data$keep == 1)
+  if (isTRUE(keep_only)) {
+    saveplan <- saveplan |> dplyr::filter(.data$keep == 1)
+  }
+  saveplan
 }
 
 

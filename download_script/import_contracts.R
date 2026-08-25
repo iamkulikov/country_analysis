@@ -589,6 +589,20 @@ import_contracts <- list(
     required_cols = c("date", "iso_code")
   ),
 
+  # --- Our World in Data Chart API -------------------------------------------
+  owid_api = import_contract(
+    id         = "owid_api",
+    label      = "OWID Chart API",
+    kind       = "api",
+    code_block = "Import OWID Chart API",
+    match      = function(impplan) {
+      impplan$active == 1 &
+        impplan$source_name == "Ourworldindata" &
+        impplan$retrieve_type == "API"
+    },
+    required_cols = c("iso2", "year", "value")
+  ),
+
   # --- UN HDR ----------------------------------------------------------------
   un_hdr = import_contract(
     id         = "un_hdr",

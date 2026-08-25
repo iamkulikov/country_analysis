@@ -21,6 +21,7 @@ suppressPackageStartupMessages({
 
 source(here("download_script", "import_contracts.R"))
 source(here("download_script", "imf_tool.R"))
+source(here("download_script", "owid_tool.R"))
 
 # WDI / ILO are only needed for online probes; load quietly when available
 .has_pkg <- function(pkg) requireNamespace(pkg, quietly = TRUE)
@@ -829,6 +830,67 @@ probe_imf_sdmx <- function(plan, freq = "y") {
   list(ok = TRUE, level = "info", message = paste(msgs_ok, collapse = "; "))
 }
 
+#' OWID Chart API: metadata.json for unique retrieve_code; column must exist.
+probe_owid <- function(plan) {
+  codes <- unique(stats::na.omit(as.character(plan$retrieve_code)))
+  codes <- codes[nzchar(codes)]
+  if (!length(codes)) {
+    return(list(ok = FALSE, level = "fail", message = "No OWID retrieve_code in plan"))
+  }
+  if (!.has_pkg("httr") || !.has_pkg("jsonlite")) {
+    return(list(
+      ok = FALSE, level = "fail",
+      message = "Packages httr/jsonlite required for OWID probe"
+    ))
+  }
+
+  msgs_ok <- character()
+  msgs_fail <- character()
+  # One metadata fetch per chart (ignore #column for grouping)
+  parsed_list <- lapply(codes, function(c) {
+    tryCatch(owid_parse_code(c), error = function(e) e)
+  })
+  for (i in seq_along(codes)) {
+    parsed <- parsed_list[[i]]
+    if (inherits(parsed, "error")) {
+      msgs_fail <- c(msgs_fail, sprintf("%s parse: %s", codes[[i]], parsed$message))
+      next
+    }
+    meta <- tryCatch(owid_fetch_metadata(parsed), error = function(e) e)
+    if (inherits(meta, "error")) {
+      msgs_fail <- c(msgs_fail, sprintf("%s metadata: %s", codes[[i]], meta$message))
+      next
+    }
+    col <- tryCatch(
+      owid_resolve_column(meta, parsed$column),
+      error = function(e) e
+    )
+    if (inherits(col, "error")) {
+      msgs_fail <- c(msgs_fail, sprintf("%s column: %s", codes[[i]], col$message))
+      next
+    }
+    msgs_ok <- c(msgs_ok, sprintf("%s OK (column=%s)", codes[[i]], col))
+  }
+
+  if (length(msgs_fail) && !length(msgs_ok)) {
+    return(list(
+      ok = FALSE, level = "fail",
+      message = paste(msgs_fail, collapse = "; ")
+    ))
+  }
+  if (length(msgs_fail) && length(msgs_ok)) {
+    return(list(
+      ok = TRUE, level = "warn",
+      message = paste(
+        "Some OWID codes failed probe:",
+        paste(msgs_fail, collapse = "; "),
+        "| OK:", paste(msgs_ok, collapse = "; ")
+      )
+    ))
+  }
+  list(ok = TRUE, level = "info", message = paste(msgs_ok, collapse = "; "))
+}
+
 #' ILO: codes present in get_ilostat_toc() (no full download).
 probe_ilo <- function(plan) {
   if (!.has_pkg("Rilostat")) {
@@ -881,6 +943,7 @@ run_api_probes <- function(contract, plan, online = TRUE) {
     "imf_q" = probe_imf_sdmx(plan, freq = "q"),
     "imf_m" = probe_imf_sdmx(plan, freq = "m"),
     "ilo" = probe_ilo(plan),
+    "owid_api" = probe_owid(plan),
     "bis_debt" = {
       # Same check as registry probe_bis_debt_url (CSV header via URL)
       out <- probe_bis_debt_url(list(plan = plan, path = NULL, contract = contract))

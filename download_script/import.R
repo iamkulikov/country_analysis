@@ -12,6 +12,7 @@ for (library_name in library_names) {
 ## ------ Set working directory and import custom tools
 here::i_am("download_script/import.R")
 source(here("download_script","imf_tool.R"))
+source(here("download_script","owid_tool.R"))
 
 ## ------ Set parameters
 # d_container_start <- as.Date("2019-01-01")
@@ -1160,6 +1161,102 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d, imppa
         
       }
     
+    })
+
+    ##### Import OWID Chart API
+    try({
+
+      owid_impplan <- impplan |> filter(
+        active == 1,
+        source_name == "Ourworldindata",
+        retrieve_type == "API"
+      )
+      owid_names <- owid_impplan$indicator_code
+      owid_codes <- as.character(owid_impplan$retrieve_code)
+      owid_freq  <- owid_impplan$source_frequency
+
+      if (length(owid_names) > 0 && all(!is.na(owid_names))) {
+
+        message("OWID Chart API")
+        parsed_list <- lapply(owid_codes, owid_parse_code)
+        chart_keys <- vapply(parsed_list, owid_chart_key, character(1))
+
+        for (key in unique(chart_keys)) {
+          idx <- which(chart_keys == key)
+          p0 <- parsed_list[[idx[[1]]]]
+
+          if (identical(p0$kind, "indicator")) {
+            for (j in idx) {
+              message(owid_codes[[j]])
+              series <- owidTool(owid_codes[[j]], start = year_first, end = year_final) |>
+                dplyr::rename(!!owid_names[[j]] := value, country_id = iso2)
+              freq_j <- tolower(as.character(owid_freq[[j]]))
+              if (freq_j == "d") {
+                extdata_d <- extdata_d |>
+                  dplyr::left_join(series, by = c("country_id", "date"), suffix = c("", "_old"))
+              } else {
+                extdata_y <- extdata_y |>
+                  dplyr::left_join(series, by = c("country_id", "year"), suffix = c("", "_old"))
+              }
+              message("+")
+            }
+            next
+          }
+
+          meta <- owid_fetch_metadata(p0)
+          cols_needed <- vapply(
+            idx,
+            function(j) owid_resolve_column(meta, parsed_list[[j]]$column),
+            character(1)
+          )
+          wide <- owid_fetch_chart_data(
+            p0, start = year_first, end = year_final, columns = unique(cols_needed)
+          )
+
+          for (k in seq_along(idx)) {
+            j <- idx[[k]]
+            col <- cols_needed[[k]]
+            message(owid_codes[[j]])
+
+            if ("date" %in% names(wide) && !"year" %in% names(wide)) {
+              series <- wide |>
+                dplyr::transmute(
+                  country_id = .data$iso2,
+                  date = .data$date,
+                  !!owid_names[[j]] := as.numeric(.data[[col]])
+                ) |>
+                dplyr::filter(!is.na(.data[[owid_names[[j]]]]))
+              extdata_d <- extdata_d |>
+                dplyr::left_join(series, by = c("country_id", "date"), suffix = c("", "_old"))
+            } else {
+              series <- wide |>
+                dplyr::transmute(
+                  country_id = .data$iso2,
+                  year = as.integer(.data$year),
+                  !!owid_names[[j]] := as.numeric(.data[[col]])
+                ) |>
+                dplyr::filter(!is.na(.data[[owid_names[[j]]]]))
+              freq_j <- tolower(as.character(owid_freq[[j]]))
+              if (freq_j == "q") {
+                extdata_q <- extdata_q |>
+                  dplyr::left_join(series, by = c("country_id", "year", "quarter"),
+                                   suffix = c("", "_old"))
+              } else if (freq_j == "m") {
+                extdata_m <- extdata_m |>
+                  dplyr::left_join(series, by = c("country_id", "year", "month"),
+                                   suffix = c("", "_old"))
+              } else {
+                extdata_y <- extdata_y |>
+                  dplyr::left_join(series, by = c("country_id", "year"),
+                                   suffix = c("", "_old"))
+              }
+            }
+            message("+")
+          }
+        }
+
+      }
+
     })
       
     ##### Import UN HDR data

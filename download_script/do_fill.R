@@ -25,7 +25,7 @@ data_d_fname <- "Imported_DB_d.rds"; filled_fname <- "Filled_DB.rds"; filled_d_f
   param_fname <- "0_database_params_test.xlsx"; data_fname <- "Temp.xlsx"; data_d_fname <- "Temp_d.xlsx";
   filled_fname <- "Temp_filled.xlsx"; filled_d_fname <- "Temp_filled_d.xlsx"}
 
-app_dirs <- c(here::here("download_script", "country_data_download_app"), here::here("graph_script", "graph_plotter_app"))
+app_dirs <- c(here::here("download_script", "country_data_download_app"), here::here("graph_script", "new_graph_plotter_app", "deploy_data"))
 
 ##### Import function definitions
 source(here("download_script","import.R"))

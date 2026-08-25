@@ -21,16 +21,13 @@ Download_data:
 
 Данные:
 почему данные GFS до 2021 года шляпные? (дефициты огромные) это ВВП или компоненты?
-рабочие дни где-то взять
+рабочие дни где-то взять для сезонного сглаживания
 разложение ВВП по секторам (и расходам тоже?): unstats.un.org/unsd/snaama/Downloads
-жесткость госрасходов и доля жестких госрасходов отсюда: https://www.imf.org/en/Publications/FM/Issues/2025/10/07/fiscal-monitor-october-2025
+жесткость госрасходов на базе автокорреляции компонент: https://www.imf.org/en/Publications/FM/Issues/2025/10/07/fiscal-monitor-october-2025
 по финсектору из презы atlantic council по Китаю (ссылка?)
 IMF DOTS по основным направлениям и товарам
-производство и переработка минералов: https://ourworldindata.org/metals-minerals
-https://www.sciencebase.gov/catalog/item/65a6e45fd34e5af967a46749
+производство и переработка минералов: https://www.sciencebase.gov/catalog/item/65a6e45fd34e5af967a46749
 https://www.bgs.ac.uk/mineralsuk/statistics/world-mineral-statistics/
-Медианный и средний доход из Люксембургской базы: https://ourworldindata.org/grapher/median-and-mean-income-after-tax-lis?tab=table&country=~BEL
-https://ourworldindata.org/explorers/incomes-across-distribution-lis?country=RUS~CHL&Indicator=Decile+thresholds&Decile=All+deciles&Income+measure=After+tax&Period=Year&Adjust+for+cost+sharing+within+households+%28equivalized+income%29=false
 Доштудировать IMF базы: структура госдолга
 Структура госдолга на базе ECB data warehouse (остальное будет из local). Есть ли шансы для SR, FC и флоатеров в госдолге кроме локальных?
 Статья про долю флоатеров
@@ -55,6 +52,7 @@ Penn World Tables 2025
 Ставки корпоративных налогов: https://github.com/TaxFoundation/worldwide-corporate-tax-rates
 Руками проставить модификаторы для выборки интересных стран
 Сделать утилиту для скачивания винтажей WEO - с октября 2025 поменялся формат
+Заменить часть маршрутов через посредника на прямую ссылку?
 
 Не забыть:
 все показатели с XDC выгружать еще и USD и EUR и склеить, потому что кажется, что это reporting currency именно и они ее в базе сами не ковертят

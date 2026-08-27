@@ -90,6 +90,13 @@ url <- "https://hdr.undp.org/sites/default/files/2025_HDR/HDR25_Composite_indice
 dest <- here("assets", "_DB", datafolder, "HDR.csv")
 download.file(url, dest)
 
+### Download UNSD SNAAMA GDP breakdowns (manual from the Downloads page)
+### https://unstats.un.org/unsd/snaama/Downloads
+###   Download-GDPcurrent-NCU-countries.xlsx
+###   Download-GDPconstant-NCU-countries.xlsx
+### (GDP and its breakdown at current / constant prices in National currency —
+###  All countries for all years). retrieve_code = exact IndicatorName.
+
 ### Download Chinn-Ito financial system classification (links should be updated manually!!!!!)
 ### http://web.pdx.edu/~ito/trilemma_indexes.htm
 url <- "https://web.pdx.edu/~ito/trilemma_indexes_update2020.xlsx"

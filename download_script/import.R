@@ -13,6 +13,7 @@ for (library_name in library_names) {
 here::i_am("download_script/import.R")
 source(here("download_script","imf_tool.R"))
 source(here("download_script","owid_tool.R"))
+source(here("download_script","snaama_tool.R"))
 
 ## ------ Set parameters
 # d_container_start <- as.Date("2019-01-01")
@@ -1291,7 +1292,63 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d, imppa
         }
       }
     
-    })  
+    })
+
+    ##### Import UNSD SNAAMA GDP NCU
+    try({
+
+      snaama_impplan <- impplan |>
+        filter(
+          active == 1,
+          source_name == "UN",
+          database_name == "SNAAMA",
+          retrieve_type == "file",
+          source_frequency == "y"
+        )
+
+      if (nrow(snaama_impplan) > 0 && all(!is.na(snaama_impplan$indicator_code))) {
+
+        print("UN-SNAAMA")
+        snaama_files <- unique(as.character(snaama_impplan$file_name))
+        snaama_files <- snaama_files[!is.na(snaama_files) & nzchar(snaama_files)]
+
+        for (fname in snaama_files) {
+          snaama_path <- here("assets", "_DB", "_extsources", fname)
+          snaama_wide <- snaama_read_wide(snaama_path)
+          plan_f <- snaama_impplan |> filter(file_name == fname)
+
+          for (i in seq_len(nrow(plan_f))) {
+            ind_code <- plan_f$indicator_code[[i]]
+            ret_code <- as.character(plan_f$retrieve_code[[i]])
+            message(ret_code)
+
+            snaama_data <- snaama_extract(snaama_wide, ret_code) |>
+              dplyr::rename(!!ind_code := value)
+
+            dup_keys <- snaama_data |>
+              dplyr::summarise(n = dplyr::n(), .by = c(country_id, year)) |>
+              dplyr::filter(n > 1L)
+            if (nrow(dup_keys) > 0L) {
+              stop(
+                "SNAAMA: duplicate country_id/year after ISO2 mapping for '",
+                ind_code, "' (", ret_code, ") in ", fname,
+                ". Dup key count: ", nrow(dup_keys),
+                call. = FALSE
+              )
+            }
+
+            extdata_y <- extdata_y |>
+              left_join(
+                snaama_data,
+                by = join_by(country_id, year),
+                suffix = c("", "_old")
+              )
+            print("+")
+          }
+        }
+      }
+
+    })
       
     ##### Import Chinn-Ito financial system classification
     try({

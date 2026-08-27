@@ -22,6 +22,7 @@ suppressPackageStartupMessages({
 source(here("download_script", "import_contracts.R"))
 source(here("download_script", "imf_tool.R"))
 source(here("download_script", "owid_tool.R"))
+source(here("download_script", "snaama_tool.R"))
 
 # WDI / ILO are only needed for online probes; load quietly when available
 .has_pkg <- function(pkg) requireNamespace(pkg, quietly = TRUE)

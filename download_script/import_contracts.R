@@ -89,6 +89,66 @@ col_pattern_year_4     <- "^\\d{4}$|^X\\d{4}$"
 
 ##### Probes (header alone is insufficient) -----------------------------------
 
+#' SNAAMA: data sheet readable; plan retrieve_code values exist as IndicatorName.
+probe_snaama <- function(ctx) {
+  paths <- ctx$paths %||% ctx$path
+  paths <- unique(as.character(stats::na.omit(paths)))
+  paths <- paths[nzchar(paths)]
+  if (!length(paths) && !is.null(ctx$path)) paths <- ctx$path
+  if (!length(paths)) {
+    return(list(ok = FALSE, level = "fail", message = "SNAAMA file missing"))
+  }
+
+  plan <- ctx$plan
+  msgs_ok <- character()
+  msgs_fail <- character()
+
+  for (path in paths) {
+    if (!file.exists(path)) {
+      msgs_fail <- c(msgs_fail, paste("File missing:", basename(path)))
+      next
+    }
+    inds <- tryCatch(snaama_list_indicators(path), error = function(e) e)
+    if (inherits(inds, "error")) {
+      msgs_fail <- c(msgs_fail, paste(basename(path), ":", inds$message))
+      next
+    }
+    plan_i <- plan
+    if ("file_name" %in% names(plan_i)) {
+      plan_i <- plan_i[plan_i$file_name == basename(path), , drop = FALSE]
+    }
+    codes <- unique(stats::na.omit(as.character(plan_i$retrieve_code)))
+    codes <- trimws(codes[nzchar(codes)])
+    miss <- setdiff(codes, inds)
+    if (length(miss)) {
+      msgs_fail <- c(msgs_fail, sprintf(
+        "%s: %d retrieve_code(s) missing (%s)",
+        basename(path), length(miss),
+        paste(utils::head(miss, 5), collapse = "; ")
+      ))
+    } else {
+      msgs_ok <- c(msgs_ok, sprintf(
+        "%s OK (%d IndicatorName, %d plan code(s))",
+        basename(path), length(inds), length(codes)
+      ))
+    }
+  }
+
+  if (length(msgs_fail) && !length(msgs_ok)) {
+    return(list(ok = FALSE, level = "fail", message = paste(msgs_fail, collapse = "; ")))
+  }
+  if (length(msgs_fail) && length(msgs_ok)) {
+    return(list(
+      ok = TRUE, level = "warn",
+      message = paste(
+        paste(msgs_fail, collapse = "; "),
+        "|", paste(msgs_ok, collapse = "; ")
+      )
+    ))
+  }
+  list(ok = TRUE, level = "info", message = paste(msgs_ok, collapse = "; "))
+}
+
 #' Conference Board TED: Metadata + TED n sheet with mnemonic / Date rows.
 probe_conference_board <- function(ctx) {
   paths <- ctx$paths %||% ctx$path
@@ -616,6 +676,27 @@ import_contracts <- list(
         impplan$database_name == "HDR"
     },
     required_cols = c("iso3")
+  ),
+
+  # --- UNSD SNAAMA GDP NCU ---------------------------------------------------
+  snaama = import_contract(
+    id         = "snaama",
+    label      = "UNSD SNAAMA GDP NCU",
+    kind       = "file",
+    code_block = "Import UNSD SNAAMA GDP NCU",
+    match      = function(impplan) {
+      impplan$active == 1 &
+        impplan$source_name == "UN" &
+        impplan$database_name == "SNAAMA" &
+        impplan$retrieve_type == "file" &
+        impplan$source_frequency == "y"
+    },
+    # Title + blank row before CountryID header
+    skip          = 2L,
+    required_cols = c("CountryID", "Country", "Currency", "IndicatorName"),
+    col_pattern   = col_pattern_year_19_20,
+    code_col      = "IndicatorName",
+    probe         = probe_snaama
   ),
 
   # --- Chinn-Ito -------------------------------------------------------------

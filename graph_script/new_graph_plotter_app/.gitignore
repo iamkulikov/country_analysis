@@ -18,3 +18,4 @@ smoke_test.R
 _old
 deploy_paths.R
 deploy_data
+DEPLOY.md

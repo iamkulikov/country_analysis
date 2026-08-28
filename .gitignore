@@ -6,3 +6,5 @@ assets
 docs
 README.md
 AGENTS.md
+debug-*.log
+.cursor/debug-*.log

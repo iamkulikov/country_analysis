@@ -304,6 +304,168 @@ probe_ct_positional <- function(ctx) {
   list(ok = TRUE, level = "info", message = sprintf("CT positional layout: %d columns", ncol(raw)))
 }
 
+#' OECD FINMARK IRLT: header of DF_FINMARK CSV; retrieve_code in {IRLT}.
+probe_oecd_irlt <- function(ctx) {
+  codes <- unique(stats::na.omit(as.character(ctx$plan$retrieve_code)))
+  codes <- toupper(trimws(codes[nzchar(codes)]))
+  bad <- setdiff(codes, oecd_irlt_allowed_series())
+  if (length(bad)) {
+    return(list(
+      ok = FALSE,
+      level = "fail",
+      message = paste(
+        "OECD IRLT retrieve_code must be IRLT. Bad:",
+        paste(bad, collapse = ", ")
+      )
+    ))
+  }
+
+  path <- ctx$path
+  local_ok <- !is.null(path) && nzchar(path) && file.exists(path)
+  hdr <- tryCatch(
+    {
+      src <- if (local_ok) path else oecd_irlt_default_url()
+      data.table::fread(src, nrows = 0)
+    },
+    error = function(e) e
+  )
+  if (inherits(hdr, "error")) {
+    return(list(
+      ok = FALSE,
+      level = "fail",
+      message = paste("OECD IRLT header read failed:", hdr$message)
+    ))
+  }
+  nm <- names(hdr)
+  need <- c(
+    "REF_AREA", "FREQ", "MEASURE", "UNIT_MEASURE",
+    "METHODOLOGY", "TIME_PERIOD", "OBS_VALUE"
+  )
+  missing <- setdiff(need, nm)
+  if (length(missing)) {
+    return(list(
+      ok = FALSE,
+      level = "fail",
+      message = paste(
+        "OECD IRLT CSV missing columns:",
+        paste(missing, collapse = ", ")
+      )
+    ))
+  }
+  src_lab <- if (local_ok) basename(path) else "OECD SDMX DF_FINMARK"
+  list(
+    ok = TRUE,
+    level = "info",
+    message = paste("OECD IRLT header OK:", src_lab)
+  )
+}
+
+#' OECD CTS: header of DF_CIT CSV; retrieve_code in {COMBINED, CENTRAL, SUB_CENTRAL}.
+probe_oecd_cit <- function(ctx) {
+  codes <- unique(stats::na.omit(as.character(ctx$plan$retrieve_code)))
+  codes <- toupper(trimws(codes[nzchar(codes)]))
+  bad <- setdiff(codes, oecd_cit_allowed_series())
+  if (length(bad)) {
+    return(list(
+      ok = FALSE,
+      level = "fail",
+      message = paste(
+        "OECD CIT retrieve_code must be COMBINED, CENTRAL, or SUB_CENTRAL. Bad:",
+        paste(bad, collapse = ", ")
+      )
+    ))
+  }
+
+  path <- ctx$path
+  local_ok <- !is.null(path) && nzchar(path) && file.exists(path)
+  hdr <- tryCatch(
+    {
+      src <- if (local_ok) path else oecd_cit_default_url()
+      data.table::fread(src, nrows = 0)
+    },
+    error = function(e) e
+  )
+  if (inherits(hdr, "error")) {
+    return(list(
+      ok = FALSE,
+      level = "fail",
+      message = paste("OECD CIT header read failed:", hdr$message)
+    ))
+  }
+  nm <- names(hdr)
+  need <- c("REF_AREA", "MEASURE", "TARGETING", "TIME_PERIOD", "OBS_VALUE")
+  missing <- setdiff(need, nm)
+  if (length(missing)) {
+    return(list(
+      ok = FALSE,
+      level = "fail",
+      message = paste(
+        "OECD CIT CSV missing columns:",
+        paste(missing, collapse = ", ")
+      )
+    ))
+  }
+  src_lab <- if (local_ok) basename(path) else "OECD SDMX DF_CIT"
+  list(
+    ok = TRUE,
+    level = "info",
+    message = paste("OECD CIT header OK:", src_lab)
+  )
+}
+
+#' Tax Foundation: header of final_data_long.csv; retrieve_code in {rate, gdp}.
+probe_taxfoundation <- function(ctx) {
+  codes <- unique(stats::na.omit(as.character(ctx$plan$retrieve_code)))
+  codes <- trimws(codes[nzchar(codes)])
+  bad <- setdiff(codes, taxfoundation_allowed_series())
+  if (length(bad)) {
+    return(list(
+      ok = FALSE,
+      level = "fail",
+      message = paste(
+        "Tax Foundation retrieve_code must be rate or gdp. Bad:",
+        paste(bad, collapse = ", ")
+      )
+    ))
+  }
+
+  path <- ctx$path
+  local_ok <- !is.null(path) && nzchar(path) && file.exists(path)
+  hdr <- tryCatch(
+    {
+      src <- if (local_ok) path else taxfoundation_default_url()
+      data.table::fread(src, nrows = 0)
+    },
+    error = function(e) e
+  )
+  if (inherits(hdr, "error")) {
+    return(list(
+      ok = FALSE,
+      level = "fail",
+      message = paste("Tax Foundation header read failed:", hdr$message)
+    ))
+  }
+  nm <- names(hdr)
+  need <- c("iso_2", "iso_3", "year", "rate")
+  missing <- setdiff(need, nm)
+  if (length(missing)) {
+    return(list(
+      ok = FALSE,
+      level = "fail",
+      message = paste(
+        "Tax Foundation CSV missing columns:",
+        paste(missing, collapse = ", ")
+      )
+    ))
+  }
+  src_lab <- if (local_ok) basename(path) else "GitHub final_data_long.csv"
+  list(
+    ok = TRUE,
+    level = "info",
+    message = paste("Tax Foundation header OK:", src_lab)
+  )
+}
+
 #' BIS debt API: `retrieve_code` is a CSV URL.
 probe_bis_debt_url <- function(ctx) {
   urls <- unique(stats::na.omit(ctx$plan$retrieve_code))
@@ -499,7 +661,8 @@ import_contracts <- list(
       impplan$active == 1 &
         impplan$source_name == "IMF" &
         impplan$retrieve_type == "API" &
-        impplan$source_frequency == "y"
+        impplan$source_frequency == "y" &
+        !(impplan$database_name %in% c("IMF.DM/FM", "IMF.FAD/FM"))
     },
     required_cols = c("iso2", "year", "value")
   ),
@@ -618,6 +781,22 @@ import_contracts <- list(
     col_pattern   = col_pattern_year_19_20
   ),
 
+  # --- IMF Fiscal Monitor (Datamapper) ---------------------------------------
+  imf_fm_datamapper = import_contract(
+    id         = "imf_fm_datamapper",
+    label      = "IMF Fiscal Monitor (Datamapper)",
+    kind       = "api",
+    code_block = "Import IMF Fiscal Monitor (Datamapper)",
+    match      = function(impplan) {
+      impplan$active == 1 &
+        impplan$source_name == "IMF" &
+        impplan$retrieve_type == "API" &
+        impplan$source_frequency == "y" &
+        impplan$database_name %in% c("IMF.DM/FM", "IMF.FAD/FM")
+    },
+    required_cols = c("iso2", "year", "value")
+  ),
+
   # --- ILOstat ---------------------------------------------------------------
   ilo = import_contract(
     id         = "ilo",
@@ -647,6 +826,64 @@ import_contracts <- list(
     },
     skip          = 0L,
     required_cols = c("date", "iso_code")
+  ),
+
+  # --- OECD Corporate Tax Statistics -------------------------------------------
+  oecd_cit = import_contract(
+    id         = "oecd_cit",
+    label      = "OECD corporate tax statistics",
+    kind       = "api",
+    code_block = "Import OECD corporate tax statistics",
+    match      = function(impplan) {
+      impplan$active == 1 &
+        impplan$source_name == "OECD" &
+        impplan$database_name == "CTS" &
+        impplan$retrieve_type %in% c("API", "file") &
+        impplan$source_frequency == "y"
+    },
+    file_name     = "oecd_cts_cit.csv",
+    required_cols = c("REF_AREA", "MEASURE", "TARGETING", "TIME_PERIOD", "OBS_VALUE"),
+    optional_cols = c("SECTOR", "Reference area", "Measure", "Targeting"),
+    probe         = probe_oecd_cit
+  ),
+
+  # --- OECD long-term interest rates -----------------------------------------
+  oecd_irlt = import_contract(
+    id         = "oecd_irlt",
+    label      = "OECD long-term interest rates",
+    kind       = "api",
+    code_block = "Import OECD long-term interest rates",
+    match      = function(impplan) {
+      impplan$active == 1 &
+        impplan$source_name == "OECD" &
+        impplan$database_name == "FINMARK" &
+        impplan$retrieve_type %in% c("API", "file") &
+        impplan$source_frequency == "m"
+    },
+    file_name     = "oecd_finmark_irlt.csv",
+    required_cols = c(
+      "REF_AREA", "FREQ", "MEASURE", "UNIT_MEASURE",
+      "METHODOLOGY", "TIME_PERIOD", "OBS_VALUE"
+    ),
+    optional_cols = c("Reference area", "Measure", "Frequency of observation"),
+    probe         = probe_oecd_irlt
+  ),
+
+  # --- Tax Foundation corporate tax rates ------------------------------------
+  taxfoundation = import_contract(
+    id         = "taxfoundation",
+    label      = "Tax Foundation corporate tax rates",
+    kind       = "api",
+    code_block = "Import Tax Foundation corporate tax rates",
+    match      = function(impplan) {
+      impplan$active == 1 &
+        impplan$source_name == "Tax Foundation" &
+        impplan$retrieve_type %in% c("API", "file") &
+        impplan$source_frequency == "y"
+    },
+    required_cols = c("iso_2", "iso_3", "year", "rate"),
+    optional_cols = c("gdp", "continent", "country"),
+    probe         = probe_taxfoundation
   ),
 
   # --- Our World in Data Chart API -------------------------------------------

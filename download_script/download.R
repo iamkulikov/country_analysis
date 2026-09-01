@@ -59,6 +59,27 @@ dest <- here("assets", "_DB", datafolder, "IDS_Excel.zip")
 download.file(url, dest)
 unzip(zipfile = dest, exdir = here("assets", "_DB", datafolder))
 
+### Download Tax Foundation worldwide corporate tax rates
+### https://github.com/TaxFoundation/worldwide-corporate-tax-rates
+url <- "https://raw.githubusercontent.com/TaxFoundation/worldwide-corporate-tax-rates/master/final_data/final_data_long.csv"
+dest <- here("assets", "_DB", datafolder, "final_data_long.csv")
+download.file(url, dest, mode = "wb")
+
+### Download OECD Corporate Tax Statistics (statutory CIT rates)
+### https://www.oecd.org/en/data/datasets/corporate-income-tax-rates-database.html
+url <- "https://sdmx.oecd.org/public/rest/data/OECD.CTP.TPS,DSD_TAX_CIT@DF_CIT,1.0/?format=csvfilewithlabels"
+dest <- here("assets", "_DB", datafolder, "oecd_cts_cit.csv")
+download.file(url, dest, mode = "wb")
+
+### Download OECD long-term interest rates (10Y government bonds, monthly)
+### https://data-explorer.oecd.org/ dataflow DSD_STES@DF_FINMARK measure IRLT
+url <- paste0(
+  "https://sdmx.oecd.org/public/rest/data/OECD.SDD.STES,",
+  "DSD_STES@DF_FINMARK/.M.IRLT.PA.....?format=csvfilewithlabels"
+)
+dest <- here("assets", "_DB", datafolder, "oecd_finmark_irlt.csv")
+download.file(url, dest, mode = "wb")
+
 ### Download COVID data from Ourworldindata (don't need to update any more)
 ### or manually from here https://github.com/owid/covid-19-data/blob/master/public/data/owid-covid-data.csv
 # url <- "https://covid.ourworldindata.org/data/owid-covid-data.csv"

@@ -12,8 +12,13 @@ for (library_name in library_names) {
 ## ------ Set working directory and import custom tools
 here::i_am("download_script/import.R")
 source(here("download_script","imf_tool.R"))
+source(here("download_script","imf_datamapper_tool.R"))
 source(here("download_script","owid_tool.R"))
 source(here("download_script","snaama_tool.R"))
+source(here("download_script","taxfoundation_tool.R"))
+source(here("download_script","oecd_cit_tool.R"))
+source(here("download_script","oecd_irlt_tool.R"))
+source(here("download_script","world_tool.R"))
 
 ## ------ Set parameters
 # d_container_start <- as.Date("2019-01-01")
@@ -764,7 +769,8 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d, imppa
     try({
       
       imfy_impplan <- impplan |> filter(active==1, source_name=="IMF", retrieve_type=="API",
-                                         source_frequency=="y")
+                                         source_frequency=="y",
+                                         !database_name %in% c("IMF.DM/FM", "IMF.FAD/FM"))
       imfy_dbnames <- imfy_impplan$database_name
       imfy_names <- imfy_impplan$indicator_code
       imfy_codes <- imfy_impplan$retrieve_code
@@ -1046,6 +1052,60 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d, imppa
       }
     
     })
+
+    ##### Import IMF Fiscal Monitor (Datamapper)
+    try({
+
+      fm_dm_dbs <- c("IMF.DM/FM", "IMF.FAD/FM")
+      fm_dm_impplan <- impplan |> dplyr::filter(
+        active == 1L,
+        source_name == "IMF",
+        retrieve_type == "API",
+        source_frequency == "y",
+        database_name %in% fm_dm_dbs
+      )
+
+      if (nrow(fm_dm_impplan) > 0L) {
+
+        message("IMF-FM Datamapper")
+
+        for (i in seq_len(nrow(fm_dm_impplan))) {
+
+          ind_code <- fm_dm_impplan$indicator_code[i]
+          retrieve_code <- fm_dm_impplan$retrieve_code[i]
+
+          try({
+            message(retrieve_code)
+
+            new_data <- imf_datamapper_tool(
+              code = retrieve_code,
+              start = year_first,
+              end = year_final
+            ) |>
+              dplyr::rename(country_id = iso2, !!ind_code := value)
+
+            n_countries <- dplyr::n_distinct(
+              new_data$country_id[!is.na(new_data[[ind_code]])]
+            )
+            if (n_countries <= 1L) {
+              warning(glue::glue(
+                "IMF Datamapper '{retrieve_code}' -> '{ind_code}': ",
+                "only {n_countries} country with data; expected country panel."
+              ), call. = FALSE)
+            }
+
+            extdata_y <- extdata_y |>
+              dplyr::left_join(
+                new_data,
+                by = c("country_id", "year"),
+                suffix = c("", "_old")
+              )
+            message("+")
+          })
+        }
+      }
+
+    })
       
     ##### Import ILOstat data
     try({
@@ -1260,6 +1320,152 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d, imppa
 
     })
       
+    ##### Import Tax Foundation corporate tax rates
+    try({
+
+      tf_impplan <- impplan |> filter(
+        active == 1,
+        source_name == "Tax Foundation",
+        retrieve_type %in% c("API", "file"),
+        source_frequency == "y"
+      )
+      tf_names <- tf_impplan$indicator_code
+      tf_codes <- as.character(tf_impplan$retrieve_code)
+
+      if (length(tf_names) > 0 && all(!is.na(tf_names))) {
+
+        message("Tax Foundation corporate tax rates")
+        tf_local <- unique(stats::na.omit(as.character(tf_impplan$file_name)))
+        tf_local <- tf_local[nzchar(tf_local)]
+        tf_path <- if (length(tf_local)) {
+          cand <- here("assets", "_DB", "_extsources", tf_local[[1]])
+          if (file.exists(cand)) cand else NULL
+        } else {
+          NULL
+        }
+        tf_long <- taxfoundation_read_long(path = tf_path)
+
+        for (i in seq_along(tf_names)) {
+          tf_data <- taxfoundation_to_series(
+            tf_long,
+            retrieve_code = tf_codes[[i]],
+            start = year_first,
+            end = year_final
+          ) |>
+            dplyr::rename(!!tf_names[[i]] := value)
+
+          extdata_y <- extdata_y |>
+            dplyr::left_join(
+              tf_data,
+              by = dplyr::join_by(country_id, year),
+              suffix = c("", "_old"),
+              relationship = "many-to-one"
+            )
+          message(tf_names[[i]])
+          message("+")
+        }
+      }
+
+    })
+
+    ##### Import OECD corporate tax statistics
+    try({
+
+      oecd_impplan <- impplan |> filter(
+        active == 1,
+        source_name == "OECD",
+        database_name == "CTS",
+        retrieve_type %in% c("API", "file"),
+        source_frequency == "y"
+      )
+      oecd_names <- oecd_impplan$indicator_code
+      oecd_codes <- as.character(oecd_impplan$retrieve_code)
+
+      if (length(oecd_names) > 0 && all(!is.na(oecd_names))) {
+
+        message("OECD corporate tax statistics")
+        oecd_local <- unique(stats::na.omit(as.character(oecd_impplan$file_name)))
+        oecd_local <- oecd_local[nzchar(oecd_local)]
+        oecd_path <- if (length(oecd_local)) {
+          cand <- here("assets", "_DB", "_extsources", oecd_local[[1]])
+          if (file.exists(cand)) cand else NULL
+        } else {
+          NULL
+        }
+        oecd_wide <- oecd_cit_read_wide(path = oecd_path)
+
+        for (i in seq_along(oecd_names)) {
+          oecd_data <- oecd_cit_to_series(
+            oecd_wide,
+            retrieve_code = oecd_codes[[i]],
+            start = year_first,
+            end = year_final
+          ) |>
+            dplyr::rename(!!oecd_names[[i]] := value)
+
+          extdata_y <- extdata_y |>
+            dplyr::left_join(
+              oecd_data,
+              by = dplyr::join_by(country_id, year),
+              suffix = c("", "_old"),
+              relationship = "many-to-one"
+            )
+          message(oecd_names[[i]])
+          message("+")
+        }
+      }
+
+    })
+
+    ##### Import OECD long-term interest rates
+    try({
+
+      oecd_irlt_impplan <- impplan |> filter(
+        active == 1,
+        source_name == "OECD",
+        database_name == "FINMARK",
+        retrieve_type %in% c("API", "file"),
+        source_frequency == "m"
+      )
+      oecd_irlt_names <- oecd_irlt_impplan$indicator_code
+      oecd_irlt_codes <- as.character(oecd_irlt_impplan$retrieve_code)
+
+      if (length(oecd_irlt_names) > 0 && all(!is.na(oecd_irlt_names))) {
+
+        message("OECD long-term interest rates")
+        oecd_irlt_local <- unique(stats::na.omit(as.character(oecd_irlt_impplan$file_name)))
+        oecd_irlt_local <- oecd_irlt_local[nzchar(oecd_irlt_local)]
+        oecd_irlt_path <- if (length(oecd_irlt_local)) {
+          cand <- here("assets", "_DB", "_extsources", oecd_irlt_local[[1]])
+          if (file.exists(cand)) cand else NULL
+        } else {
+          NULL
+        }
+        oecd_irlt_wide <- oecd_irlt_read_wide(path = oecd_irlt_path)
+
+        for (i in seq_along(oecd_irlt_names)) {
+          oecd_irlt_data <- oecd_irlt_to_series(
+            oecd_irlt_wide,
+            retrieve_code = oecd_irlt_codes[[i]],
+            start = year_first,
+            end = year_final
+          ) |>
+            dplyr::rename(!!oecd_irlt_names[[i]] := value)
+
+          extdata_m <- extdata_m |>
+            dplyr::left_join(
+              oecd_irlt_data,
+              by = dplyr::join_by(country_id, year, month),
+              suffix = c("", "_old"),
+              relationship = "many-to-one"
+            )
+          message(oecd_irlt_names[[i]])
+          message("+")
+        }
+      }
+
+    })
+
     ##### Import UN HDR data
     try({
         

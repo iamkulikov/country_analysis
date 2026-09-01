@@ -21,8 +21,13 @@ suppressPackageStartupMessages({
 
 source(here("download_script", "import_contracts.R"))
 source(here("download_script", "imf_tool.R"))
+source(here("download_script", "imf_datamapper_tool.R"))
 source(here("download_script", "owid_tool.R"))
 source(here("download_script", "snaama_tool.R"))
+source(here("download_script", "taxfoundation_tool.R"))
+source(here("download_script", "oecd_cit_tool.R"))
+source(here("download_script", "oecd_irlt_tool.R"))
+source(here("download_script", "world_tool.R"))
 
 # WDI / ILO are only needed for online probes; load quietly when available
 .has_pkg <- function(pkg) requireNamespace(pkg, quietly = TRUE)
@@ -616,12 +621,39 @@ check_codes_level <- function(contract, plan, paths, deep = FALSE) {
 
 run_registry_probe <- function(contract, plan, paths, local_fnames = NULL, online = TRUE) {
   if (is.null(contract$probe)) return(empty_check_report())
-  # Network registry probes (BIS debt CSV URL) only when online
+  # Network registry probes (BIS debt / Tax Foundation URL) only when online
   if (identical(contract$id, "bis_debt") && !isTRUE(online)) {
     return(check_row(
       contract$id, contract$label, "probe", "skip",
       "online = FALSE; BIS debt URL probe skipped"
     ))
+  }
+  if (identical(contract$id, "taxfoundation") && !isTRUE(online)) {
+    local_path <- if (length(paths)) paths[[1]] else NULL
+    if (is.null(local_path) || !file.exists(local_path)) {
+      return(check_row(
+        contract$id, contract$label, "probe", "skip",
+        "online = FALSE; Tax Foundation URL probe skipped"
+      ))
+    }
+  }
+  if (identical(contract$id, "oecd_cit") && !isTRUE(online)) {
+    local_path <- if (length(paths)) paths[[1]] else NULL
+    if (is.null(local_path) || !file.exists(local_path)) {
+      return(check_row(
+        contract$id, contract$label, "probe", "skip",
+        "online = FALSE; OECD CIT URL probe skipped"
+      ))
+    }
+  }
+  if (identical(contract$id, "oecd_irlt") && !isTRUE(online)) {
+    local_path <- if (length(paths)) paths[[1]] else NULL
+    if (is.null(local_path) || !file.exists(local_path)) {
+      return(check_row(
+        contract$id, contract$label, "probe", "skip",
+        "online = FALSE; OECD IRLT URL probe skipped"
+      ))
+    }
   }
   ctx <- list(
     plan = plan,
@@ -748,6 +780,34 @@ probe_imf_sdmx <- function(plan, freq = "y") {
   for (i in seq_len(nrow(by_db))) {
     db <- by_db$database_name[[i]]
     code <- by_db$retrieve_code[[i]]
+    if (grepl("IMF\\.FAD/WORLD", gsub(":", "/", db), ignore.case = TRUE)) {
+      df <- tryCatch(
+        worldTool(code, start = 2018, end = 2023),
+        error = function(e) e
+      )
+      if (inherits(df, "error")) {
+        msgs_fail <- c(
+          msgs_fail,
+          sprintf("%s / %s: %s", db, code, df$message)
+        )
+        next
+      }
+      need <- c("iso2", "year", "value")
+      miss <- setdiff(need, names(df))
+      if (length(miss)) {
+        msgs_fail <- c(
+          msgs_fail,
+          sprintf("%s missing cols: %s", db, paste(miss, collapse = ", "))
+        )
+        next
+      }
+      msgs_ok <- c(
+        msgs_ok,
+        sprintf("%s OK (%d rows, key=WoRLD)", db, nrow(df))
+      )
+      next
+    }
+
     url <- tryCatch(
       imf_build_url(database = db, code = code, freq = freq),
       error = function(e) e
@@ -926,6 +986,76 @@ probe_ilo <- function(plan) {
   list(ok = TRUE, level = "info", message = sprintf("All %d ILO code(s) present in toc", length(codes)))
 }
 
+#' IMF Datamapper: indicator in catalog and country panel with mapped ISO2.
+probe_imf_datamapper <- function(plan) {
+  codes <- unique(stats::na.omit(as.character(plan$retrieve_code)))
+  codes <- codes[nzchar(codes)]
+  if (!length(codes)) {
+    return(list(ok = FALSE, level = "fail", message = "No Datamapper retrieve_code in plan"))
+  }
+
+  catalog <- tryCatch(
+    imf_datamapper_list_indicators(),
+    error = function(e) e
+  )
+  if (inherits(catalog, "error")) {
+    return(list(
+      ok = FALSE, level = "fail",
+      message = paste("Datamapper indicators catalog failed:", catalog$message)
+    ))
+  }
+
+  msgs_ok <- character()
+  msgs_fail <- character()
+
+  for (code in codes) {
+    if (!(code %in% catalog)) {
+      msgs_fail <- c(msgs_fail, sprintf("%s not in Datamapper indicators catalog", code))
+      next
+    }
+
+    got <- tryCatch(
+      imf_datamapper_tool(code, start = 2020L, end = 2024L),
+      error = function(e) e
+    )
+    if (inherits(got, "error")) {
+      msgs_fail <- c(msgs_fail, sprintf("%s fetch: %s", code, got$message))
+      next
+    }
+
+    n_countries <- dplyr::n_distinct(got$iso2)
+    if (n_countries <= 1L) {
+      msgs_fail <- c(
+        msgs_fail,
+        sprintf("%s: only %d mapped ISO2 country(ies)", code, n_countries)
+      )
+      next
+    }
+
+    msgs_ok <- c(
+      msgs_ok,
+      sprintf("%s OK (%d countries, %d rows)", code, n_countries, nrow(got))
+    )
+  }
+
+  if (length(msgs_fail) && !length(msgs_ok)) {
+    return(list(
+      ok = FALSE, level = "fail",
+      message = paste(msgs_fail, collapse = "; ")
+    ))
+  }
+  if (length(msgs_fail) && length(msgs_ok)) {
+    return(list(
+      ok = TRUE, level = "warn",
+      message = paste(
+        paste(msgs_fail, collapse = "; "),
+        "| OK:", paste(msgs_ok, collapse = "; ")
+      )
+    ))
+  }
+  list(ok = TRUE, level = "info", message = paste(msgs_ok, collapse = "; "))
+}
+
 #' Dispatch online API probes for a contract family (one call per family).
 run_api_probes <- function(contract, plan, online = TRUE) {
   id <- contract$id
@@ -943,8 +1073,21 @@ run_api_probes <- function(contract, plan, online = TRUE) {
     "imf_y" = probe_imf_sdmx(plan, freq = "y"),
     "imf_q" = probe_imf_sdmx(plan, freq = "q"),
     "imf_m" = probe_imf_sdmx(plan, freq = "m"),
+    "imf_fm_datamapper" = probe_imf_datamapper(plan),
     "ilo" = probe_ilo(plan),
     "owid_api" = probe_owid(plan),
+    "taxfoundation" = {
+      out <- probe_taxfoundation(list(plan = plan, path = NULL, contract = contract))
+      out
+    },
+    "oecd_cit" = {
+      out <- probe_oecd_cit(list(plan = plan, path = NULL, contract = contract))
+      out
+    },
+    "oecd_irlt" = {
+      out <- probe_oecd_irlt(list(plan = plan, path = NULL, contract = contract))
+      out
+    },
     "bis_debt" = {
       # Same check as registry probe_bis_debt_url (CSV header via URL)
       out <- probe_bis_debt_url(list(plan = plan, path = NULL, contract = contract))
@@ -991,6 +1134,18 @@ check_one_contract <- function(contract,
   api_rows <- run_api_probes(contract, plan, online = online)
   if (identical(contract$id, "bis_debt") && isTRUE(online)) {
     # Registry probe already hit the URL; keep a single api-level row from that result
+    api_rows <- probe_rows |> dplyr::mutate(level = "api")
+    probe_rows <- empty_check_report()
+  }
+  if (identical(contract$id, "taxfoundation") && isTRUE(online)) {
+    api_rows <- probe_rows |> dplyr::mutate(level = "api")
+    probe_rows <- empty_check_report()
+  }
+  if (identical(contract$id, "oecd_cit") && isTRUE(online)) {
+    api_rows <- probe_rows |> dplyr::mutate(level = "api")
+    probe_rows <- empty_check_report()
+  }
+  if (identical(contract$id, "oecd_irlt") && isTRUE(online)) {
     api_rows <- probe_rows |> dplyr::mutate(level = "api")
     probe_rows <- empty_check_report()
   }
@@ -1207,7 +1362,7 @@ writeImportCheckReport <- function(details,
 #' Check import-structure contracts against files / APIs.
 #'
 #' @param param_fname Path to 0_database_params.xlsx (or test twin).
-#' @param online Run network probes (WDI, IMF, ILO, BIS debt URL).
+#' @param online Run network probes (WDI, IMF, ILO, BIS debt URL, Tax Foundation).
 #' @param deep Read full columns for `codes` value checks.
 #' @param only Optional character vector of contract ids to run.
 #' @param report_path If not NULL, write Excel report via writeImportCheckReport().

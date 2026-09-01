@@ -15,6 +15,14 @@ imfTool <- function(database, code, freq,
   # deps
   requireNamespace("dplyr", quietly = TRUE)
   requireNamespace("rlang", quietly = TRUE)
+
+  db_norm <- gsub(":", "/", trimws(as.character(database)))
+  if (grepl("IMF\\.FAD/WORLD", db_norm, ignore.case = TRUE)) {
+    if (!exists("worldTool", mode = "function")) {
+      source(here::here("download_script", "world_tool.R"), local = FALSE)
+    }
+    return(worldTool(code, start = start, end = end))
+  }
   
   normalize_units <- rlang::arg_match(normalize_units)
   

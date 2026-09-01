@@ -1,3 +1,5 @@
+### Graph plotter app ###
+
 # Dependencies: see DEPLOY.md (Connect Cloud allowlist vs self-hosted manifest).
 # Cloud-minimal plotting_libs — legacy graph_plotter packages removed (reshape2, etc.).
 

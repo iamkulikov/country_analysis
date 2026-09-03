@@ -1,5 +1,29 @@
 ####### Function to get country's codes and the codes of its peers
 
+load_iso_country_codes <- function() {
+  if (exists("safe_iso3_to_iso2", mode = "function", inherits = FALSE)) {
+    return(invisible(NULL))
+  }
+  candidates <- character(0)
+  if (requireNamespace("here", quietly = TRUE)) {
+    candidates <- c(
+      candidates,
+      here::here("iso_country_codes.R"),
+      here::here("download_script", "iso_country_codes.R"),
+      here::here("..", "..", "download_script", "iso_country_codes.R")
+    )
+  }
+  candidates <- c(candidates, "iso_country_codes.R")
+  for (p in unique(candidates[nzchar(candidates)])) {
+    if (file.exists(p)) {
+      source(p, local = FALSE)
+      return(invisible(NULL))
+    }
+  }
+  rlang::abort("iso_country_codes.R not found.")
+}
+load_iso_country_codes()
+
 assert_packages <- function(pkgs) {
   missing <- pkgs[!vapply(pkgs, requireNamespace, logical(1), quietly = TRUE)]
   if (length(missing) > 0) {
@@ -7,36 +31,6 @@ assert_packages <- function(pkgs) {
       paste0("Missing required packages: ", paste(missing, collapse = ", "), ".")
     )
   }
-}
-
-normalize_iso3_strict <- function(x, keep_unknown = TRUE) {
-  assert_packages(c("stringr", "countrycode"))
-  
-  x0 <- x |> as.character() |> stringr::str_trim() |> stringr::str_to_upper()
-  x0 <- dplyr::if_else(stringr::str_detect(x0, "^[A-Z]{3}$"), x0, NA_character_)
-  
-  iso_ok <- x0 %in% countrycode::codelist$iso3c
-  
-  if (isTRUE(keep_unknown)) {
-    # Keep 3-letter codes even if not in ISO3166-1 (e.g., CHI for Channel Islands)
-    return(x0)
-  }
-  
-  dplyr::if_else(iso_ok, x0, NA_character_)
-}
-
-safe_iso3_to_iso2 <- function(iso3) {
-  iso3 <- normalize_iso3_strict(iso3)
-  iso3 <- iso3[!is.na(iso3) & iso3 != ""]
-  
-  if (length(iso3) == 0) {
-    return(character(0))
-  }
-  
-  iso2 <- countrycode::countrycode(iso3, "iso3c", "iso2c", warn = FALSE)
-  iso2[iso3 == "XKX"] <- "XK"
-  
-  iso2
 }
 
 coerce_01 <- function(x) {
@@ -48,13 +42,6 @@ coerce_01 <- function(x) {
     TRUE ~ suppressWarnings(as.numeric(x_chr))
   )
   out
-}
-
-normalize_chr_vec <- function(x) {
-  x <- as.character(x %||% character(0)) |>
-    stringr::str_trim()
-  x <- x[!is.na(x) & x != ""]
-  unique(x)
 }
 
 getPeersCodes <- function(country_iso3c, peers_fname) {
@@ -205,7 +192,7 @@ getPeersCodes <- function(country_iso3c, peers_fname) {
   peers_default_iso3c <- peers_default_iso3c[!is.na(peers_default_iso3c) & peers_default_iso3c != ""]
   peers_default_iso3c <- setdiff(peers_default_iso3c, country_iso3c)
   
-  peers_default_iso2c <- safe_iso3_to_iso2(peers_default_iso3c)
+  peers_default_iso2c <- normalize_chr_vec(safe_iso3_to_iso2(peers_default_iso3c))
   
   # Neighbours peers: same region from peers matrix
   peers_neighbours_iso3c <- peers_df |>
@@ -215,7 +202,7 @@ getPeersCodes <- function(country_iso3c, peers_fname) {
   
   peers_neighbours_iso3c <- peers_neighbours_iso3c[!is.na(peers_neighbours_iso3c) & peers_neighbours_iso3c != ""]
   peers_neighbours_iso3c <- setdiff(peers_neighbours_iso3c, country_iso3c)
-  peers_neighbours_iso2c <- safe_iso3_to_iso2(peers_neighbours_iso3c)
+  peers_neighbours_iso2c <- normalize_chr_vec(safe_iso3_to_iso2(peers_neighbours_iso3c))
   
   regions_out <- regions_tbl |>
     dplyr::select(-c(country_name)) |>
@@ -855,17 +842,21 @@ fixPeers <- function(country_info, params, data, warn_invalid = TRUE) {
   }
   
   clean_iso2 <- function(x, self_iso2) {
+    x <- x[!is.na(x)]
+    if (length(x) == 0) {
+      return(character(0))
+    }
     x <- as.character(x)
     x <- stringr::str_trim(x)
-    x <- x[!is.na(x) & x != ""]
+    x <- x[x != ""]
     x <- unique(x)
     x <- x[x != self_iso2]
     x
   }
   
   # ---- Basic guards ----------------------------------------------------
-  self_iso2 <- country_info$country_iso2c %||% NA_character_
-  self_iso2 <- stringr::str_trim(as.character(self_iso2))
+  self_iso2 <- normalize_chr_vec(country_info$country_iso2c %||% character(0))
+  self_iso2 <- if (length(self_iso2) >= 1L) self_iso2[[1]] else NA_character_
   
   graph_type <- params$graph_type %||% NA_character_
   graph_type <- stringr::str_trim(as.character(graph_type))
@@ -2301,10 +2292,15 @@ apply_x_axis_policy <- function(p, params, style, plot_data = NULL, country_iso2
       keep_vec <- keep_vec[!is.na(keep_vec) & keep_vec != ""]
       
       p <- p +
-        ggplot2::scale_x_discrete(labels = function(x) {
-          x_chr <- as.character(x)
-          ifelse(x_chr %in% keep_vec, x_chr, "")
-        })
+        ggplot2::scale_x_discrete(
+          labels = function(x) {
+            x_chr <- as.character(x)
+            ifelse(x_chr %in% keep_vec, x_chr, "")
+          },
+          na.translate = FALSE
+        )
+    } else {
+      p <- p + ggplot2::scale_x_discrete(na.translate = FALSE)
     }
     
     p <- p +
@@ -2563,11 +2559,15 @@ fillGraphPlan <- function(parsedrow, data, country_iso2c, peers_iso2c, warn_inva
   params$indicators <- inds
   
   # Country / peers (runtime representation)
-  params$country_iso2c <- as.character(country_iso2c %||% NA_character_)
-  peers_iso2c <- as.character(peers_iso2c %||% character(0))
-  peers_iso2c <- stringr::str_trim(peers_iso2c)
-  peers_iso2c <- peers_iso2c[!is.na(peers_iso2c) & peers_iso2c != ""]
-  params$peers_iso2c <- unique(peers_iso2c)
+  params$country_iso2c <- {
+    c2 <- country_iso2c %||% NA_character_
+    if (length(c2) >= 1L && !is.na(c2[[1]]) && nzchar(stringr::str_trim(as.character(c2[[1]])))) {
+      stringr::str_trim(as.character(c2[[1]]))
+    } else {
+      NA_character_
+    }
+  }
+  params$peers_iso2c <- normalize_chr_vec(peers_iso2c)
   
   # Pull dict and extdata for requested frequency
   dict <- data$dict %||% tibble::tibble()

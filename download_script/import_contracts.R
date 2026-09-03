@@ -413,6 +413,66 @@ probe_oecd_cit <- function(ctx) {
   )
 }
 
+#' OECD NASEC Table 0200: header of DF_TABLE12 CSV; retrieve_code SECTOR.AE.TX.UNIT.
+probe_oecd_nasec <- function(ctx) {
+  codes <- unique(stats::na.omit(as.character(ctx$plan$retrieve_code)))
+  codes <- trimws(codes[nzchar(codes)])
+  bad <- character()
+  for (code in codes) {
+    parsed <- tryCatch(oecd_nasec_parse_code(code), error = function(e) e)
+    if (inherits(parsed, "error")) {
+      bad <- c(bad, code)
+    }
+  }
+  if (length(bad)) {
+    return(list(
+      ok = FALSE,
+      level = "fail",
+      message = paste(
+        "OECD NASEC retrieve_code must be SECTOR.ACCOUNTING_ENTRY.TRANSACTION.UNIT_MEASURE",
+        "(e.g. S13.D.D41.XDC). Bad:",
+        paste(bad, collapse = ", ")
+      )
+    ))
+  }
+
+  path <- ctx$path
+  local_ok <- !is.null(path) && nzchar(path) && file.exists(path)
+  hdr <- tryCatch(
+    {
+      src <- if (local_ok) path else oecd_nasec_default_url()
+      data.table::fread(src, nrows = 0)
+    },
+    error = function(e) e
+  )
+  if (inherits(hdr, "error")) {
+    return(list(
+      ok = FALSE,
+      level = "fail",
+      message = paste("OECD NASEC header read failed:", hdr$message)
+    ))
+  }
+  nm <- names(hdr)
+  need <- oecd_nasec_required_cols()
+  missing <- setdiff(need, nm)
+  if (length(missing)) {
+    return(list(
+      ok = FALSE,
+      level = "fail",
+      message = paste(
+        "OECD NASEC CSV missing columns:",
+        paste(missing, collapse = ", ")
+      )
+    ))
+  }
+  src_lab <- if (local_ok) basename(path) else "OECD SDMX DF_TABLE12"
+  list(
+    ok = TRUE,
+    level = "info",
+    message = paste("OECD NASEC header OK:", src_lab)
+  )
+}
+
 #' Tax Foundation: header of final_data_long.csv; retrieve_code in {rate, gdp}.
 probe_taxfoundation <- function(ctx) {
   codes <- unique(stats::na.omit(as.character(ctx$plan$retrieve_code)))
@@ -867,6 +927,33 @@ import_contracts <- list(
     ),
     optional_cols = c("Reference area", "Measure", "Frequency of observation"),
     probe         = probe_oecd_irlt
+  ),
+
+  # --- OECD NASEC Table 0200 -------------------------------------------------
+  oecd_nasec = import_contract(
+    id         = "oecd_nasec",
+    label      = "OECD NASEC Table 0200",
+    kind       = "api",
+    code_block = "Import OECD NASEC Table 0200",
+    match      = function(impplan) {
+      impplan$active == 1 &
+        impplan$source_name == "OECD" &
+        impplan$database_name == "NASEC" &
+        impplan$retrieve_type %in% c("API", "file") &
+        impplan$source_frequency == "y"
+    },
+    file_name     = "oecd_nasec_table12.csv",
+    required_cols = c(
+      "REF_AREA", "FREQ", "SECTOR", "COUNTERPART_SECTOR", "ACCOUNTING_ENTRY",
+      "TRANSACTION", "INSTR_ASSET", "EXPENDITURE", "UNIT_MEASURE", "VALUATION",
+      "PRICE_BASE", "TRANSFORMATION", "TABLE_IDENTIFIER", "TIME_PERIOD",
+      "OBS_VALUE", "UNIT_MULT"
+    ),
+    optional_cols = c(
+      "Reference area", "Institutional sector", "Accounting entry",
+      "Transaction", "Unit of measure", "Currency"
+    ),
+    probe         = probe_oecd_nasec
   ),
 
   # --- Tax Foundation corporate tax rates ------------------------------------

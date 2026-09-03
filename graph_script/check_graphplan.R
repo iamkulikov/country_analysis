@@ -557,8 +557,7 @@ checkPeers <- function(graphplan, peer_groups, dict, warn_invalid = TRUE) {
     valid_iso2 <- as.character(peer_groups$country_iso2c)
   }
   valid_iso2 <- valid_iso2 |>
-    (\(x) x[!is.na(x) & x != ""])() |>
-    stringr::str_trim() |>
+    normalize_chr_vec() |>
     toupper() |>
     unique()
   

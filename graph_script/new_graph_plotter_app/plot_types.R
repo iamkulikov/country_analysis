@@ -777,16 +777,14 @@ scatterCountryComparison <- function(data,
   time_fix <- suppressWarnings(as.numeric(time_fix))
   
   # Normalize peers
-  peers_iso2c <- as.character(peers_iso2c %||% character(0)) |>
-    stringr::str_trim()
-  peers_iso2c <- peers_iso2c[!is.na(peers_iso2c) & peers_iso2c != ""]
-  peers_iso2c <- unique(peers_iso2c)
+  peers_iso2c <- normalize_chr_vec(peers_iso2c)
   
   all_flag <- as.integer(params$all %||% 0L)
   
   # ---- Prepare data at time_fix ---------------------------------------
   df0 <- tibble::as_tibble(ext) |>
     dplyr::filter(.data$time == time_fix) |>
+    dplyr::filter(!is.na(.data$country_id), .data$country_id != "") |>
     dplyr::select(dplyr::any_of(c("country", "country_id", "year")), dplyr::all_of(c(x_ind, y_ind)))
   
   if (nrow(df0) == 0) {
@@ -821,7 +819,7 @@ scatterCountryComparison <- function(data,
   # Apply all/peers filtering
   if (all_flag != 1L) {
     df <- df |>
-      dplyr::filter(.data$country_id %in% unique(c(country_iso2c, peers_iso2c)))
+      dplyr::filter(.data$country_id %in% normalize_chr_vec(c(country_iso2c, peers_iso2c)))
   }
   
   if (nrow(df) == 0) {
@@ -1036,12 +1034,6 @@ scatterDynamic <- function(data,
     if (isTRUE(warn_invalid) && is_true01(params$active %||% 1L)) {
       rlang::warn(paste0("scatterDynamic: ", msg))
     }
-  }
-  
-  normalize_chr_vec <- function(x) {
-    x <- as.character(x %||% character(0)) |> stringr::str_trim()
-    x <- x[!is.na(x) & x != ""]
-    unique(x)
   }
   
   apply_log10_plotspace <- function(x, do_log) {
@@ -2007,13 +1999,6 @@ barCountryComparison <- function(data,
     }
   }
   
-  normalize_chr_vec <- function(x) {
-    x <- as.character(x %||% character(0)) |>
-      stringr::str_trim()
-    x <- x[!is.na(x) & x != ""]
-    unique(x)
-  }
-  
   compute_sec_axis_spec <- function(indicators, indicators_sec_raw, coeff) {
     indicators_sec_raw <- normalize_chr_vec(indicators_sec_raw)
     indicators_sec <- intersect(indicators_sec_raw, indicators)
@@ -2161,6 +2146,7 @@ barCountryComparison <- function(data,
   # ---- Long data at time_fix ------------------------------------------
   df0 <- tibble::as_tibble(ext) |>
     dplyr::filter(.data$time == time_fix) |>
+    dplyr::filter(!is.na(.data$country_id), .data$country_id != "") |>
     dplyr::select(dplyr::any_of(c("country", "country_id", "year", "quarter", "month", "time")),
                   dplyr::all_of(indicators)) |>
     tidyr::pivot_longer(
@@ -2213,7 +2199,7 @@ barCountryComparison <- function(data,
   # ---- Country filtering (all vs peers+country) -------------------------
   if (all_flag != 1L) {
     df <- df |>
-      dplyr::filter(.data$country_id %in% unique(c(country_iso2c, peers_iso2c)))
+      dplyr::filter(.data$country_id %in% normalize_chr_vec(c(country_iso2c, peers_iso2c)))
   }
   
   if (nrow(df) == 0) {
@@ -2576,12 +2562,6 @@ barYearComparison <- function(data,
     }
   }
   
-  normalize_chr_vec <- function(x) {
-    x <- as.character(x %||% character(0)) |> stringr::str_trim()
-    x <- x[!is.na(x) & x != ""]
-    unique(x)
-  }
-  
   normalize_int_vec <- function(x) {
     # robust to numeric / character / factors / already-int vectors
     if (is.character(x) && length(x) == 1L) {
@@ -2848,12 +2828,6 @@ linesIndicatorComparison <- function(data,
     if (isTRUE(warn_invalid) && is_true01(params$active %||% 1L)) {
       rlang::warn(paste0("linesIndicatorComparison: ", msg))
     }
-  }
-  
-  normalize_chr_vec <- function(x) {
-    x <- as.character(x %||% character(0)) |> stringr::str_trim()
-    x <- x[!is.na(x) & x != ""]
-    unique(x)
   }
   
   # Build breaks in "time" space, but labels from extdata calendar cols (robust to m/q tokens)
@@ -3310,12 +3284,6 @@ linesCountryComparison <- function(data,
     }
   }
   
-  normalize_chr_vec <- function(x) {
-    x <- as.character(x %||% character(0)) |> stringr::str_trim()
-    x <- x[!is.na(x) & x != ""]
-    unique(x)
-  }
-  
   build_time_breaks_labels <- function(ext_subset, params, freq) {
     time_start <- suppressWarnings(as.numeric(params$time_start %||% NA_real_))
     time_end   <- suppressWarnings(as.numeric(params$time_end %||% NA_real_))
@@ -3377,8 +3345,7 @@ linesCountryComparison <- function(data,
   peers_vec <- normalize_chr_vec(peers_vec)
   
   # deterministic country order: target first, then peers (excluding duplicates)
-  country_set <- unique(c(country_id, peers_vec))
-  country_set <- country_set[!is.na(country_set) & country_set != ""]
+  country_set <- normalize_chr_vec(c(country_id, peers_vec))
   
   # ---- logging ---------------------------------------------------------
   if (isTRUE(verbose)) {
@@ -3883,12 +3850,6 @@ densityFix <- function(data, graph_params,
     }
   }
   
-  normalize_chr_vec <- function(x) {
-    x <- as.character(x %||% character(0)) |> stringr::str_trim()
-    x <- x[!is.na(x) & x != ""]
-    unique(x)
-  }
-  
   # ---- logging ---------------------------------------------------------
   if (isTRUE(verbose)) {
     nm <- params$graph_name %||% NA_character_
@@ -3906,7 +3867,7 @@ densityFix <- function(data, graph_params,
   # deterministic: main first, then peers (unique)
   peers_vec <- setdiff(peers_vec, country_id)
   country_set <- c(country_id, peers_vec)
-  country_set <- country_set[!is.na(country_set) & country_set != ""]
+  country_set <- normalize_chr_vec(country_set)
   
   # ---- guards ----------------------------------------------------------
   ext <- data$extdata %||% tibble::tibble()
@@ -4238,12 +4199,6 @@ distributionDynamic <- function(data,
     }
   }
   
-  normalize_chr_vec <- function(x) {
-    x <- as.character(x %||% character(0)) |> stringr::str_trim()
-    x <- x[!is.na(x) & x != ""]
-    unique(x)
-  }
-  
   build_time_breaks_labels <- function(ext_subset, params, freq) {
     time_start <- suppressWarnings(as.numeric(params$time_start %||% NA_real_))
     time_end   <- suppressWarnings(as.numeric(params$time_end %||% NA_real_))
@@ -4363,8 +4318,7 @@ distributionDynamic <- function(data,
   peers_vec <- params$peers_iso2c %||% peers_iso2c
   peers_vec <- normalize_chr_vec(peers_vec)
   
-  country_set <- unique(c(country_id, peers_vec))
-  country_set <- country_set[!is.na(country_set) & country_set != ""]
+  country_set <- normalize_chr_vec(c(country_id, peers_vec))
   
   # ---- guards ----------------------------------------------------------
   ext <- data$extdata %||% tibble::tibble()
@@ -4705,12 +4659,6 @@ scatterBeforeAfter <- function(data,
     }
   }
   
-  normalize_chr_vec <- function(x) {
-    x <- as.character(x %||% character(0)) |> stringr::str_trim()
-    x <- x[!is.na(x) & x != ""]
-    unique(x)
-  }
-  
   split_time_tokens <- function(x) {
     x <- as.character(x %||% NA_character_)
     x <- if (length(x) >= 1) x[[1]] else NA_character_
@@ -4874,9 +4822,9 @@ scatterBeforeAfter <- function(data,
       dplyr::arrange(.data$country_id) |>
       dplyr::pull(.data$country_id)
   } else {
-    unique(c(country_iso2c, peers_iso2c))
+    c(country_iso2c, peers_iso2c)
   }
-  country_set <- country_set[!is.na(country_set) & country_set != ""]
+  country_set <- normalize_chr_vec(country_set)
   
   # ---- data: wide before/after -----------------------------------------
   df_long <- tibble::as_tibble(ext) |>
@@ -5163,12 +5111,6 @@ distributionTimeComparison <- function(data,
     if (isTRUE(warn_invalid) && is_true01(params$active %||% 1L)) {
       rlang::warn(paste0("distributionTimeComparison: ", msg))
     }
-  }
-  
-  normalize_chr_vec <- function(x) {
-    x <- as.character(x %||% character(0)) |> stringr::str_trim()
-    x <- x[!is.na(x) & x != ""]
-    unique(x)
   }
   
   normalize_int_vec <- function(x) {
@@ -5613,12 +5555,6 @@ distributionIndicatorComparison <- function(data,
     if (isTRUE(warn_invalid) && is_true01(params$active %||% 1L)) {
       rlang::warn(paste0("distributionIndicatorComparison: ", msg))
     }
-  }
-  
-  normalize_chr_vec <- function(x) {
-    x <- as.character(x %||% character(0)) |> stringr::str_trim()
-    x <- x[!is.na(x) & x != ""]
-    unique(x)
   }
   
   normalize_int_vec <- function(x) {

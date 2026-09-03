@@ -9,11 +9,15 @@
 
 .owid_user_agent <- "country_analysis/owid-import"
 
-.owid_iso_custom_match <- c(
-  ROM = "RO", ADO = "AD", ANT = "AN", KSV = "XK",
-  TMP = "TL", WBG = "PS", ZAR = "CD",
-  OWID_WRL = "1W"
-)
+if (!exists("project_countrycode_iso3_to_iso2", mode = "function")) {
+  iso_path <- file.path(dirname(sys.frame(1)$ofile %||% "."), "iso_country_codes.R")
+  if (!file.exists(iso_path) && requireNamespace("here", quietly = TRUE)) {
+    iso_path <- here::here("download_script", "iso_country_codes.R")
+  }
+  if (file.exists(iso_path)) {
+    source(iso_path, local = FALSE)
+  }
+}
 
 # Browser / display query keys stripped from retrieve_code (view params kept).
 .owid_display_params <- c(
@@ -246,16 +250,8 @@ owid_column_variable_id <- function(meta, column) {
 
 #' Map OWID entity codes (ISO3 / OWID_*) to project iso2; unmapped → NA.
 owid_map_iso2 <- function(codes) {
-  requireNamespace("countrycode", quietly = TRUE)
   codes <- as.character(codes)
-  out <- countrycode::countrycode(
-    codes,
-    origin = "iso3c",
-    destination = "iso2c",
-    warn = FALSE,
-    custom_match = .owid_iso_custom_match
-  )
-  # Explicit World (in case custom_match missed)
+  out <- project_countrycode_iso3_to_iso2(codes)
   out[codes == "OWID_WRL"] <- "1W"
   out
 }

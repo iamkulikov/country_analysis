@@ -12,6 +12,14 @@
 
 .snaama_year_pattern <- "^(19|20)\\d{2}$"
 
+if (!exists("project_countrycode_iso3_to_iso2", mode = "function")) {
+  iso_path <- file.path(dirname(sys.frame(1)$ofile %||% "."), "iso_country_codes.R")
+  if (!file.exists(iso_path) && requireNamespace("here", quietly = TRUE)) {
+    iso_path <- here::here("download_script", "iso_country_codes.R")
+  }
+  if (file.exists(iso_path)) source(iso_path, local = FALSE)
+}
+
 # UN M49 numeric → ISO2 overrides (countrycode origin = "un" misses these).
 # 835 = U.R. of Tanzania: Mainland (file has no 834). Zanzibar 836 stays NA.
 .snaama_un_custom_match <- c(

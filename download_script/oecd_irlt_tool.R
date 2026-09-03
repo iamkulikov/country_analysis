@@ -8,17 +8,20 @@
 
 .oecd_irlt_user_agent <- "country_analysis/oecd-irlt-import"
 
+if (!exists("project_countrycode_iso3_to_iso2", mode = "function")) {
+  iso_path <- file.path(dirname(sys.frame(1)$ofile %||% "."), "iso_country_codes.R")
+  if (!file.exists(iso_path) && requireNamespace("here", quietly = TRUE)) {
+    iso_path <- here::here("download_script", "iso_country_codes.R")
+  }
+  if (file.exists(iso_path)) source(iso_path, local = FALSE)
+}
+
 .oecd_irlt_default_url <- paste0(
   "https://sdmx.oecd.org/public/rest/data/OECD.SDD.STES,",
   "DSD_STES@DF_FINMARK/.M.IRLT.PA.....?format=csvfilewithlabels"
 )
 
 .oecd_irlt_series <- c("IRLT")
-
-.oecd_irlt_iso_custom_match <- c(
-  ROM = "RO", ADO = "AD", ANT = "AN", KSV = "XK",
-  TMP = "TL", WBG = "PS", ZAR = "CD"
-)
 
 .oecd_irlt_filters <- list(
   IRLT = list(
@@ -105,13 +108,7 @@ oecd_irlt_read_wide <- function(path = NULL,
 
 #' Map ISO3 to project `country_id`.
 oecd_irlt_iso2 <- function(iso3) {
-  countrycode::countrycode(
-    trimws(as.character(iso3)),
-    origin = "iso3c",
-    destination = "iso2c",
-    custom_match = .oecd_irlt_iso_custom_match,
-    warn = FALSE
-  )
+  project_countrycode_iso3_to_iso2(trimws(as.character(iso3)))
 }
 
 #' Build one country-month IRLT series from OECD FINMARK wide table.

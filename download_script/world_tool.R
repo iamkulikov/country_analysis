@@ -10,17 +10,20 @@
 
 .world_user_agent <- "country_analysis/world-import"
 
+if (!exists("project_countrycode_iso3_to_iso2", mode = "function")) {
+  iso_path <- file.path(dirname(sys.frame(1)$ofile %||% "."), "iso_country_codes.R")
+  if (!file.exists(iso_path) && requireNamespace("here", quietly = TRUE)) {
+    iso_path <- here::here("download_script", "iso_country_codes.R")
+  }
+  if (file.exists(iso_path)) source(iso_path, local = FALSE)
+}
+
 .world_sdmx_base <- paste0(
   "https://api.imf.org/external/sdmx/3.0/data/dataflow/IMF.FAD/WORLD/+/"
 )
 
 .world_transform <- "POGDP_PT"
 .world_frequency <- "A"
-
-.world_iso_custom_match <- c(
-  ROM = "RO", ADO = "AD", ANT = "AN", KSV = "XK",
-  TMP = "TL", WBG = "PS", ZAR = "CD", WBG = "PS"
-)
 
 .world_core_map <- c(
   TotRev    = "G1_POGDP_PT_R",
@@ -109,13 +112,7 @@ world_fetch_csv <- function(url) {
 
 #' Map IMF WoRLD ISO3 to project iso2.
 world_iso2 <- function(iso3) {
-  countrycode::countrycode(
-    trimws(as.character(iso3)),
-    origin = "iso3c",
-    destination = "iso2c",
-    custom_match = .world_iso_custom_match,
-    warn = FALSE
-  )
+  project_countrycode_iso3_to_iso2(trimws(as.character(iso3)))
 }
 
 #' Build one country-year WoRLD series (% of GDP).

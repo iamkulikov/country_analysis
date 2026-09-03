@@ -27,6 +27,7 @@ source(here("download_script", "snaama_tool.R"))
 source(here("download_script", "taxfoundation_tool.R"))
 source(here("download_script", "oecd_cit_tool.R"))
 source(here("download_script", "oecd_irlt_tool.R"))
+source(here("download_script", "oecd_nasec_tool.R"))
 source(here("download_script", "world_tool.R"))
 
 # WDI / ILO are only needed for online probes; load quietly when available
@@ -655,6 +656,15 @@ run_registry_probe <- function(contract, plan, paths, local_fnames = NULL, onlin
       ))
     }
   }
+  if (identical(contract$id, "oecd_nasec") && !isTRUE(online)) {
+    local_path <- if (length(paths)) paths[[1]] else NULL
+    if (is.null(local_path) || !file.exists(local_path)) {
+      return(check_row(
+        contract$id, contract$label, "probe", "skip",
+        "online = FALSE; OECD NASEC URL probe skipped"
+      ))
+    }
+  }
   ctx <- list(
     plan = plan,
     path = if (length(paths)) paths[[1]] else NULL,
@@ -1088,6 +1098,10 @@ run_api_probes <- function(contract, plan, online = TRUE) {
       out <- probe_oecd_irlt(list(plan = plan, path = NULL, contract = contract))
       out
     },
+    "oecd_nasec" = {
+      out <- probe_oecd_nasec(list(plan = plan, path = NULL, contract = contract))
+      out
+    },
     "bis_debt" = {
       # Same check as registry probe_bis_debt_url (CSV header via URL)
       out <- probe_bis_debt_url(list(plan = plan, path = NULL, contract = contract))
@@ -1146,6 +1160,10 @@ check_one_contract <- function(contract,
     probe_rows <- empty_check_report()
   }
   if (identical(contract$id, "oecd_irlt") && isTRUE(online)) {
+    api_rows <- probe_rows |> dplyr::mutate(level = "api")
+    probe_rows <- empty_check_report()
+  }
+  if (identical(contract$id, "oecd_nasec") && isTRUE(online)) {
     api_rows <- probe_rows |> dplyr::mutate(level = "api")
     probe_rows <- empty_check_report()
   }

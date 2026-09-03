@@ -2098,13 +2098,21 @@ writeCountryFile <- function(countries, datalist) {
   
   datalist$dict_d <- NULL
   freq_codes <- c("y", "q", "m", "d")
+  key_cols_by_freq <- list(
+    y = c("year"),
+    q = c("year", "quarter"),
+    m = c("year", "quarter", "month"),
+    d = c("year", "date")
+  )
+  
+  # preExport drops the daily helper column; add it once before country loops
+  datalist$extdata_d <- datalist$extdata_d |>
+    dplyr::mutate(year = as.integer(lubridate::year(.data$date))) |>
+    dplyr::select(year, date, dplyr::everything())
   
   for (countryname_export in countries) {
     
     print(countryname_export)
-    datalist$extdata_d <- datalist$extdata_d |> dplyr::mutate(year = lubridate::year(.data$date)) |>
-      dplyr::select(year, date, dplyr::everything())
-    
     datalist_country <- datalist
     
     # 1) Filter by country
@@ -2117,7 +2125,7 @@ writeCountryFile <- function(countries, datalist) {
     }
     
     # 2) For each indicator determine start_year / end_year
-    n_ind <- length(datalist_country$dict$indicator)
+    n_ind <- nrow(datalist_country$dict)
     
     for (i in seq_len(n_ind)) {
       
@@ -2127,27 +2135,49 @@ writeCountryFile <- function(countries, datalist) {
       ext_name <- paste0("extdata_", freq_i)
       df_freq  <- datalist_country[[ext_name]]
       
-      a <- df_freq |> dplyr::select(year, dplyr::all_of(code_i)) |> dplyr::filter(!is.na(.data[[code_i]]))
-      years_i <- unique(a$year)
+      if (!"year" %in% names(df_freq)) {
+        next
+      }
+      
+      a <- df_freq |>
+        dplyr::mutate(year = as.integer(.data$year)) |>
+        dplyr::select("year", dplyr::all_of(code_i)) |>
+        dplyr::filter(!is.na(.data[[code_i]]))
+      years_i <- unique(a[["year"]])
       
       datalist_country$dict$start_year[i] <- suppressWarnings(min(years_i, na.rm = TRUE))
       datalist_country$dict$end_year[i] <- suppressWarnings(max(years_i, na.rm = TRUE))
     }
     
     # Dropping indicators with non-standard set (Inf, -Inf, NA)
-    datalist_country$dict <- datalist_country$dict |> dplyr::filter(is.finite(.data$start_year), is.finite(.data$end_year))
+    datalist_country$dict <- datalist_country$dict |>
+      dplyr::filter(is.finite(.data$start_year), is.finite(.data$end_year))
     
     # 3) For each freq cutting time series and dropping empty columns
     for (fr in freq_codes) {
       
       ext_name <- paste0("extdata_", fr)
       dict_fr <- datalist_country$dict |> dplyr::filter(.data$source_frequency == fr)
-      if (nrow(dict_fr) == 0L) {next}
-      year_min <- dict_fr$start_year |> unique() |> suppressWarnings(min(na.rm = TRUE))
-      year_max <- dict_fr$end_year |> unique() |> suppressWarnings(max(na.rm = TRUE))
+      if (nrow(dict_fr) == 0L) {
+        next
+      }
       
-      datalist_country[[ext_name]] <- datalist_country[[ext_name]] |>
-        purrr::discard(~ all(is.na(.x))) |> dplyr::filter(.data$year >= year_min, .data$year <= year_max )
+      year_min <- as.integer(min(dict_fr$start_year, na.rm = TRUE))
+      year_max <- as.integer(max(dict_fr$end_year, na.rm = TRUE))
+      if (!is.finite(year_min) || !is.finite(year_max)) {
+        next
+      }
+      
+      key_cols <- key_cols_by_freq[[fr]]
+      df_out <- datalist_country[[ext_name]]
+      if (!"year" %in% names(df_out)) {
+        next
+      }
+      
+      datalist_country[[ext_name]] <- df_out |>
+        dplyr::mutate(year = as.integer(.data$year)) |>
+        dplyr::filter(.data$year >= year_min, .data$year <= year_max) |>
+        dplyr::select(dplyr::any_of(key_cols), dplyr::where(~ !all(is.na(.x))))
     }
     
     # 4) Preparing list in the needed format

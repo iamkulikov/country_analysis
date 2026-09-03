@@ -1016,10 +1016,7 @@ add_country_role <- function(df, country_iso2c, peers_iso2c, id_col = "country_i
   
   id_col <- rlang::ensym(id_col)
   
-  peers_iso2c <- as.character(peers_iso2c %||% character(0)) |>
-    stringr::str_trim()
-  peers_iso2c <- peers_iso2c[!is.na(peers_iso2c) & peers_iso2c != ""]
-  peers_iso2c <- unique(peers_iso2c)
+  peers_iso2c <- normalize_chr_vec(peers_iso2c)
   
   df |>
     dplyr::mutate(

@@ -63,7 +63,8 @@ if (is.na(default_country_id) || !nzchar(default_country_id)) {
   default_country_id <- "RU"
 }
 country_iso3c_from_id <- function(country_id) {
-  countrycode::countrycode(country_id, "iso2c", "iso3c", warn = FALSE)
+  res <- safe_iso2_to_iso3(country_id)
+  if (length(res) >= 1L) res[[1]] else NA_character_
 }
 
 country_iso3c_from_choice_if_valid <- function(country_choice) {

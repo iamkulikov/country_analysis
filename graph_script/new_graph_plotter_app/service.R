@@ -1741,7 +1741,7 @@ parse_graphplan_row_tsv <- function(text) {
   df <- utils::read.table(
     text = text,
     sep = "\t",
-    na.strings = c("", "NA"),
+    na.strings = "",
     header = FALSE,
     stringsAsFactors = FALSE
   )
@@ -2132,7 +2132,7 @@ peers_string_from_editor <- function(peers, peers_custom, peers_formula, preset_
   if (is.null(peers) || peers == "none") return(0)
   if (peers %in% preset_list) return(peers)
   if (peers == "custom") {
-    cc <- peers_custom[!is.na(peers_custom) & peers_custom != ""]
+    cc <- normalize_chr_vec(peers_custom)
     if (!length(cc)) return(0)
     return(paste0("custom: ", paste(cc, collapse = ", ")))
   }
@@ -3124,24 +3124,18 @@ graph_export_cust1_countries <- function(graphplan_row,
   iso2 <- character()
   if (!is.null(country_iso2c) && length(country_iso2c) == 1L &&
       !is.na(country_iso2c) && nzchar(country_iso2c)) {
-    iso2 <- c(iso2, as.character(country_iso2c))
+    iso2 <- c(iso2, stringr::str_trim(as.character(country_iso2c)))
   } else if (!is.null(country_iso3c) && length(country_iso3c) == 1L &&
              !is.na(country_iso3c) && nzchar(country_iso3c)) {
-    mapped <- countrycode::countrycode(country_iso3c, "iso3c", "iso2c", warn = FALSE)
-    if (!is.na(mapped) && nzchar(mapped)) {
-      iso2 <- c(iso2, mapped)
+    mapped <- safe_iso3_to_iso2(country_iso3c)
+    if (length(mapped) >= 1L && !is.na(mapped[[1]]) && nzchar(mapped[[1]])) {
+      iso2 <- c(iso2, mapped[[1]])
     }
   }
   if (!is.null(peers_iso2c) && length(peers_iso2c) > 0L) {
-    iso2 <- c(iso2, as.character(peers_iso2c))
+    iso2 <- c(iso2, normalize_chr_vec(peers_iso2c))
   }
-  all_flag <- 0L
-  if (!is.null(graphplan_row) && "all" %in% names(graphplan_row)) {
-    all_flag <- as.integer(graphplan_row$all[[1]] %||% 0L)
-  } else if (!is.null(graph_params)) {
-    all_flag <- as.integer(graph_params$all %||% 0L)
-  }
-  unique(iso2[!is.na(iso2) & nzchar(iso2)])
+  normalize_chr_vec(iso2)
 }
 
 parse_graph_export_year_bounds <- function(graphplan_row = NULL, graph_params = NULL) {

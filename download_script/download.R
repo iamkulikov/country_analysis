@@ -53,11 +53,14 @@ download.file(url, dest, mode = "wb")
 a <- read.csv(archive_read(archive = dest, format = "7zip"))
 write.csv(a, file = here("assets", "_DB", datafolder, "US_ConcentDiversIndices.csv") )
 
-### Download IDS external debt statistics
-url <- "https://databank.worldbank.org/data/download/IDS_Excel.zip"
-dest <- here("assets", "_DB", datafolder, "IDS_Excel.zip")
-download.file(url, dest)
-unzip(zipfile = dest, exdir = here("assets", "_DB", datafolder))
+### Download latest IDS external debt statistics manually
+### https://www.worldbank.org/en/programs/debt-statistics/publications#databasearchives
+### Rename to IDS.xlsx
+# old routine:
+# url <- "https://databank.worldbank.org/data/download/IDS_Excel.zip"
+# dest <- here("assets", "_DB", datafolder, "IDS_Excel.zip")
+# download.file(url, dest)
+# unzip(zipfile = dest, exdir = here("assets", "_DB", datafolder))
 
 ### Download Tax Foundation worldwide corporate tax rates
 ### https://github.com/TaxFoundation/worldwide-corporate-tax-rates
@@ -78,6 +81,16 @@ url <- paste0(
   "DSD_STES@DF_FINMARK/.M.IRLT.PA.....?format=csvfilewithlabels"
 )
 dest <- here("assets", "_DB", datafolder, "oecd_finmark_irlt.csv")
+download.file(url, dest, mode = "wb")
+
+### Download OECD National Accounts Table 0200 (general government S13, XDC)
+### https://data-explorer.oecd.org/ dataflow DSD_NASEC10@DF_TABLE12
+url <- paste0(
+  "https://sdmx.oecd.org/public/rest/data/OECD.SDD.NAD,",
+  "DSD_NASEC10@DF_TABLE12/A..S13......XDC.S.V.N.T0200",
+  "?format=csvfilewithlabels"
+)
+dest <- here("assets", "_DB", datafolder, "oecd_nasec_table12.csv")
 download.file(url, dest, mode = "wb")
 
 ### Download COVID data from Ourworldindata (don't need to update any more)

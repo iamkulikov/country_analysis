@@ -9,9 +9,11 @@ test <- 0
 fill_from <- NULL
 # fill_from <- "neutral_rate_nom_lr"
 
-countries <- c("Armenia", "Belarus", "Brazil", "Bulgaria", "Greece", "China", "India", "Kazakhstan", "Kyrgyz Republic", "Mongolia",
-               "Romania", "Russian Federation", "Slovak Republic", "South Africa", "Switzerland", "Tajikistan", "Turkiye", "Ukraine",
-                "Uzbekistan", "United Arab Emirates", "Ethiopia")
+countries <- c("Russian Federation", "China")
+
+# countries <- c("Armenia", "Belarus", "Brazil", "Bulgaria", "Greece", "China", "India", "Kazakhstan", "Kyrgyz Republic", "Mongolia",
+#                "Romania", "Russian Federation", "Slovak Republic", "South Africa", "Switzerland", "Tajikistan", "Turkiye", "Ukraine",
+#                 "Uzbekistan", "United Arab Emirates", "Ethiopia")
 # "Iran, Islamic Rep." - что делать с этой точкой на конце? так папка называться не может, но название 
 # в базе именно такое (дропнуть изначально при кодировке базы все точки на концах?)
 formula_words <- c("lag", "lead", "rollsum", "rollavg", "rollvol", "mean", "last", "first", "min", "pmin", "max", "pmax", 

@@ -10,17 +10,20 @@
 
 .oecd_cit_user_agent <- "country_analysis/oecd-cit-import"
 
+if (!exists("project_countrycode_iso3_to_iso2", mode = "function")) {
+  iso_path <- file.path(dirname(sys.frame(1)$ofile %||% "."), "iso_country_codes.R")
+  if (!file.exists(iso_path) && requireNamespace("here", quietly = TRUE)) {
+    iso_path <- here::here("download_script", "iso_country_codes.R")
+  }
+  if (file.exists(iso_path)) source(iso_path, local = FALSE)
+}
+
 .oecd_cit_default_url <- paste0(
   "https://sdmx.oecd.org/public/rest/data/OECD.CTP.TPS,",
   "DSD_TAX_CIT@DF_CIT,1.0/?format=csvfilewithlabels"
 )
 
 .oecd_cit_series <- c("COMBINED", "CENTRAL", "SUB_CENTRAL")
-
-.oecd_cit_iso_custom_match <- c(
-  ROM = "RO", ADO = "AD", ANT = "AN", KSV = "XK",
-  TMP = "TL", WBG = "PS", ZAR = "CD"
-)
 
 .oecd_cit_filters <- list(
   COMBINED = list(measure = "CIT_C", targeting = "ST"),
@@ -96,13 +99,7 @@ oecd_cit_read_wide <- function(path = NULL,
 
 #' Map ISO3 to project `country_id`.
 oecd_cit_iso2 <- function(iso3) {
-  countrycode::countrycode(
-    trimws(as.character(iso3)),
-    origin = "iso3c",
-    destination = "iso2c",
-    custom_match = .oecd_cit_iso_custom_match,
-    warn = FALSE
-  )
+  project_countrycode_iso3_to_iso2(trimws(as.character(iso3)))
 }
 
 #' Build one country-year CIT series from OECD CTS wide table.

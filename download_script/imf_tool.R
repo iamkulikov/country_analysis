@@ -9,6 +9,14 @@
 #'
 #' @return tibble with columns from imf_fetch_simple (e.g. iso2, year, maybe quarter/month, value)
 
+if (!exists("project_countrycode_iso3_to_iso2", mode = "function")) {
+  iso_path <- file.path(dirname(sys.frame(1)$ofile %||% "."), "iso_country_codes.R")
+  if (!file.exists(iso_path) && requireNamespace("here", quietly = TRUE)) {
+    iso_path <- here::here("download_script", "iso_country_codes.R")
+  }
+  if (file.exists(iso_path)) source(iso_path, local = FALSE)
+}
+
 imfTool <- function(database, code, freq,
                     start = NULL, end = NULL,
                     normalize_units = c("none", "label", "scale")) {
@@ -170,10 +178,7 @@ imf_fetch_simple <- function(request_url,
     parsed |>
     dplyr::distinct(country) |>
     dplyr::mutate(
-      iso2 = countrycode::countrycode(
-        .data$country, origin = "iso3c", destination = "iso2c", warn = FALSE,
-        custom_match = c(WBG = "PS", KOS = "XK", ANT = "AN", G001 = "1W")
-      ),
+      iso2 = project_countrycode_iso3_to_iso2(.data$country),
       iso2 = dplyr::coalesce(.data$iso2, .data$country)
     )
   

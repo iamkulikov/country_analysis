@@ -24,7 +24,7 @@ source(here("graph_script","plot_types.R"))
 source(here("graph_script","plot_themes.R"))
 
 ##### Parameters and source names
-country_code3 <- "IND" ##### BLR, RUS, BRA, IND, CHN, ARM, 
+country_code3 <- "RUS" ##### BLR, RUS, BRA, IND, CHN, ARM, 
 country_code2 <- countrycode::countrycode(country_code3, "iso3c", "iso2c", warn = FALSE)
 file_output <- "png"
 horizontal_size <- c(1800, 900)

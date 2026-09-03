@@ -5,11 +5,12 @@
 #' @param end Optional integer year (inclusive).
 #' @return Tibble with columns iso2, year, value.
 
-imf_datamapper_iso3_custom_match <- function() {
-  c(
-    WBG = "PS", KOS = "XK", ANT = "AN", G001 = "1W",
-    ROM = "RO", ADO = "AD", KSV = "XK", TMP = "TL", ZAR = "CD"
-  )
+if (!exists("project_countrycode_iso3_to_iso2", mode = "function")) {
+  iso_path <- file.path(dirname(sys.frame(1)$ofile %||% "."), "iso_country_codes.R")
+  if (!file.exists(iso_path) && requireNamespace("here", quietly = TRUE)) {
+    iso_path <- here::here("download_script", "iso_country_codes.R")
+  }
+  if (file.exists(iso_path)) source(iso_path, local = FALSE)
 }
 
 imf_datamapper_api_url <- function(path) {
@@ -96,13 +97,7 @@ imf_datamapper_tool <- function(code, start = NULL, end = NULL) {
 
   out <- out |>
     dplyr::mutate(
-      iso2 = countrycode::countrycode(
-        .data$iso3,
-        origin = "iso3c",
-        destination = "iso2c",
-        warn = FALSE,
-        custom_match = imf_datamapper_iso3_custom_match()
-      )
+      iso2 = project_countrycode_iso3_to_iso2(.data$iso3)
     ) |>
     dplyr::filter(!is.na(.data$iso2), nchar(.data$iso2) == 2L) |>
     dplyr::transmute(iso2 = .data$iso2, year = .data$year, value = .data$value)

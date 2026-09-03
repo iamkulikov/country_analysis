@@ -11,6 +11,7 @@ for (library_name in library_names) {
 
 ## ------ Set working directory and import custom tools
 here::i_am("download_script/import.R")
+source(here("download_script", "iso_country_codes.R"))
 source(here("download_script","imf_tool.R"))
 source(here("download_script","imf_datamapper_tool.R"))
 source(here("download_script","owid_tool.R"))
@@ -18,6 +19,7 @@ source(here("download_script","snaama_tool.R"))
 source(here("download_script","taxfoundation_tool.R"))
 source(here("download_script","oecd_cit_tool.R"))
 source(here("download_script","oecd_irlt_tool.R"))
+source(here("download_script","oecd_nasec_tool.R"))
 source(here("download_script","world_tool.R"))
 
 ## ------ Set parameters
@@ -72,9 +74,21 @@ generateDataContainers <- function(from, to, d_start  = NULL, d_end = NULL, verb
   countries_raw <- WDI(indicator = "NY.GDP.MKTP.CD", start = 1980, end = 2025, extra = TRUE)
   
   countries <- countries_raw |>
-    distinct(country, iso2c, region) |>
-    filter(!is.na(iso2c), nzchar(iso2c), nchar(iso2c) == 2L, region != "Aggregates") |>
-    rename(country_id = iso2c) |> select(-region) |>
+    distinct(country, iso2c, iso3c, region) |>
+    filter(region != "Aggregates") |>
+    mutate(
+      iso2c = dplyr::coalesce(
+        iso2c,
+        project_countrycode_iso3_to_iso2(iso3c)
+      ),
+      iso2c = dplyr::if_else(
+        is.na(iso2c) & country == "Namibia",
+        "NA",
+        iso2c
+      )
+    ) |>
+    filter(!is.na(iso2c), nzchar(iso2c), nchar(iso2c) == 2L) |>
+    rename(country_id = iso2c) |> select(-region, -iso3c) |>
     bind_rows(tibble(country = c("World","Viet Nam","Czechia","Puerto Rico (US)"), country_id = c("1W","VN","CZ","PR"))) |> 
     arrange(country) |> distinct(country_id, .keep_all = TRUE)
   
@@ -599,16 +613,7 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d, imppa
             mutate(
               quarter = as.numeric(substr(year, 6, 6)),
               year = as.numeric(substr(year, 1, 4)),
-              iso2c = countrycode(
-                iso_src,
-                origin = "iso3c",
-                destination = "iso2c",
-                custom_match = c(
-                  "ROM" = "RO", "ADO" = "AD", "ANT" = "AN",
-                  "KSV" = "XK", "TMP" = "TL", "WBG" = "PS", "ZAR" = "CD"
-                ),
-                warn = FALSE
-              )
+              iso2c = project_countrycode_iso3_to_iso2(iso_src)
             ) |>
             select(-any_of(c("country", "iso3c"))) |>
             rename_at(vars(any_of(wdiq_codes[i])), ~ wdiq_names[i])
@@ -709,16 +714,7 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d, imppa
           wgi_data <- wgi_raw_by_dim[[dim]] |>
             transmute(
               year = as.integer(.data$year),
-              country_id = countrycode(
-                .data$economy_code,
-                origin = "iso3c",
-                destination = "iso2c",
-                custom_match = c(
-                  "ROM" = "RO", "ADO" = "AD", "ANT" = "AN",
-                  "KSV" = "XK", "TMP" = "TL", "WBG" = "PS", "ZAR" = "CD"
-                ),
-                warn = FALSE
-              ),
+              country_id = project_countrycode_iso3_to_iso2(.data$economy_code),
               "{ind_code}" := as.double(.data[[val_col]])
             ) |>
             filter(!is.na(.data$country_id), !is.na(.data$year))
@@ -903,9 +899,7 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d, imppa
             mutate(year = as.numeric(as.character(year))) |>
             left_join(ids_impplan |> select(indicator_code, retrieve_code), by=c('variable_code'='retrieve_code'), suffix=c("","_old")) |>
             select(-c(variable_code)) |> pivot_wider(names_from = "indicator_code", values_from = "value") |>
-            mutate(country_id = countrycode(country_id, origin = 'iso3c', destination = 'iso2c', 
-                                          custom_match = c('ROM' = 'RO','ADO' = 'AD','ANT' = 'AN',
-                                          'KSV' = 'XK','TMP' = 'TL','WBG' = 'PS','ZAR' = 'CD'), warn = F))
+            mutate(country_id = project_countrycode_iso3_to_iso2(country_id))
           
         extdata_y <- extdata_y |> left_join(ids_data, by = c("country_id" = "country_id", "year"="year"), suffix=c("","_old"))
         print("+")
@@ -928,16 +922,14 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d, imppa
         EZ_countries <- read_excel(here("assets", "_DB","1_peers_params.xlsx"), sheet = "groups", col_names = F, skip=2, n_max=11)[c(2,11),-c(1:3)]
       })
       EZ_countries <- data.frame(t(EZ_countries)) |> filter(X1 == 1) |> select(X2) |> unlist()
-      EZ_countries <- countrycode(EZ_countries, origin = 'iso3c', destination = 'iso2c', 
-                                  custom_match = c('ROM' = 'RO','ADO' = 'AD','ANT' = 'AN',
-                                          'KSV' = 'XK','TMP' = 'TL','WBG' = 'PS','ZAR' = 'CD'), warn = F)
+      EZ_countries <- project_countrycode_iso3_to_iso2(EZ_countries)
       
       if (length(bis_names)>0 & all(!is.na(bis_names))) {
         
         print("BIS policy and exchange rates")
         for (i in seq_along(bis_names)) {  
 
-            bis_data <- read.csv(bis_fname[i], header = TRUE, sep = ",", quote = "\"", dec = ".", fill = TRUE, comment.char = "", na.strings=c("..","","NA"), skip=0) |>
+            bis_data <- read.csv(bis_fname[i], header = TRUE, sep = ",", quote = "\"", dec = ".", fill = TRUE, comment.char = "", na.strings=c("..",""), skip=0) |>
               select(any_of(c("REF_AREA.Reference.area", "TIME_PERIOD.Time.period.or.range", "OBS_VALUE.Observation.Value", "FREQ.Frequency", "COLLECTION.Collection"))) |>
               rename(ref_area = REF_AREA.Reference.area, time_period = TIME_PERIOD.Time.period.or.range, value = OBS_VALUE.Observation.Value, freq = FREQ.Frequency) |>
               mutate(country_id = substr(ref_area,1,2), freq = substr(freq,1,1), value = as.numeric(value)) 
@@ -1001,7 +993,7 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d, imppa
         for (i in seq_along(bis_names)) {  
           
           bis_data <- read.csv(bis_fname[i], header = TRUE, sep = ",", quote = "\"", dec = ".", fill = TRUE, comment.char = "", 
-                               na.strings=c("..","","NA"), skip=0) |>
+                               na.strings=c("..",""), skip=0) |>
             select(all_of(c("REF_AREA.Reference.area", "TIME_PERIOD.Time.period.or.range", "OBS_VALUE.Observation.Value", "FREQ.Frequency", 
                             "EER_TYPE.Type", "EER_BASKET.Basket"))) |>
             rename(ref_area = REF_AREA.Reference.area, time_period = TIME_PERIOD.Time.period.or.range, value = OBS_VALUE.Observation.Value, 
@@ -1038,8 +1030,7 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d, imppa
           fm_data <- read_excel(fm_fname, sheet = fm_sheets[i], col_names = T, na = "#N/A", col_types='text')
           
           fm_data <- fm_data |> pivot_longer(cols = !contains('country'), names_to = 'year', values_to = 'value') |>
-            mutate(country_id = countrycode(country_code, origin = 'iso3c', destination = 'iso2c',  warn = F,
-                custom_match = c('ROM' = 'RO','ADO' = 'AD','ANT' = 'AN','KSV' = 'XK','TMP' = 'TL','WBG' = 'PS','ZAR' = 'CD')),
+            mutate(country_id = project_countrycode_iso3_to_iso2(country_code),
                 year = as.numeric(as.character(year)), value = as.numeric(value) ) |> select(country_id, year, value)
           
           fm_data <- eval(parse(text = glue("rename(fm_data,'{fm_names[i]}'='value')") ))
@@ -1145,8 +1136,7 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d, imppa
           # Map ISO3 -> ISO2; drop regional aggregates / non-countries (X01.., CHA, …)
           # that countrycode leaves as NA — otherwise they collapse into one NA key.
           ilo_data <- ilo_data |>
-            mutate(ref_area = countrycode(ref_area, origin = 'iso3c', destination = 'iso2c', warn = F,
-              custom_match = c('ROM' = 'RO','ADO' = 'AD','ANT' = 'AN','KSV' = 'XK','TMP' = 'TL','WBG' = 'PS','ZAR' = 'CD'))) |>
+            mutate(ref_area = project_countrycode_iso3_to_iso2(ref_area)) |>
             filter(!is.na(ref_area))
           
           if (ilo_freq[i] == "y") {ilo_data <- ilo_data |> mutate(year = as.numeric(time)) |> select(ref_area, year, obs_value)}
@@ -1211,8 +1201,7 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d, imppa
                              dec = ".", fill = TRUE, comment.char = "", na.strings=c(0,"..","","NA"), skip=0) |>
                     mutate(
                       date = as.Date(date),
-                      country_id = countrycode(iso_code, origin = 'iso3c', destination = 'iso2c', warn = F,
-                          custom_match = c('ROM' = 'RO','ADO' = 'AD','ANT' = 'AN','KSV' = 'XK','TMP' = 'TL','WBG' = 'PS','ZAR' = 'CD'))
+                      country_id = project_countrycode_iso3_to_iso2(iso_code)
                     )
         
         eval(parse(text = glue("covid_data <- covid_data |> select(date, country_id, {paste(covid_codes, collapse=', ')}) |> \\
@@ -1466,6 +1455,55 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d, imppa
 
     })
 
+    ##### Import OECD NASEC Table 0200
+    try({
+
+      oecd_nasec_impplan <- impplan |> filter(
+        active == 1,
+        source_name == "OECD",
+        database_name == "NASEC",
+        retrieve_type %in% c("API", "file"),
+        source_frequency == "y"
+      )
+      oecd_nasec_names <- oecd_nasec_impplan$indicator_code
+      oecd_nasec_codes <- as.character(oecd_nasec_impplan$retrieve_code)
+
+      if (length(oecd_nasec_names) > 0 && all(!is.na(oecd_nasec_names))) {
+
+        message("OECD NASEC Table 0200")
+        oecd_nasec_local <- unique(stats::na.omit(as.character(oecd_nasec_impplan$file_name)))
+        oecd_nasec_local <- oecd_nasec_local[nzchar(oecd_nasec_local)]
+        oecd_nasec_path <- if (length(oecd_nasec_local)) {
+          cand <- here("assets", "_DB", "_extsources", oecd_nasec_local[[1]])
+          if (file.exists(cand)) cand else NULL
+        } else {
+          NULL
+        }
+        oecd_nasec_wide <- oecd_nasec_read_wide(path = oecd_nasec_path)
+
+        for (i in seq_along(oecd_nasec_names)) {
+          oecd_nasec_data <- oecd_nasec_to_series(
+            oecd_nasec_wide,
+            retrieve_code = oecd_nasec_codes[[i]],
+            start = year_first,
+            end = year_final
+          ) |>
+            dplyr::rename(!!oecd_nasec_names[[i]] := value)
+
+          extdata_y <- extdata_y |>
+            dplyr::left_join(
+              oecd_nasec_data,
+              by = dplyr::join_by(country_id, year),
+              suffix = c("", "_old"),
+              relationship = "many-to-one"
+            )
+          message(oecd_nasec_names[[i]])
+          message("+")
+        }
+      }
+
+    })
+
     ##### Import UN HDR data
     try({
         
@@ -1486,8 +1524,7 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d, imppa
             
           unhdr_data <- unhdr_data |> pivot_longer(!iso3, names_to = "year", values_to = "value") |> 
             mutate(year = as.numeric(str_sub(year, -4, -1)), value = as.numeric(value)) |>
-            mutate(iso3 = countrycode(iso3, origin = 'iso3c', destination = 'iso2c', warn = F,
-                                custom_match = c('ROM' = 'RO','ADO' = 'AD','ANT' = 'AN','KSV' = 'XK','TMP' = 'TL','WBG' = 'PS','ZAR' = 'CD')) )
+            mutate(iso3 = project_countrycode_iso3_to_iso2(iso3))
           
           eval(parse(text = glue("unhdr_data <- unhdr_data |> rename('{unhdr_names[i]}' = 'value', 'country_id' = 'iso3')") ))
           
@@ -1607,6 +1644,7 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d, imppa
           #weo_fname = "./_extsources/WEO.xls"
           #i=1
           #weo_data <- read_tsv(weo_fname, na = c("", "NA", "n/a"), col_types = "c", show_col_types = FALSE)
+          # WEO sheet `ISO` column holds ISO3 codes (e.g. NAM); `na` may include "NA" for numeric cells only.
           weo_data <- read_excel(weo_fname, sheet = weo_sheets[i], na = c("", "NA", "n/a"))
           weo_data <- weo_data |> rename('country_id' = 'ISO', 'code' = 'WEO Subject Code') |>
             mutate_at(.vars = vars(starts_with('19'), starts_with('20')), .funs = gsub, pattern = ",", replacement = "") |>
@@ -1614,8 +1652,7 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d, imppa
           weo_data <- eval(parse(text = glue("weo_data |> filter(code == '{weo_codes[i]}')") ))
           
           weo_data <- weo_data |> select(country_id, starts_with('19'), starts_with('20')) |>
-                mutate(country_id = countrycode(country_id, origin = 'iso3c', destination = 'iso2c', 
-                        custom_match = c('ROM' = 'RO','ADO' = 'AD','ANT' = 'AN','KSV' = 'XK','TMP' = 'TL','WBG' = 'PS','ZAR' = 'CD'))) |>
+                mutate(country_id = project_countrycode_iso3_to_iso2(country_id)) |>
                 pivot_longer(!country_id, names_to = "year", values_to = "value") |>
                 mutate(year = as.numeric(year), value = as.numeric(value)) |>
                 mutate(value = value + 0.000006) # needed to prevent excel from treating as dates
@@ -1647,6 +1684,7 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d, imppa
         
         #i=1
         #weo_data <- read_tsv(weo_fname, na = c("", "NA", "n/a"), col_types = "c", show_col_types = F)
+        # WEO aggr sheet: numeric cells use na tokens; no ISO2 code column.
         weo_data <- read_excel(weo_fname, sheet = weo_sheets[i], na = c("", "NA", "n/a"))        
         weo_data <- weo_data |> rename('code' = 'Country Group Name', 'indicator' = 'WEO Subject Code', 
                         'note' = 'Country/Series-specific Notes') |>
@@ -1683,8 +1721,9 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d, imppa
       for (i in seq_along(pp_names)) {
         
         #i=1
+        # ISO2_code: do not treat "NA" (Namibia) as missing in na.strings
         pp_data <- read.csv(pp_fname, header = TRUE, sep = ",", quote = "\"",
-                            dec = ".", fill = TRUE, comment.char = "", na.strings=c(0,"..","","NA"))
+                            dec = ".", fill = TRUE, comment.char = "", na.strings=c(0,"..",""))
         
         pp_data <- eval(parse(text = glue("pp_data |> select('ISO2_code', 'Time', 'Variant', '{pp_codes[i]}')") ))
         pp_data <- eval(parse(text = glue("rename(pp_data,'country_id'='ISO2_code', 'year' = 'Time', 'value'='{pp_codes[i]}')") ))
@@ -1716,8 +1755,9 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d, imppa
       
       print("UNPD 5-year groups")
         
+      # ISO2_code: do not treat "NA" (Namibia) as missing in na.strings
       pp_data <- read.csv(pp_fname, header = TRUE, sep = ",", quote = "\"",
-                            dec = ".", fill = TRUE, comment.char = "", na.strings=c(0,"..","","NA"))
+                            dec = ".", fill = TRUE, comment.char = "", na.strings=c(0,"..",""))
         
       pp_data <- pp_data |> select('ISO2_code', 'Time', 'Variant', 'AgeGrp', 'PopTotal') |> filter(Variant == "Medium") |>
                 rename('country_id' = 'ISO2_code', 'year' = 'Time', 'age' = 'AgeGrp', 'value' = 'PopTotal') |> 
@@ -1782,7 +1822,7 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d, imppa
       names(fsdb_data)[1] <- "country_id"
       fsdb_data <- fsdb_data |> select(country_id, starts_with('19'), starts_with('20')) |> 
         pivot_longer(!country_id, names_to = "year", values_to = "value") |>
-        mutate(country_id = countrycode(country_id, origin = 'iso3c', destination = 'iso2c', warn = F)) |> 
+        mutate(country_id = project_countrycode_iso3_to_iso2(country_id)) |> 
         mutate(year = as.numeric(year), value = as.numeric(value))
       
       fsdb_data <- eval(parse(text = glue("rename(fsdb_data,'{fsdb_names[i]}'='value')") ))
@@ -1850,9 +1890,13 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d, imppa
         old_codes <- fsb_impplan |> filter(sheet_name == fsb_sheet) |> pull(retrieve_code)
         new_codes <- fsb_impplan |> filter(sheet_name == fsb_sheet) |> pull(indicator_code)
         
-        fsb_data_raw <- read_excel(fsb_fname, sheet = fsb_sheet, col_names = TRUE, na = c("", "NA", "N/A")) |>
+        fsb_data_raw <- read_excel(fsb_fname, sheet = fsb_sheet, col_names = TRUE, na = c("", "N/A")) |>
           rename(country_id = `Jurisdiction code`, year = Year, code = `Entity/Economic function`,
-            value = `Value, in USD trillions`) |> mutate(year = suppressWarnings(as.integer(year)), value = parse_num_safe(value)) |>
+            value = `Value, in USD trillions`) |> mutate(
+              country_id = read_iso_codes_safe(country_id),
+              year = suppressWarnings(as.integer(year)),
+              value = parse_num_safe(value)
+            ) |>
           filter(Topic == i) |> select(country_id, year, code, value)
         
         # --- Диагностика дублей и оповещение ---
@@ -1901,9 +1945,7 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d, imppa
       new_codes <- gmd_impplan |> pull(indicator_code)
       gmd_data <- read.csv(gmd_fname, header = TRUE, sep = ",", quote = "\"",
                            dec = ".", fill = TRUE, comment.char = "", na.strings=c(0,"..","","NA")) |>
-        mutate(country_id = countrycode(ISO3, origin = 'iso3c', destination = 'iso2c', 
-                                 custom_match = c('ROM' = 'RO','ADO' = 'AD','ANT' = 'AN',
-                                                  'KSV' = 'XK','TMP' = 'TL','WBG' = 'PS','ZAR' = 'CD'), warn = F)) |>
+        mutate(country_id = project_countrycode_iso3_to_iso2(ISO3)) |>
         rename_at(vars(old_codes), ~new_codes) |> select("country_id", "year", all_of(new_codes)) |>
         mutate(year = as.numeric(year)) 
         
@@ -1930,16 +1972,7 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d, imppa
         cby_fname <- here("assets", "_DB", "_extsources", cby_impplan$file_name[1])
         cb_long <- readConferenceBoardTed(cby_fname, indicators = cby_codes) |>
           mutate(
-            country_id = countrycode(
-              iso3,
-              origin = "iso3c",
-              destination = "iso2c",
-              custom_match = c(
-                "ROM" = "RO", "ADO" = "AD", "ANT" = "AN", "KSV" = "XK",
-                "TMP" = "TL", "WBG" = "PS", "ZAR" = "CD"
-              ),
-              warn = FALSE
-            )
+            country_id = project_countrycode_iso3_to_iso2(iso3),
           ) |>
           filter(
             !is.na(country_id),
@@ -2109,7 +2142,7 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d, imppa
       def_raw <- read_excel(def_fname, sheet = def_sheet, skip = 64, col_names  = T,  .name_repair = "minimal")
       def_raw <- def_raw |> separate(col = k, into  = c("country_id", "year"), sep = "_", remove = TRUE, convert = TRUE) |>
         mutate(year = as.numeric(year),
-               country_id = countrycode(country_id, origin = 'iso3c', destination = 'iso2c', warn = F)) |> 
+               country_id = project_countrycode_iso3_to_iso2(country_id)) |> 
         rename_at(vars(def_codes), ~new_codes) |> select("country_id", "year", all_of(new_codes)) |> 
         filter(!is.na(country_id))
       
@@ -2176,8 +2209,7 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d, imppa
       
       gcd_tidy <- read_excel(gcd_fname[1], sheet = gcd_sheet[1], skip = 0, col_names  = T,  .name_repair = "minimal") |>
         select(CC3, Year, all_of(gcd_codes)) |> filter(!row_number() == 1) |> rename_at(vars(gcd_codes), ~new_codes) |>
-        mutate(year = as.numeric(Year), country_id = countrycode(CC3, origin = 'iso3c', destination = 'iso2c', 
-            custom_match = c('ROM' = 'RO','ADO' = 'AD','ANT' = 'AN', 'KSV' = 'XK','TMP' = 'TL','WBG' = 'PS', 'ZAR' = 'CD'), warn = F)) |>
+        mutate(year = as.numeric(Year), country_id = project_countrycode_iso3_to_iso2(CC3)) |>
         select(country_id, year, all_of(new_codes)) |> mutate_at(.vars = all_of(new_codes), .funs = as.numeric)
       
       for (i in 1:length(new_codes)) {
@@ -2210,7 +2242,7 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d, imppa
       
       for (i in seq_along(new_codes)) {
         
-        first_row <- read_excel(path = hrt_fname[i], sheet  = hrt_sheet[i], range  = cell_rows(1), col_names = F, na = c("", "NA"), n_max = 1)
+        first_row <- read_excel(path = hrt_fname[i], sheet  = hrt_sheet[i], range  = cell_rows(1), col_names = F, na = "", n_max = 1)
         skip_n <- if (all(is.na(first_row))) 6 else 0
         
         hrt_tidy <- read_excel(hrt_fname[i], sheet = hrt_sheet[i], skip = skip_n, col_names  = T,  .name_repair = "minimal") |>
@@ -2230,7 +2262,7 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d, imppa
         if (length(code_cols) == 0 && "DebtorCountry" %in% names(hrt_tidy)) { hrt_tidy <- hrt_tidy |>
             mutate( ISOCode = countrycode(DebtorCountry, "country.name", "iso3c"),  .after = DebtorCountry) }
         
-        hrt_tidy <- hrt_tidy |> mutate(country_id = countrycode(ISOCode, "iso3c", "iso2c")) |> rename('year'='Year') |>
+        hrt_tidy <- hrt_tidy |> mutate(country_id = project_countrycode_iso3_to_iso2(ISOCode)) |> rename('year'='Year') |>
           select(country_id, year) |> mutate(!!sym(new_codes[i]) := 1) |> unique()
         # задать руками SER, ZBW, CBV?
         
@@ -2261,8 +2293,7 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d, imppa
       ct_tidy <- read_excel(ct_fname[1], sheet = ct_sheet[1], skip = 13, col_names  = F) |>
         rename(country_id = 4, def_date = 5) |> select(country_id, def_date) |>
         mutate(year = as.numeric(year(def_date)),
-            country_id = countrycode(country_id, origin = 'iso3c', destination = 'iso2c', 
-            custom_match = c('ROM' = 'RO','ADO' = 'AD','ANT' = 'AN', 'KSV' = 'XK','TMP' = 'TL','WBG' = 'PS', 'ZAR' = 'CD'), warn = F)) |>
+            country_id = project_countrycode_iso3_to_iso2(country_id)) |>
         select(country_id, year) |> unique()
       
       for (i in 1:length(new_codes)) {
@@ -2379,12 +2410,22 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d, imppa
         # country_id (предпочтительно ISO2)
         df <- df |>
           mutate(
-            country_id = coalesce(
+            country_id_raw = coalesce(
               if (!is.na(iso2_col)) .data[[iso2_col]] else NA_character_,
               if (!is.na(iso3_col)) .data[[iso3_col]] else NA_character_
             ),
+            country_id = dplyr::if_else(
+              !is.na(.data$country_id_raw) &
+                stringr::str_detect(
+                  stringr::str_trim(as.character(.data$country_id_raw)),
+                  "^[A-Z]{2}$"
+                ),
+              stringr::str_trim(as.character(.data$country_id_raw)),
+              project_countrycode_iso3_to_iso2(.data$country_id_raw)
+            ),
             .before = 1
-          )
+          ) |>
+          select(-country_id_raw)
         
         # удаляем ISO-колонки (если они реально есть)
         rm_cols <- c(iso2_col, iso3_col)
@@ -2457,8 +2498,7 @@ tryImport <- function(impplan, extdata_y, extdata_q, extdata_m, extdata_d, imppa
         
         # типы
         weo_vintage_y <- weo_vintage_y |> mutate(year = suppressWarnings(as.integer(pub_year)),
-            country_id = countrycode(country_id, origin = 'iso3c', destination = 'iso2c', 
-            custom_match = c('ROM' = 'RO','ADO' = 'AD','ANT' = 'AN', 'KSV' = 'XK','TMP' = 'TL','WBG' = 'PS','ZAR' = 'CD'), warn = F)) |>
+            country_id = project_countrycode_iso3_to_iso2(country_id)) |>
             select(-c(pub_year))
       }
       

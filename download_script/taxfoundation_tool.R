@@ -10,17 +10,20 @@
 
 .taxfoundation_user_agent <- "country_analysis/taxfoundation-import"
 
+if (!exists("project_countrycode_iso3_to_iso2", mode = "function")) {
+  iso_path <- file.path(dirname(sys.frame(1)$ofile %||% "."), "iso_country_codes.R")
+  if (!file.exists(iso_path) && requireNamespace("here", quietly = TRUE)) {
+    iso_path <- here::here("download_script", "iso_country_codes.R")
+  }
+  if (file.exists(iso_path)) source(iso_path, local = FALSE)
+}
+
 .taxfoundation_default_url <- paste0(
   "https://raw.githubusercontent.com/TaxFoundation/",
   "worldwide-corporate-tax-rates/master/final_data/final_data_long.csv"
 )
 
 .taxfoundation_series <- c("rate", "gdp")
-
-.taxfoundation_iso_custom_match <- c(
-  ROM = "RO", ADO = "AD", ANT = "AN", KSV = "XK",
-  TMP = "TL", WBG = "PS", ZAR = "CD"
-)
 
 ##### Parse / IO ---------------------------------------------------------------
 
@@ -108,13 +111,7 @@ taxfoundation_iso2 <- function(iso_2, iso_3) {
   iso2_raw[!nzchar(iso2_raw) | iso2_raw %in% c("N/A", "n/a")] <- NA_character_
   # Unquoted NA in the CSV is Namibia; restore from ISO3.
   iso3_raw <- trimws(as.character(iso_3))
-  from_iso3 <- countrycode::countrycode(
-    iso3_raw,
-    origin = "iso3c",
-    destination = "iso2c",
-    custom_match = .taxfoundation_iso_custom_match,
-    warn = FALSE
-  )
+  from_iso3 <- project_countrycode_iso3_to_iso2(iso3_raw)
   dplyr::coalesce(iso2_raw, from_iso3)
 }
 

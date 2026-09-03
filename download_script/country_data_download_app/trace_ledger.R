@@ -190,6 +190,13 @@ build_trace_ledger_vm <- function(journal,
   }
 
   nodes <- journal
+  # Single-node journals (imported leaves) may omit parent_id when the root
+  # was built with parent_step_id = NULL and tibble dropped the column.
+  if (!"parent_id" %in% names(nodes)) {
+    nodes$parent_id <- NA_character_
+  } else {
+    nodes$parent_id <- as.character(nodes$parent_id)
+  }
 
   # Enrich keep / label from saveplan (presentation only).
   if (!is.null(saveplan_full) && nrow(saveplan_full) > 0L) {
@@ -1028,11 +1035,19 @@ render_trace_ledger_tree <- function(vm,
     ))
   }
 
+  .blank_id <- function(x) {
+    is.null(x) || length(x) != 1L || is.na(x) || !nzchar(as.character(x))
+  }
+
   # Build adjacency on display_parent_id.
   children_map <- list()
   for (i in seq_len(nrow(nodes))) {
-    pid <- nodes$display_parent_id[[i]]
-    if (is.na(pid) || !nzchar(pid)) next
+    pid <- if ("display_parent_id" %in% names(nodes)) {
+      nodes$display_parent_id[[i]]
+    } else {
+      NA_character_
+    }
+    if (.blank_id(pid)) next
     children_map[[pid]] <- c(children_map[[pid]] %||% character(0), nodes$step_id[[i]])
   }
 
@@ -1078,7 +1093,12 @@ render_trace_ledger_tree <- function(vm,
     )
   }
 
-  roots <- nodes$step_id[is.na(nodes$display_parent_id) | nodes$display_parent_id == ""]
+  display_parent <- if ("display_parent_id" %in% names(nodes)) {
+    nodes$display_parent_id
+  } else {
+    rep(NA_character_, nrow(nodes))
+  }
+  roots <- nodes$step_id[vapply(display_parent, .blank_id, logical(1))]
   if (length(roots) == 0L) {
     roots <- nodes$step_id[nodes$level == min(nodes$level, na.rm = TRUE)]
   }

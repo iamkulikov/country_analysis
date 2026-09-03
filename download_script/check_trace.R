@@ -85,6 +85,47 @@ check_eq(
   c("2020-Q1", "2020-Q2", "2020-Q3")
 )
 
+##### 1a. Impplan lookup must not collide with column names -------------------
+
+message("\n=== Impplan source lookup ===")
+
+fake_impplan <- tibble::tibble(
+  indicator_code = c("gdp_g", "age_median"),
+  source_frequency = "y",
+  active = 1L,
+  database_name = c("WDI", "WPP"),
+  retrieve_code = c("NY.GDP.MKTP.KD.ZG", "MedianAge"),
+  file_name = NA_character_,
+  source_name = c("World Bank", "UN")
+)
+
+row_gdp <- find_impplan_row("gdp_g", "y", fake_impplan)
+row_age <- find_impplan_row("age_median", "y", fake_impplan)
+check_eq(
+  "find_impplan_row does not return first row for gdp_g",
+  row_gdp$retrieve_code[[1]],
+  "NY.GDP.MKTP.KD.ZG"
+)
+check_eq(
+  "find_impplan_row returns age_median row",
+  row_age$retrieve_code[[1]],
+  "MedianAge"
+)
+check_eq(
+  "import_source_label gdp_g",
+  import_source_label(row_gdp),
+  "WDI / NY.GDP.MKTP.KD.ZG / World Bank"
+)
+check_eq(
+  "import_source_label age_median",
+  import_source_label(row_age),
+  "WPP / MedianAge / UN"
+)
+check_true(
+  "import labels differ across indicators",
+  !identical(import_source_label(row_gdp), import_source_label(row_age))
+)
+
 ##### 1b. Formula formatting + collapse toggle -------------------------------
 
 message("\n=== Formula formatting / collapse ===")
@@ -425,6 +466,45 @@ check_true(
   grepl("WINNER", as.character(html_out), fixed = TRUE)
 )
 
+# Imported leaf: journal with no parent_id column (tibble drops NULL).
+imported_leaf_journal <- tibble::tibble(
+  step_id = "1",
+  level = 0L,
+  country_id = "RU",
+  indicator_code = "age_median",
+  frequency = "y",
+  period = "2023",
+  value = 38.5,
+  node_type = "imported",
+  operation = "import",
+  formula_raw = NA_character_,
+  formula_filled = NA_character_,
+  time_relation = "source data",
+  source_name = "OWID",
+  note = NA_character_
+)
+vm_leaf <- build_trace_ledger_vm(imported_leaf_journal, show_technical = TRUE)
+check_true(
+  "imported leaf VM has parent_id",
+  "parent_id" %in% names(vm_leaf$nodes)
+)
+check_true(
+  "imported leaf VM has display_parent_id",
+  "display_parent_id" %in% names(vm_leaf$nodes)
+)
+html_leaf <- tryCatch(
+  render_trace_ledger_tree(vm_leaf),
+  error = function(e) e
+)
+check_true(
+  "imported leaf renderer does not error",
+  inherits(html_leaf, c("shiny.tag", "shiny.tag.list"))
+)
+check_true(
+  "imported leaf HTML mentions age_median",
+  grepl("age_median", as.character(html_leaf), fixed = TRUE)
+)
+
 # aggregate_input operand snapshot (limited recursion, no structural children).
 operand_journal <- tibble::tibble(
   step_id = c("1", "1.2", paste0("1.2.", 1:12)),
@@ -661,6 +741,61 @@ if (is.null(usdlc_cell)) {
   }
 }
 
+message("\n=== imported leaf age_median ===")
+
+age_cell <- pick_non_na_cell("age_median", "y")
+if (is.null(age_cell)) {
+  message("skip  age_median@y: no non-NA annual cell in DB")
+} else {
+  age_journal <- tryCatch(
+    buildValueTrace(
+      country_id     = age_cell$country_id,
+      indicator_code = age_cell$indicator_code,
+      frequency      = age_cell$frequency,
+      period         = age_cell$period,
+      trace_db       = trace_db,
+      fillplan       = fillplan,
+      impplan        = impplan,
+      saveplan_full  = saveplan_full
+    ),
+    error = function(e) {
+      .n_fail <<- .n_fail + 1L
+      message(glue::glue("FAIL  age_median buildValueTrace: {conditionMessage(e)}"))
+      NULL
+    }
+  )
+  if (!is.null(age_journal) && nrow(age_journal) > 0L) {
+    check_true(
+      "age_median journal has parent_id",
+      "parent_id" %in% names(age_journal)
+    )
+    age_src <- age_journal$source_name[[1]]
+    check_true(
+      "age_median source is not the first WDI GDP row",
+      is.na(age_src) || !grepl("NY.GDP.MKTP.KD.ZG", age_src, fixed = TRUE)
+    )
+    expected_age_src <- import_source_label(
+      find_impplan_row("age_median", "y", impplan)
+    )
+    check_eq(
+      "age_median source matches its impplan row",
+      age_src,
+      expected_age_src
+    )
+    html_age <- tryCatch(
+      {
+        vm_age <- build_trace_ledger_vm(age_journal, saveplan_full = saveplan_full)
+        render_trace_ledger_tree(vm_age)
+      },
+      error = function(e) e
+    )
+    check_true(
+      "age_median renderer does not error",
+      inherits(html_age, c("shiny.tag", "shiny.tag.list"))
+    )
+  }
+}
+
 find_case <- function(label, predicate, max_scan = 40L) {
   mask <- predicate(fillplan$formula, fillplan$old_frequency, fillplan$new_frequency)
   mask <- mask %in% TRUE
@@ -767,6 +902,32 @@ if (length(cases) == 0L) {
       glue::glue("{cell$label}: root indicator matches"),
       identical(journal$indicator_code[[1]], cell$indicator_code)
     )
+
+    imported <- journal[journal$node_type == "imported", , drop = FALSE]
+    if (nrow(imported) > 0L) {
+      src_ok <- TRUE
+      for (i in seq_len(nrow(imported))) {
+        expected_src <- import_source_label(
+          find_impplan_row(
+            imported$indicator_code[[i]],
+            imported$frequency[[i]],
+            impplan
+          )
+        )
+        got_src <- imported$source_name[[i]]
+        if (!identical(as.character(got_src), as.character(expected_src))) {
+          src_ok <- FALSE
+          message(glue::glue(
+            "  mismatch {imported$indicator_code[[i]]}@{imported$frequency[[i]]}: ",
+            "got '{got_src}', expected '{expected_src}'"
+          ))
+        }
+      }
+      check_true(
+        glue::glue("{cell$label}: imported source labels match impplan"),
+        src_ok
+      )
+    }
 
     print(
       journal |>

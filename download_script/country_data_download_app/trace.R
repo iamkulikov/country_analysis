@@ -210,7 +210,7 @@ periodsUpTo <- function(trace_db, country_id, indicator_code, frequency, period)
 
   df <- add_period_columns(df, frequency)
   df <- df |>
-    dplyr::filter(.data$country_id == country_id) |>
+    dplyr::filter(.data$country_id == .env$country_id) |>
     dplyr::arrange(dplyr::across(dplyr::any_of(c("year", "quarter", "month", "date"))))
 
   if (!indicator_code %in% names(df)) return(character(0))
@@ -254,8 +254,8 @@ getCellValue <- function(trace_db, country_id, indicator_code, frequency, period
 find_fillplan_row <- function(indicator_code, frequency, fillplan) {
   fillplan |>
     dplyr::filter(
-      .data$new_indicator_code == indicator_code,
-      .data$new_frequency == frequency,
+      .data$new_indicator_code == .env$indicator_code,
+      .data$new_frequency == .env$frequency,
       .data$active1 == 1L
     ) |>
     dplyr::slice(1)
@@ -264,8 +264,8 @@ find_fillplan_row <- function(indicator_code, frequency, fillplan) {
 find_impplan_row <- function(indicator_code, frequency, impplan) {
   impplan |>
     dplyr::filter(
-      .data$indicator_code == indicator_code,
-      .data$source_frequency == frequency,
+      .data$indicator_code == .env$indicator_code,
+      .data$source_frequency == .env$frequency,
       .data$active == 1L
     ) |>
     dplyr::slice(1)
@@ -286,11 +286,18 @@ lookup_indicator_kind <- function(indicator_code, frequency, fillplan, impplan) 
 }
 
 import_source_label <- function(imp_row) {
+  if (is.null(imp_row) || nrow(imp_row) == 0L) return("imported")
+  pick <- function(col) {
+    if (!col %in% names(imp_row)) return(NA_character_)
+    val <- imp_row[[col]][[1]]
+    if (is.null(val) || is.na(val)) return(NA_character_)
+    as.character(val)
+  }
   parts <- c(
-    imp_row$database_name %||% NA_character_,
-    imp_row$retrieve_code %||% NA_character_,
-    imp_row$file_name %||% NA_character_,
-    imp_row$source_name %||% NA_character_
+    pick("database_name"),
+    pick("retrieve_code"),
+    pick("file_name"),
+    pick("source_name")
   )
   parts <- parts[!is.na(parts) & parts != ""]
   if (length(parts) == 0L) "imported" else paste(parts, collapse = " / ")
@@ -435,7 +442,7 @@ find_impute_neighbors <- function(trace_db, country_id, indicator_code, frequenc
   }
 
   df <- add_period_columns(df, frequency) |>
-    dplyr::filter(.data$country_id == country_id) |>
+    dplyr::filter(.data$country_id == .env$country_id) |>
     dplyr::arrange(dplyr::across(dplyr::any_of(c("year", "quarter", "month", "date", "period"))))
 
   idx <- match(as.character(period), as.character(df$period))
@@ -546,7 +553,7 @@ resolveCellInputs <- function(country_id, indicator_code, frequency, period,
       df <- get_freq_data(trace_db, frequency)
       df <- add_period_columns(df, frequency)
       vals <- df |>
-        dplyr::filter(.data$period == period, .data$country_id != "1W") |>
+        dplyr::filter(.data$period == .env$period, .data$country_id != "1W") |>
         dplyr::pull(dplyr::all_of(code))
       denom_val <- sum(vals, na.rm = TRUE)
       denom <- list(
@@ -855,7 +862,7 @@ buildValueTrace <- function(country_id, indicator_code, frequency, period,
       truncated <<- TRUE
       .append_node(tibble::tibble(
         step_id = if (is.null(parent_step_id)) "1" else glue::glue("{parent_step_id}.{child_index}"),
-        level = depth, parent_id = parent_step_id,
+        level = depth, parent_id = parent_step_id %||% NA_character_,
         country_id = cid, indicator_code = code, frequency = freq, period = per,
         value = NA_real_, node_type = "truncated", operation = NA_character_,
         formula_raw = NA_character_, formula_filled = NA_character_,
@@ -869,7 +876,7 @@ buildValueTrace <- function(country_id, indicator_code, frequency, period,
     if (visit_key %in% visited) {
       step_id <- if (is.null(parent_step_id)) "1" else glue::glue("{parent_step_id}.{child_index}")
       .append_node(tibble::tibble(
-        step_id = step_id, level = depth, parent_id = parent_step_id,
+        step_id = step_id, level = depth, parent_id = parent_step_id %||% NA_character_,
         country_id = cid, indicator_code = code, frequency = freq, period = per,
         value = .cell_getter(trace_db, cid, code, freq, per),
         node_type = "truncated", operation = "cycle", formula_raw = NA_character_,
@@ -893,7 +900,7 @@ buildValueTrace <- function(country_id, indicator_code, frequency, period,
 
     if (meta$kind == "missing") {
       .append_node(tibble::tibble(
-        step_id = step_id, level = depth, parent_id = parent_step_id,
+        step_id = step_id, level = depth, parent_id = parent_step_id %||% NA_character_,
         country_id = cid, indicator_code = code, frequency = freq, period = per,
         value = value, node_type = "missing", operation = NA_character_,
         formula_raw = NA_character_, formula_filled = NA_character_,
@@ -905,7 +912,7 @@ buildValueTrace <- function(country_id, indicator_code, frequency, period,
 
     if (meta$kind == "imported") {
       .append_node(tibble::tibble(
-        step_id = step_id, level = depth, parent_id = parent_step_id,
+        step_id = step_id, level = depth, parent_id = parent_step_id %||% NA_character_,
         country_id = cid, indicator_code = code, frequency = freq, period = per,
         value = value, node_type = "imported", operation = "import",
         formula_raw = NA_character_, formula_filled = NA_character_,
@@ -932,7 +939,7 @@ buildValueTrace <- function(country_id, indicator_code, frequency, period,
     }
 
     .append_node(tibble::tibble(
-      step_id = step_id, level = depth, parent_id = parent_step_id,
+      step_id = step_id, level = depth, parent_id = parent_step_id %||% NA_character_,
       country_id = cid, indicator_code = code, frequency = freq, period = per,
       value = value, node_type = node_type, operation = resolved$operation,
       formula_raw = resolved$formula_raw, formula_filled = formula_filled,
@@ -1007,6 +1014,11 @@ buildValueTrace <- function(country_id, indicator_code, frequency, period,
   }
 
   journal <- dplyr::bind_rows(nodes)
+  # Root rows used to pass parent_id = NULL, which tibble drops; a single-node
+  # imported journal then has no parent_id column at all.
+  if (!"parent_id" %in% names(journal)) {
+    journal$parent_id <- NA_character_
+  }
   if (truncated && !any(journal$node_type == "truncated")) {
     journal <- dplyr::bind_rows(
       journal,

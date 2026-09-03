@@ -223,11 +223,13 @@ mod_value_trace_server <- function(id,
         shiny::need(length(freqs) > 0, "No data available for preview with the current filters.")
       )
 
-      selected <- input$preview_freq %||% freqs[[1]]
+      # Isolate so changing the radio does not rebuild the control (which
+      # briefly NULLs the input and snaps the table back to the first freq).
+      selected <- shiny::isolate(input$preview_freq) %||% freqs[[1]]
       if (!selected %in% freqs) selected <- freqs[[1]]
 
       shiny::radioButtons(
-        inputId  = "preview_freq",
+        inputId  = ns("preview_freq"),
         label    = "Frequency",
         choices  = freqs,
         selected = selected,
@@ -261,8 +263,10 @@ mod_value_trace_server <- function(id,
 
     output$preview_table_host <- shiny::renderUI({
       shiny::req(preview_active())
-      info <- preview_table_info()
-      shiny::req(!is.null(info$data), nrow(info$data) > 0)
+      freqs <- preview_freqs()
+      shiny::req(length(freqs) > 0)
+      # Do not depend on the selected frequency: recreating DTOutput on each
+      # switch drops the redraw and leaves the first table on screen.
       DT::DTOutput(ns("preview_table"))
     })
 
